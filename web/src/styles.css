@@ -1,0 +1,414 @@
+.app {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(0, 2fr);
+  height: 100vh;
+  width: 100vw;
+  background: #ffffff;
+  color: #1d1d1f;
+}
+
+.left {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid #ececec;
+  background: #fafafa;
+  min-height: 0;
+}
+
+.right {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* —— Live2D 占位 —— */
+.stage {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  position: relative;
+  min-height: 0;
+  padding: 24px 16px 8px;
+}
+
+.stage-badge {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  font-size: 12px;
+  color: #6e6e73;
+  background: #fff;
+  border: 1px solid #e8e8ed;
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+
+.avatar {
+  position: relative;
+  width: 200px;
+  height: 260px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.avatar.bounce-1 {
+  animation: floaty 1.6s ease-in-out infinite;
+}
+
+.avatar.bounce-2 {
+  animation: floaty 0.55s ease-in-out infinite;
+}
+
+@keyframes floaty {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+.avatar-glow {
+  position: absolute;
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  background: #f0f0f5;
+  top: 10px;
+  z-index: 0;
+}
+
+.avatar-head {
+  position: relative;
+  z-index: 1;
+  width: 120px;
+  height: 120px;
+}
+
+.avatar-hair {
+  position: absolute;
+  inset: -8px -6px 30px;
+  background: #2c2c30;
+  border-radius: 60px 60px 40px 40px;
+  z-index: 0;
+}
+
+.avatar-face {
+  position: absolute;
+  inset: 12px 10px 18px;
+  background: #f3e6d8;
+  border-radius: 50%;
+  z-index: 1;
+  overflow: hidden;
+}
+
+.eye {
+  position: absolute;
+  top: 38%;
+  width: 12px;
+  height: 14px;
+  background: #1d1d1f;
+  border-radius: 50%;
+  animation: blink 5s infinite;
+}
+
+.eye.left {
+  left: 28%;
+}
+
+.eye.right {
+  right: 28%;
+}
+
+@keyframes blink {
+  0%,
+  46%,
+  50%,
+  100% {
+    transform: scaleY(1);
+  }
+  48% {
+    transform: scaleY(0.1);
+  }
+}
+
+.blush {
+  position: absolute;
+  top: 55%;
+  width: 14px;
+  height: 8px;
+  background: rgba(255, 140, 140, 0.35);
+  border-radius: 50%;
+}
+
+.blush.left {
+  left: 16%;
+}
+
+.blush.right {
+  right: 16%;
+}
+
+.mouth {
+  position: absolute;
+  left: 50%;
+  bottom: 22%;
+  width: 16px;
+  transform: translateX(-50%);
+  background: #c45c5c;
+  border-radius: 0 0 10px 10px;
+  min-height: 6px;
+  transition: height 80ms linear;
+}
+
+.avatar-body {
+  position: relative;
+  z-index: 1;
+  margin-top: -8px;
+  width: 110px;
+  height: 90px;
+  background: #ffffff;
+  border: 1px solid #e8e8ed;
+  border-radius: 40px 40px 24px 24px;
+  display: flex;
+  justify-content: center;
+  padding-top: 12px;
+}
+
+.avatar-collar {
+  width: 36px;
+  height: 18px;
+  border: 1px solid #d2d2d7;
+  border-radius: 0 0 12px 12px;
+  background: #f5f5f7;
+}
+
+.stage-caption {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.stage-hint {
+  margin: 0;
+  font-size: 11px;
+  color: #6e6e73;
+  text-align: center;
+  max-width: 220px;
+  line-height: 1.5;
+}
+
+.voice-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 16px 20px;
+  flex-wrap: wrap;
+}
+
+.ghost {
+  border: 1px solid #d2d2d7;
+  background: #fff;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ghost:hover:not(:disabled) {
+  background: #f5f5f7;
+}
+
+.ghost:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.warn {
+  font-size: 12px;
+  color: #b45309;
+}
+
+/* —— 对话区 —— */
+.chat-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.chat-header {
+  padding: 28px 32px 12px;
+  border-bottom: 1px solid #f0f0f2;
+}
+
+.chat-header h1 {
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.chat-header p {
+  margin: 0;
+  color: #6e6e73;
+  font-size: 13px;
+}
+
+.message-list {
+  flex: 1;
+  overflow: auto;
+  padding: 20px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.bubble-row {
+  display: flex;
+}
+
+.bubble-row.from-user {
+  justify-content: flex-end;
+}
+
+.bubble-row.from-assistant {
+  justify-content: flex-start;
+}
+
+.bubble {
+  max-width: min(720px, 92%);
+  padding: 12px 16px;
+  border-radius: 16px;
+  line-height: 1.65;
+  font-size: 15px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.bubble-user {
+  background: #1d1d1f;
+  color: #fff;
+  border-bottom-right-radius: 6px;
+}
+
+.bubble-bot {
+  background: #f5f5f7;
+  color: #1d1d1f;
+  border-bottom-left-radius: 6px;
+}
+
+.bubble-error {
+  background: #fff4f4;
+  color: #a4262c;
+}
+
+.bubble-busy {
+  color: #6e6e73;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.bubble-note {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #6e6e73;
+}
+
+.sources {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #424245;
+}
+
+.sources summary {
+  cursor: pointer;
+  color: #6e6e73;
+}
+
+.sources ul {
+  margin: 8px 0 0;
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sources li span {
+  display: block;
+  color: #6e6e73;
+  line-height: 1.45;
+}
+
+.panel-foot {
+  margin: 0;
+  padding: 0 32px 8px;
+  font-size: 12px;
+  color: #86868b;
+}
+
+.composer {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  padding: 16px 32px 24px;
+  border-top: 1px solid #f0f0f2;
+  background: #fff;
+}
+
+.composer textarea {
+  resize: none;
+  border: 1px solid #d2d2d7;
+  border-radius: 12px;
+  padding: 12px 14px;
+  outline: none;
+  background: #fff;
+}
+
+.composer textarea:focus {
+  border-color: #1d1d1f;
+}
+
+.composer button {
+  border: none;
+  border-radius: 12px;
+  background: #1d1d1f;
+  color: #fff;
+  padding: 0 22px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.composer button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+@media (max-width: 900px) {
+  .app {
+    grid-template-columns: 1fr;
+    grid-template-rows: 42vh 1fr;
+  }
+
+  .left {
+    border-right: none;
+    border-bottom: 1px solid #ececec;
+  }
+}
