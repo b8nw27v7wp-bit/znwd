@@ -19,7 +19,9 @@ export default function App() {
     },
   ]);
   const [busy, setBusy] = useState(false);
-  const [voiceReady, setVoiceReady] = useState(true);
+  const [voiceReady, setVoiceReady] = useState(
+    () => typeof window !== 'undefined' && 'speechSynthesis' in window,
+  );
   const { state: speechState, speak, stop, muted, toggleMute } = useSpeech();
 
   const mood = useMemo(() => {

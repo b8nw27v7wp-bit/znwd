@@ -1,16 +1,20 @@
 ---
 feature: virtual-receptionist
-status: in-progress
-updated: 2026-01-01
+status: delivered
+updated: 2026-09-17
 branch: feature/virtual-receptionist
-commits: 
+commits: a485ed5906df7d18acbf1e25d12874825c178b01..<HEAD>
 ---
 
 # 研究院门口 AI 虚拟接待问答
 
 ## Report
 
-（待实现后填写）
+**What was built** — 在 `E:\znwd` 搭建可运行 monorepo：左侧约 1/3 为 Live2D 占位虚拟形象（待机/思考/说话口型），右侧约 2/3 为对话窗口；`knowledge/` 本地文档经 Fastify RAG 检索后由可插拔 LLM（默认 mock，可切 OpenAI 兼容内网）生成回答；前端用 `speechSynthesis` 自动朗读并支持静音/停止。
+
+**Verification** — `npm install`；`npm run build -w server` / `-w web` 均 PASS；经 Vite 代理 `http://localhost:5173`：`GET /api/health` ok；中文提问 `mode=rag` 且 sources>0；无命中 query 返回 `mode=llm_only` 与「暂未检索到」文案。独立 Review：无 CRITICAL；已修复 MAJOR（Mock 无命中分支）及若干 MINOR。
+
+**Journey log** — 空目录非 git，已 `git init` 并建 `feature/virtual-receptionist`；沙箱禁止 `git worktree add`，未用 worktree。PowerShell `Invoke-RestMethod` 中文易乱码，联调改用 Node `fetch`。Monorepo 提升依赖到根 `node_modules`，后台启动需从该路径调 `vite`/`tsx`。
 
 ## [S1] Problem
 
@@ -162,8 +166,8 @@ znwd/
 
 ## Tasks
 
-- [ ] T1: 初始化 monorepo（root workspaces、README、.gitignore、knowledge 示例文档、.env.example） — acceptance: 根目录可 `npm install`；`knowledge/` 含可检索示例文档 (covers: S2.5, S2.7)
-- [ ] T2: 搭建 server：Fastify + `/api/health` + `/api/chat`（Mock LLM + 关键词/BM25 检索 RAG） — acceptance: `npm run dev` 后 curl health 返回 ok；chat 返回 answer/sources；LLM_PROVIDER=openai_compat 时走 OpenAI 兼容接口 (covers: S2.3)
-- [ ] T3: 搭建 web：Vite React 布局（左 1/3 Live2D 占位、右 2/3 对话）+ 发送/流式气泡状态 — acceptance: 浏览器打开分栏 UI，可提问并渲染 mock 回答 (covers: S2.1, S2.4)
-- [ ] T4: 接入 `useSpeech` TTS 朗读与 Live2D 口型/状态联动（占位形象可驱动） — acceptance: 回答出现后自动朗读；说话时左侧形象有口型/动效；停止按钮可用 (covers: S2.2, S2.4)
-- [ ] T5: 联调与文档：web 代理 `/api` 到 server；根 README 启动说明与替换 LLM/知识库指引 — acceptance: 按 README 三步启动，端到端完成一次带朗读的问答 (covers: S2.2, S2.3, S2.5)
+- [x] T1: 初始化 monorepo（root workspaces、README、.gitignore、knowledge 示例文档、.env.example） — acceptance: 根目录可 `npm install`；`knowledge/` 含可检索示例文档 (covers: S2.5, S2.7)
+- [x] T2: 搭建 server：Fastify + `/api/health` + `/api/chat`（Mock LLM + 关键词/BM25 检索 RAG） — acceptance: `npm run dev` 后 curl health 返回 ok；chat 返回 answer/sources；LLM_PROVIDER=openai_compat 时走 OpenAI 兼容接口 (covers: S2.3)
+- [x] T3: 搭建 web：Vite React 布局（左 1/3 Live2D 占位、右 2/3 对话）+ 发送/流式气泡状态 — acceptance: 浏览器打开分栏 UI，可提问并渲染 mock 回答 (covers: S2.1, S2.4)
+- [x] T4: 接入 `useSpeech` TTS 朗读与 Live2D 口型/状态联动（占位形象可驱动） — acceptance: 回答出现后自动朗读；说话时左侧形象有口型/动效；停止按钮可用 (covers: S2.2, S2.4)
+- [x] T5: 联调与文档：web 代理 `/api` 到 server；根 README 启动说明与替换 LLM/知识库指引 — acceptance: 按 README 三步启动，端到端完成一次带朗读的问答 (covers: S2.2, S2.3, S2.5)

@@ -71,7 +71,7 @@ export function useSpeech() {
   const toggleMute = useCallback(() => {
     setMuted((m) => {
       const next = !m;
-      if (next) speechSynthesis.cancel();
+      if (next && typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
       return next;
     });
   }, []);

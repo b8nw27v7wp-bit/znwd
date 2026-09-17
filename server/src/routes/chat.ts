@@ -8,7 +8,7 @@ export function registerChatRoutes(
   deps: { retriever: Retriever; model: ChatModel },
 ): void {
   app.post<{ Body: { message?: string; sessionId?: string } }>('/api/chat', async (req, reply) => {
-    const message = (req.body?.message ?? '').trim();
+    const message = (req.body?.message ?? '').trim().slice(0, 2000);
     if (!message) {
       return reply.code(400).send({ error: 'message is required' });
     }

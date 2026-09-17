@@ -8,3 +8,6 @@ build/
 .vite/
 coverage/
 .worktrees/
+*.tsbuildinfo
+dev.out.log
+dev.err.log

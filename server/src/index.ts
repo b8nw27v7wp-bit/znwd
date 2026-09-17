@@ -9,7 +9,8 @@ import { registerChatRoutes } from './routes/chat.js';
 
 // 轻量 .env 加载（无 dotenv 依赖）
 async function loadDotEnv(): Promise<void> {
-  const envPath = path.resolve(process.cwd(), '.env');
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const envPath = path.resolve(here, '../.env');
   try {
     const { readFile } = await import('node:fs/promises');
     const raw = await readFile(envPath, 'utf8');
