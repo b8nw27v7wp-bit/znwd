@@ -3,7 +3,7 @@ feature: virtual-receptionist
 status: delivered
 updated: 2026-09-17
 branch: feature/virtual-receptionist
-commits: a485ed5906df7d18acbf1e25d12874825c178b01..<HEAD>
+commits: a485ed5906df7d18acbf1e25d12874825c178b01..3edd3904aafe347aa6ac8f9058270ce63772c2bb
 ---
 
 # 研究院门口 AI 虚拟接待问答
