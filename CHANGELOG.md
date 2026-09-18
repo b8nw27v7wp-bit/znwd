@@ -2,6 +2,21 @@
 
 本项目版本与变更记录。日期：YYYY-MM-DD。
 
+## [0.5.0] — 2026-09-17
+
+### Changed
+
+- 知识库业务切换为：**光伏清洁无人机** / **风场检测无人机**（含服务合作、展厅须知）  
+- 展区 zones、推荐问题、系统提示与前端欢迎语同步无人机主题  
+- 文档体系更新：`docs/README.md`、`knowledge.md`、`architecture.md`、`code-review.md`  
+
+### Fixed
+
+- 向量索引按内容指纹重建，避免知识变更后检索陈旧向量  
+- suggestions/zones 每次请求读取 `zones.json`，避免 reload 后短暂旧数据  
+- 静音时语音状态强制复位为 idle  
+- 前端 ChatResponse 类型补全 retrieval/zone 字段  
+
 ## [0.4.0] — 2026-09-17
 
 Hybrid RAG 落地。

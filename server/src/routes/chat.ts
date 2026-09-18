@@ -6,6 +6,7 @@ import type { SessionStore } from '../session/store.js';
 import type { Analytics } from '../analytics/stats.js';
 import type { RateLimiter } from '../http/rateLimit.js';
 import { suggestionsForZone } from '../knowledge/suggestions.js';
+import { loadZonesMeta } from '../knowledge/loader.js';
 import type { ZonesMeta } from '../knowledge/loader.js';
 
 interface RouteDeps {
@@ -14,7 +15,7 @@ interface RouteDeps {
   sessions: SessionStore;
   analytics: Analytics;
   chatLimiter: RateLimiter;
-  zonesMeta: () => ZonesMeta;
+  knowledgeDir: string;
 }
 
 function clientIp(req: FastifyRequest): string {
@@ -29,12 +30,17 @@ function sanitizeSessionId(raw: unknown): string | undefined {
 }
 
 export function registerChatRoutes(app: FastifyInstance, deps: RouteDeps): void {
-  app.get<{ Querystring: { zone?: string } }>('/api/suggestions', async (req) => ({
-    items: suggestionsForZone(deps.zonesMeta(), req.query.zone),
-    zone: req.query.zone ?? null,
-  }));
+  const readZones = async (): Promise<ZonesMeta> => loadZonesMeta(deps.knowledgeDir);
 
-  app.get('/api/zones', async () => deps.zonesMeta());
+  app.get<{ Querystring: { zone?: string } }>('/api/suggestions', async (req) => {
+    const meta = await readZones();
+    return {
+      items: suggestionsForZone(meta, req.query.zone),
+      zone: req.query.zone ?? null,
+    };
+  });
+
+  app.get('/api/zones', async () => readZones());
 
   app.get<{ Params: { sessionId: string } }>('/api/sessions/:sessionId', async (req, reply) => {
     const id = sanitizeSessionId(req.params.sessionId);

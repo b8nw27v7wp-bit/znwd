@@ -1,5 +1,7 @@
 # HTTP API
 
+产品展厅 AI 虚拟讲解（光伏清洁无人机 / 风场检测无人机）。
+
 Base URL：开发态经 Vite 代理为 `http://localhost:5173`；直连后端为 `http://127.0.0.1:8787`。
 
 所有 JSON 响应 `Content-Type: application/json`。
@@ -41,10 +43,12 @@ Base URL：开发态经 Vite 代理为 `http://localhost:5173`；直连后端为
 
 ```json
 {
-  "items": ["参观需要预约吗？", "能否现场参观？有讲解吗？", "开放日如何安排？"],
-  "zone": "visit"
+  "items": ["光伏清洁无人机是做什么的？", "清洁作业流程是怎样的？", "光伏展区展示什么？"],
+  "zone": "pv-clean"
 }
 ```
+
+`zone` 示例：`pv-clean`、`wind-inspect`、`service`、`safety`，或媒体 ID `exhibit-pv-clean` / `exhibit-wind-inspect`。
 
 ---
 

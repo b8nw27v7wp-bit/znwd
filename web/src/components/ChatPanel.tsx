@@ -26,7 +26,7 @@ export function ChatPanel({
     <div className="chat-panel">
       <div className="chat-header">
         <h1>对话咨询</h1>
-        <p>可询问院区介绍、参观流程、开放平台等信息</p>
+        <p>可询问光伏清洁无人机、风场检测无人机、服务与展厅须知</p>
       </div>
       <div className="message-list">
         {messages.map((m) => (

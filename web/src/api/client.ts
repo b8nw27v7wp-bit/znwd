@@ -3,6 +3,8 @@ export interface ChatSource {
   snippet: string;
   score: number;
   sourcePath: string;
+  zone?: string;
+  zoneTitle?: string;
 }
 
 export interface ChatResponse {
@@ -10,7 +12,9 @@ export interface ChatResponse {
   sources: ChatSource[];
   mode: 'rag' | 'llm_only';
   provider: string;
+  retrieval?: 'hybrid' | 'keyword';
   sessionId?: string | null;
+  latencyMs?: number;
 }
 
 export async function sendChat(
@@ -37,8 +41,9 @@ export async function sendChat(
   return (await res.json()) as ChatResponse;
 }
 
-export async function fetchSuggestions(): Promise<string[]> {
-  const res = await fetch('/api/suggestions');
+export async function fetchSuggestions(zone?: string): Promise<string[]> {
+  const qs = zone ? `?zone=${encodeURIComponent(zone)}` : '';
+  const res = await fetch(`/api/suggestions${qs}`);
   if (!res.ok) throw new Error(`suggestions ${res.status}`);
   const data = (await res.json()) as { items?: string[] };
   return data.items ?? [];

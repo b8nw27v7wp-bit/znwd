@@ -21,7 +21,7 @@ function welcomeMessages(): UiMessage[] {
     {
       id: 'welcome',
       role: 'assistant',
-      text: '您好，我是 AI 虚拟接待员。可以问我院区概况、参观流程或开放平台等问题。',
+      text: '您好，我是 AI 虚拟讲解员。可以问我光伏清洁无人机、风场检测无人机、作业流程或服务合作等问题。',
     },
   ];
 }
@@ -136,7 +136,7 @@ export default function App() {
         touch();
       }
     },
-    [busy, messages, sessionId, speak, stop, touch],
+    [busy, sessionId, speak, stop, touch],
   );
 
   return (

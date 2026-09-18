@@ -1,88 +1,75 @@
 # 企业知识库维护
 
-## 目录结构（展览分区）
+## 业务主题（当前）
 
-知识按**展区/专题**分目录，`_meta/zones.json` 定义分区、别名与推荐问题：
+- **光伏清洁无人机**（`01_光伏清洁无人机`，zone: `pv-clean`）  
+- **风场检测无人机**（`02_风场检测无人机`，zone: `wind-inspect`）  
+- 服务合作、展厅须知  
+
+替换正式资料时**保持目录 id 与 zones.json 的 `dir` 一致**即可，无需改代码。
+
+## 目录结构
 
 ```
 knowledge/
-  _meta/
-    zones.json          # 展区元数据 + 推荐问题 + 媒体映射
-  01_研究院概况/
-  02_开放平台/
-  03_参观指南/
-  90_通识/
+  _meta/zones.json      # 展区、别名、推荐问题、媒体 ID
+  01_光伏清洁无人机/*.md
+  02_风场检测无人机/*.md
+  03_服务与合作/*.md
+  90_通识/*.md
 ```
 
-- 跳过 `_meta/` 目录扫描（不进入检索）。
-- 每个专题目录下放 `.md` / `.txt`（可用 YAML frontmatter 覆盖 `title` / `zone` / `tags`）。
-
-示例 frontmatter：
-
-```markdown
----
-title: 参观接待流程
-zone: visit
-tags: 预约, 讲解, 开放日
----
-```
-
-未写 frontmatter 时：`zone` 由顶层目录名匹配 `zones.json` 的 `dir` 推断。
+- `_meta/` 不进入检索。  
+- 支持 YAML frontmatter：`title` / `zone` / `tags`。  
+- 未写 frontmatter 时，`zone` 由顶层目录名与 `zones.json.dir` 匹配。
 
 ## zones.json
 
 ```json
 {
   "zones": [
-    { "id": "visit", "dir": "03_参观指南", "title": "参观指南",
-      "aliases": ["参观", "预约"], "suggestions": ["…"] }
+    { "id": "pv-clean", "dir": "01_光伏清洁无人机", "title": "光伏清洁无人机",
+      "aliases": ["光伏", "清洁"], "suggestions": ["..."] }
   ],
   "media": [
-    { "mediaId": "exhibit-xxx", "title": "…", "zoneId": "visit" }
+    { "mediaId": "exhibit-pv-clean", "title": "光伏展项", "zoneId": "pv-clean" }
   ]
 }
 ```
 
-旁侧展览播放时，前端可调 `GET /api/suggestions?zone=<zoneId|mediaId>` 切换推荐问题。
+旁侧展览播放时：`GET /api/suggestions?zone=pv-clean` 或 `?zone=exhibit-pv-clean`。
 
-## Hybrid 检索（当前实现）
-
-问答检索为 **关键词 + 向量** 两路 RRF 融合：
+## Hybrid 检索
 
 | 路 | 说明 |
 |----|------|
 | 关键词 | 中文 bigram + 标题/标签/正文加权 |
-| 向量 | `EMBED_PROVIDER`：`bag`（离线哈希，默认）或 `openai_compat`（内网 embeddings） |
+| 向量 | `EMBED_PROVIDER=bag`（离线）或 `openai_compat`（内网 embeddings） |
+| 融合 | RRF |
 
-- 索引文件：`server/indexes/vectors.<provider>.json`（gitignore）。
-- `POST /api/knowledge/reload` 会重建两路索引。
+- 索引：`server/indexes/vectors.<provider>.json`（含内容指纹，知识变更自动重建）。  
+- `POST /api/knowledge/reload` 重建关键词 + 向量。
 
-### 切换到真实向量（推荐内网）
-
-`server/.env`：
+内网真实向量：
 
 ```
 EMBED_PROVIDER=openai_compat
 EMBED_BASE_URL=https://your-gateway/v1
 EMBED_API_KEY=...
-EMBED_MODEL=bge-small-zh   # 按网关实际模型名
+EMBED_MODEL=bge-small-zh
 ```
 
 ## 更新流程
 
-1. 在对应展区目录增删改 Markdown。  
-2. 如需改推荐/分区，改 `_meta/zones.json`。  
+1. 替换/新增对应展区 Markdown。  
+2. 更新 `_meta/zones.json`（如有新展区）。  
 3. `POST /api/knowledge/reload`。  
 4. `GET /api/knowledge/list` 确认 `chunkCount` 与 `retrieval.vector`。  
 
-## 检索验收口令
+## 验收问题示例
 
 | 问题 | 期望 |
 |------|------|
-| 智慧交通展区展示什么？ | 命中「展览区：智慧交通」 |
-| 开放日讲解多久？ | 命中「开放日与讲解」/参观指南 |
-| 如何接入开放平台？ | 命中开放平台文档 |
-
-## 与 LLM 关系
-
-命中片段拼进 system 的 `【企业知识】`；无命中为 `（无命中片段）`。详见 [api.md](./api.md)。
+| 光伏清洁无人机是做什么的？ | `01_光伏清洁无人机/产品概述` |
+| 叶片检测要停机吗？ | `02_风场检测无人机/叶片检测说明` |
+| 如何联系合作？ | `03_服务与合作` |

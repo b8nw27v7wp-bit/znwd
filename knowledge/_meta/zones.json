@@ -1,55 +1,55 @@
 {
   "zones": [
     {
-      "id": "overview",
-      "dir": "01_研究院概况",
-      "title": "研究院概况",
-      "aliases": ["研究院", "概况", "研究方向", "展览", "展区", "智慧交通"],
+      "id": "pv-clean",
+      "dir": "01_光伏清洁无人机",
+      "title": "光伏清洁无人机",
+      "aliases": ["光伏", "清洁", "清洗", "组件", "电站"],
       "suggestions": [
-        "研究院主要做哪些方向？",
-        "智慧交通展区展示什么？",
-        "参观请如何安排？"
+        "光伏清洁无人机是做什么的？",
+        "清洁作业流程是怎样的？",
+        "光伏展区展示什么？"
       ]
     },
     {
-      "id": "platform",
-      "dir": "02_开放平台",
-      "title": "智能网联开放平台",
-      "aliases": ["开放平台", "接入", "接口", "合作", "课题"],
+      "id": "wind-inspect",
+      "dir": "02_风场检测无人机",
+      "title": "风场检测无人机",
+      "aliases": ["风场", "风电", "叶片", "检测", "巡检"],
       "suggestions": [
-        "如何接入开放平台？",
-        "开放平台提供哪些服务？"
+        "风场检测无人机是做什么的？",
+        "叶片检测要停机吗？",
+        "风场展区展示什么？"
       ]
     },
     {
-      "id": "visit",
-      "dir": "03_参观指南",
-      "title": "参观指南",
-      "aliases": ["参观", "预约", "讲解", "开放日", "到访"],
+      "id": "service",
+      "dir": "03_服务与合作",
+      "title": "服务与合作",
+      "aliases": ["服务", "培训", "合作", "售后", "联系"],
       "suggestions": [
-        "参观需要预约吗？",
-        "能否现场参观？有讲解吗？",
-        "开放日如何安排？"
+        "提供培训吗？",
+        "如何联系合作？"
       ]
     },
     {
       "id": "safety",
       "dir": "90_通识",
-      "title": "观众须知",
-      "aliases": ["安全", "须知", "注意事项", "拍摄"],
+      "title": "展厅须知",
+      "aliases": ["安全", "须知", "参观", "拍照"],
       "suggestions": ["展厅有哪些安全注意事项？"]
     }
   ],
   "media": [
     {
-      "mediaId": "exhibit-smart-traffic",
-      "title": "智慧交通展项",
-      "zoneId": "overview"
+      "mediaId": "exhibit-pv-clean",
+      "title": "光伏清洁无人机展项",
+      "zoneId": "pv-clean"
     },
     {
-      "mediaId": "exhibit-open-platform",
-      "title": "开放平台展项",
-      "zoneId": "platform"
+      "mediaId": "exhibit-wind-inspect",
+      "title": "风场检测无人机展项",
+      "zoneId": "wind-inspect"
     }
   ]
 }

@@ -1,10 +1,12 @@
 import type { ZonesMeta } from './loader.js';
 
 const DEFAULT: string[] = [
-  '研究院主要做哪些方向？',
-  '参观需要预约吗？',
-  '能否现场参观？有讲解吗？',
-  '如何接入开放平台？',
+  '光伏清洁无人机是做什么的？',
+  '风场检测无人机是做什么的？',
+  '叶片检测要停机吗？',
+  '清洁作业流程是怎样的？',
+  '提供培训吗？',
+  '展厅有哪些安全注意事项？',
 ];
 
 export function allSuggestions(zonesMeta: ZonesMeta): string[] {

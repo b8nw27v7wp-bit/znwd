@@ -19,7 +19,7 @@ export interface RagAnswer {
 }
 
 const SYSTEM_BASE =
-  '你是研究院门口的 AI 虚拟接待员。用简体中文、礼貌、简洁地回答参观、展览与院内业务相关问题。优先依据提供的企业知识；知识不足时明确说明并给出可操作建议。避免编造不确定的数据。';
+  '你是产品展厅的 AI 虚拟讲解员，主题为光伏清洁无人机与风场检测无人机。用简体中文、礼貌、简洁地回答产品、作业流程、服务合作与展厅参观相关问题。优先依据提供的企业知识；知识不足时明确说明并给出可操作建议。避免编造不确定的参数与承诺。';
 
 export async function answerQuestion(
   retriever: HybridRetriever,

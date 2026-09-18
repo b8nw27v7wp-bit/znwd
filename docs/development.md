@@ -22,12 +22,13 @@ npm run start            # 以 server/dist 启动（需先 build）
 
 ## 本地验证清单
 
-1. `GET http://localhost:5173/api/health` → `ok: true`  
-2. 页面仅左侧约 1/3 有 UI（上形象、下聊天）；提问 Enter 发送  
-3. 右侧出现回答与「资料来源」；左侧进入朗读/口型  
-4. 无命中问题 → 提示「未命中内部资料」且 mock 文案为「暂未检索到」  
+1. `GET /api/health` → `ok: true`，`retrieval.mode=hybrid`  
+2. 页面左侧约 1/3 UI（上形象、下聊天）  
+3. 提问「光伏清洁无人机是做什么的？」→ sources 命中光伏文档并朗读  
+4. 提问「叶片检测要停机吗？」→ 命中风场检测文档  
+5. 无命中 → mock 文案「暂未在内部知识库中检索到」  
 
-联调请用 Node `fetch` 或浏览器；PowerShell `Invoke-RestMethod` 可能对中文 JSON 乱码。
+联调请用 Node `fetch` 或浏览器；PowerShell 中文 JSON 可能乱码。
 
 ## 目录规范
 
@@ -35,9 +36,11 @@ npm run start            # 以 server/dist 启动（需先 build）
 |------|--------|----------|
 | 根 `README.md` | 三分钟上手 | 长篇架构 |
 | `CHANGELOG.md` | 版本与迁移说明 | 日志流水 |
-| `docs/` | 架构、API、部署、开发约定 | 业务知识正文 |
-| `docs/compose/spec/` | 功能 Spec（设计+验收） | 重复 README |
-| `knowledge/` | **仅**进入 RAG 的企业文档 | 工程说明 |
+| `docs/` | 架构、API、部署、开发约定、排查记录 | 业务知识正文 |
+| `docs/compose/spec/` | 功能 Spec | 重复 README |
+| `knowledge/0x_*` | **仅**进入 RAG 的业务文档 | 工程说明 |
+| `knowledge/_meta/` | zones.json 展区元数据 | 长篇正文 |
+| `server/indexes/` | 本地向量索引 | 提交 git |
 | `server/src/` | API、RAG、LLM 适配 | UI 组件 |
 | `web/src/` | 界面与语音 | 直接读知识文件 |
 | `web/public/live2d/` | 模型资产与说明 | 源码 |

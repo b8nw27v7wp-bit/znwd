@@ -14,11 +14,29 @@ interface IndexFile {
   version: number;
   provider: string;
   dims: number;
+  fingerprint: string;
   updatedAt: string;
   items: Array<{ id: string; vector: number[] }>;
 }
 
 const INDEX_VERSION = 1;
+
+function fingerprintChunks(chunks: KnowledgeChunk[]): string {
+  const parts = chunks.map((c) => `${c.id}\u0001${c.title}\u0001${c.text.length}\u0001${hashStr(c.text)}`);
+  parts.sort();
+  return hashStr(parts.join('\n'));
+}
+
+function hashStr(s: string): string {
+  let h1 = 0x811c9dc5;
+  let h2 = 0x01000193;
+  for (let i = 0; i < s.length; i++) {
+    h1 ^= s.charCodeAt(i);
+    h1 = Math.imul(h1, 0x01000193);
+    h2 = (h2 + s.charCodeAt(i) * 31) | 0;
+  }
+  return `${(h1 >>> 0).toString(16)}-${(h2 >>> 0).toString(16)}`;
+}
 
 /** 本地 JSON 向量库：中小知识库够用，零外部服务 */
 export class VectorStore {
@@ -26,6 +44,7 @@ export class VectorStore {
   private byId = new Map<string, KnowledgeChunk>();
   private providerName = '';
   private dims = 0;
+  private fingerprint = '';
 
   constructor(
     private readonly embedder: EmbeddingProvider,
@@ -33,13 +52,14 @@ export class VectorStore {
   ) {}
 
   private embedText(chunk: KnowledgeChunk): string {
-    return `${chunk.title}\n${chunk.zoneTitle || ''}\n${chunk.text}`;
+    return `${chunk.title}\n${chunk.zoneTitle || ''}\n${chunk.tags?.join(' ') || ''}\n${chunk.text}`;
   }
 
   async build(chunks: KnowledgeChunk[]): Promise<void> {
     this.byId.clear();
     this.vectors.clear();
     this.providerName = this.embedder.name;
+    this.fingerprint = fingerprintChunks(chunks);
 
     const BATCH = 32;
     for (let i = 0; i < chunks.length; i += BATCH) {
@@ -61,6 +81,7 @@ export class VectorStore {
       version: INDEX_VERSION,
       provider: this.providerName,
       dims: this.dims,
+      fingerprint: this.fingerprint,
       updatedAt: new Date().toISOString(),
       items: chunks.map((c) => ({ id: c.id, vector: this.vectors.get(c.id) || [] })),
     };
@@ -68,18 +89,20 @@ export class VectorStore {
     await fs.writeFile(this.indexFile, JSON.stringify(payload), 'utf8');
   }
 
-  /** 索引文件存在且 provider 一致时尝试加载（chunks 仍以 loader 为准） */
+  /** 指纹/provider/条数一致才复用索引，避免知识正文变更后仍用旧向量 */
   async tryLoad(chunks: KnowledgeChunk[]): Promise<boolean> {
     this.byId.clear();
     for (const c of chunks) this.byId.set(c.id, c);
 
+    const fp = fingerprintChunks(chunks);
     try {
       const raw = await fs.readFile(this.indexFile, 'utf8');
       const data = JSON.parse(raw) as IndexFile;
       if (
         data.version !== INDEX_VERSION ||
         data.provider !== this.embedder.name ||
-        !Array.isArray(data.items)
+        !Array.isArray(data.items) ||
+        data.fingerprint !== fp
       ) {
         return false;
       }
@@ -92,7 +115,12 @@ export class VectorStore {
           ok++;
         }
       }
-      return ok > 0 && ok === chunks.length;
+      if (ok > 0 && ok === chunks.length) {
+        this.providerName = this.embedder.name;
+        this.fingerprint = fp;
+        return true;
+      }
+      return false;
     } catch {
       return false;
     }
@@ -108,7 +136,7 @@ export class VectorStore {
       const chunk = this.byId.get(id);
       if (!chunk) continue;
       const score = cosine(q, vec);
-      if (score > 0) hits.push({ id, score, chunk });
+      hits.push({ id, score, chunk });
     }
     hits.sort((a, b) => b.score - a.score);
     return hits.slice(0, topK);
@@ -119,6 +147,7 @@ export class VectorStore {
       provider: this.providerName || this.embedder.name,
       dims: this.dims,
       vectors: this.vectors.size,
+      fingerprint: this.fingerprint,
       indexFile: this.indexFile,
     };
   }

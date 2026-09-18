@@ -1,15 +1,13 @@
 import type { FastifyInstance } from 'fastify';
 import path from 'node:path';
-import { loadKnowledge } from '../knowledge/loader.js';
+import { loadKnowledge, loadZonesMeta } from '../knowledge/loader.js';
 import type { HybridRetriever } from '../knowledge/hybridRetriever.js';
-import type { ZonesMeta } from '../knowledge/loader.js';
 
 export function registerKnowledgeRoutes(
   app: FastifyInstance,
   deps: {
     retriever: HybridRetriever;
     knowledgeDir: string;
-    zonesMeta: () => ZonesMeta;
   },
 ): void {
   const { knowledgeDir, retriever } = deps;
@@ -17,7 +15,10 @@ export function registerKnowledgeRoutes(
   app.get('/api/knowledge/list', async () => {
     const root = path.resolve(knowledgeDir);
     const chunks = retriever.list();
-    const byFile = new Map<string, { title: string; zone: string; zoneTitle: string; chunks: number }>();
+    const byFile = new Map<
+      string,
+      { title: string; zone: string; zoneTitle: string; chunks: number }
+    >();
     for (const c of chunks) {
       const prev = byFile.get(c.sourcePath);
       if (prev) prev.chunks++;
@@ -29,7 +30,7 @@ export function registerKnowledgeRoutes(
           chunks: 1,
         });
     }
-    const meta = deps.zonesMeta();
+    const meta = await loadZonesMeta(knowledgeDir);
     return {
       knowledgeDir: root,
       fileCount: byFile.size,
@@ -45,18 +46,16 @@ export function registerKnowledgeRoutes(
   app.post('/api/knowledge/reload', async () => {
     const chunks = await loadKnowledge(knowledgeDir);
     await retriever.replace(chunks);
+    const byFile = new Map<string, number>();
+    for (const c of chunks) byFile.set(c.sourcePath, (byFile.get(c.sourcePath) || 0) + 1);
     return {
       ok: true,
       knowledgeChunks: chunks.length,
       retrieval: retriever.stats(),
-      files: (() => {
-        const byFile = new Map<string, number>();
-        for (const c of chunks) byFile.set(c.sourcePath, (byFile.get(c.sourcePath) || 0) + 1);
-        return [...byFile.entries()].map(([sourcePath, chunkCount]) => ({
-          sourcePath,
-          chunks: chunkCount,
-        }));
-      })(),
+      files: [...byFile.entries()].map(([sourcePath, chunkCount]) => ({
+        sourcePath,
+        chunks: chunkCount,
+      })),
     };
   });
 }

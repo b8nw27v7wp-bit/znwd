@@ -1,40 +1,40 @@
 # 项目文档
 
-研究院门口 AI 虚拟接待问答（`znwd`）的文档索引。
+产品展厅 AI 虚拟讲解问答（`znwd`）——当前业务：**光伏清洁无人机 / 风场检测无人机**。
 
 ## 文档一览
 
 | 文档 | 用途 |
 |------|------|
-| [../README.md](../README.md) | 快速开始、目录一览、常见替换操作 |
+| [../README.md](../README.md) | 快速开始、目录一览 |
 | [architecture.md](./architecture.md) | 系统架构、模块边界、数据流 |
 | [api.md](./api.md) | HTTP API 契约 |
 | [development.md](./development.md) | 本地开发、目录规范、提交约定 |
-| [knowledge.md](./knowledge.md) | 企业知识库维护与热更新 |
-| [deployment.md](./deployment.md) | 展厅/一体机部署与运行注意 |
-| [compose/spec/virtual-receptionist.md](./compose/spec/virtual-receptionist.md) | 功能 Spec：框架 v0.1 |
-| [compose/spec/reception-ux.md](./compose/spec/reception-ux.md) | 功能 Spec：接待体验 v0.2 |
+| [knowledge.md](./knowledge.md) | 知识库分区维护与 Hybrid 检索 |
+| [deployment.md](./deployment.md) | 展厅/一体机部署 |
+| [code-review.md](./code-review.md) | 代码排查与已修 bug 记录 |
+| [compose/spec/](./compose/spec/) | 历史功能 Spec |
 | [../CHANGELOG.md](../CHANGELOG.md) | 版本变更记录 |
-
-## 阅读路径
-
-- **第一次上手**：README → development → architecture  
-- **对接/联调**：api → knowledge  
-- **上机部署**：deployment  
-- **追溯设计**：compose/spec → CHANGELOG  
 
 ## 目录约定
 
 ```
-docs/                  # 项目文档（本目录，除知识库业务正文外只放工程文档）
-knowledge/             # 面向问答的企业知识正文（业务数据，可整目录替换）
-server/                # 后端 API 与 RAG
-web/                   # 前端对话与虚拟形象
+docs/                  # 工程文档（不含业务知识正文）
+knowledge/             # RAG 业务知识（按展区子目录 + _meta/zones.json）
+  _meta/               # 展区元数据；不进入检索
+  01_光伏清洁无人机/
+  02_风场检测无人机/
+  03_服务与合作/
+  90_通识/
+server/                # Fastify + Hybrid RAG + LLM/Embedding
+  indexes/             # 本地向量索引（gitignore）
+web/                   # Vite React：左 1/3 形象 + 下方对话
 ```
 
 规则：
 
-1. 工程说明、API、架构、变更 → `docs/` 或根 `README.md` / `CHANGELOG.md`。  
-2. 进入检索的知识正文 → 仅 `knowledge/`，勿混入架构说明。  
-3. 单次功能的完整设计/验收 → `docs/compose/spec/<feature>.md`。  
-4. 运行日志、`.env`、`dist/` 不入库（见 `.gitignore`）。  
+1. 工程说明 → `docs/` 或根 `README` / `CHANGELOG`。  
+2. 进入检索的知识 → 仅 `knowledge/` 业务子目录。  
+3. 展区/推荐问题/媒体映射 → `knowledge/_meta/zones.json`。  
+4. `.env`、`dist/`、`server/indexes/`、日志不入库。  
+5. Spec → `docs/compose/spec/<feature>.md`。  
