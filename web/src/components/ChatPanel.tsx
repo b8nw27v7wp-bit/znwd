@@ -8,11 +8,6 @@ interface ChatPanelProps {
   suggestions: string[];
   showSuggestions: boolean;
   onSuggest: (q: string) => void;
-  muted: boolean;
-  speaking: boolean;
-  onToggleMute: () => void;
-  onStopSpeak: () => void;
-  onReset: () => void;
 }
 
 export function ChatPanel({
@@ -22,11 +17,6 @@ export function ChatPanel({
   suggestions,
   showSuggestions,
   onSuggest,
-  muted,
-  speaking,
-  onToggleMute,
-  onStopSpeak,
-  onReset,
 }: ChatPanelProps) {
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -36,34 +26,6 @@ export function ChatPanel({
 
   return (
     <div className="chat-panel">
-      <div className="chat-toolbar" aria-label="功能选项">
-        <button
-          type="button"
-          className="tool-btn"
-          onClick={onToggleMute}
-          aria-pressed={muted}
-          title={muted ? '开启朗读' : '静音'}
-        >
-          {muted ? '开声' : '静音'}
-        </button>
-        <button
-          type="button"
-          className="tool-btn"
-          onClick={onStopSpeak}
-          disabled={!speaking}
-          title="停止朗读"
-        >
-          停止
-        </button>
-        <button
-          type="button"
-          className="tool-btn"
-          onClick={onReset}
-          title="重新开始"
-        >
-          重置
-        </button>
-      </div>
       <div className="chat-header">
         <h1>对话咨询</h1>
         <p>可询问院区介绍、参观流程、开放平台等信息</p>
@@ -101,6 +63,34 @@ export function ChatPanel({
             ? '语音服务不可用，仍可文字提问'
             : '回答将自动语音朗读'}
       </p>
+      <div className="chat-toolbar" aria-label="功能选项">
+        <button
+          type="button"
+          className="tool-btn"
+          onClick={onToggleMute}
+          aria-pressed={muted}
+          title={muted ? '开启朗读' : '静音'}
+        >
+          {muted ? '开声' : '静音'}
+        </button>
+        <button
+          type="button"
+          className="tool-btn"
+          onClick={onStopSpeak}
+          disabled={!speaking}
+          title="停止朗读"
+        >
+          停止
+        </button>
+        <button
+          type="button"
+          className="tool-btn"
+          onClick={onReset}
+          title="重新开始"
+        >
+          重置
+        </button>
+      </div>
     </div>
   );
 }

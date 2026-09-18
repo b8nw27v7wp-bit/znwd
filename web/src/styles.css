@@ -211,8 +211,20 @@
   display: flex;
   gap: 6px;
   align-items: center;
-  justify-content: flex-end;
-  padding: 8px 14px 0;
+  justify-content: flex-start;
+  padding: 0 14px 6px;
+}
+
+.chat-footer {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid #f0f0f2;
+  background: #fff;
+}
+
+.chat-footer .composer {
+  border-top: none;
+  padding-top: 0;
 }
 
 .tool-btn {

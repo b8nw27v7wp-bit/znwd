@@ -160,13 +160,38 @@ export default function App() {
             suggestions={suggestions}
             showSuggestions={showSuggestions}
             onSuggest={handleSend}
-            muted={muted}
-            speaking={speechState === 'speaking'}
-            onToggleMute={toggleMute}
-            onStopSpeak={stop}
-            onReset={resetConversation}
           />
-          <Composer onSend={handleSend} busy={busy} onTouch={touch} />
+          <div className="chat-footer">
+            <div className="chat-toolbar" aria-label="功能选项">
+              <button
+                type="button"
+                className="tool-btn"
+                onClick={toggleMute}
+                aria-pressed={muted}
+                title={muted ? '开启朗读' : '静音'}
+              >
+                {muted ? '开声' : '静音'}
+              </button>
+              <button
+                type="button"
+                className="tool-btn"
+                onClick={stop}
+                disabled={speechState !== 'speaking'}
+                title="停止朗读"
+              >
+                停止
+              </button>
+              <button
+                type="button"
+                className="tool-btn"
+                onClick={resetConversation}
+                title="重新开始"
+              >
+                重置
+              </button>
+            </div>
+            <Composer onSend={handleSend} busy={busy} onTouch={touch} />
+          </div>
         </div>
       </section>
       <div className="blank" aria-hidden="true" />
