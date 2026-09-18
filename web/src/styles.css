@@ -409,8 +409,7 @@
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 8px;
-  padding: 8px 14px 12px;
-  border-top: 1px solid #f0f0f2;
+  padding: 0 14px 12px;
   background: #fff;
   align-items: center;
 }

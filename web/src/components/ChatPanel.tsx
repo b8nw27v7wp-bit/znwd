@@ -63,34 +63,6 @@ export function ChatPanel({
             ? '语音服务不可用，仍可文字提问'
             : '回答将自动语音朗读'}
       </p>
-      <div className="chat-toolbar" aria-label="功能选项">
-        <button
-          type="button"
-          className="tool-btn"
-          onClick={onToggleMute}
-          aria-pressed={muted}
-          title={muted ? '开启朗读' : '静音'}
-        >
-          {muted ? '开声' : '静音'}
-        </button>
-        <button
-          type="button"
-          className="tool-btn"
-          onClick={onStopSpeak}
-          disabled={!speaking}
-          title="停止朗读"
-        >
-          停止
-        </button>
-        <button
-          type="button"
-          className="tool-btn"
-          onClick={onReset}
-          title="重新开始"
-        >
-          重置
-        </button>
-      </div>
     </div>
   );
 }
