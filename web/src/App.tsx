@@ -152,19 +152,60 @@ export default function App() {
         <div className="rail-top">
           <Live2DStage mood={mood} />
           <div className="voice-controls">
-            <button type="button" onClick={toggleMute} className="ghost">
-              {muted ? '开启朗读' : '静音'}
+            <button
+              type="button"
+              onClick={toggleMute}
+              className="ghost icon-btn"
+              aria-label={muted ? '开启朗读' : '静音'}
+              title={muted ? '开启朗读' : '静音'}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  d="M2 6.5h2.5L8 3.5v9L4.5 9.5H2v-3z"
+                  fill="currentColor"
+                />
+                {muted ? (
+                  <path d="M10.5 6l3.5 4M14 6l-3.5 4" stroke="currentColor" strokeWidth="1.4" fill="none" />
+                ) : (
+                  <path
+                    d="M10.5 6.2c.9.8.9 2.8 0 3.6M12.2 4.8c1.6 1.4 1.6 5 0 6.4"
+                    stroke="currentColor"
+                    strokeWidth="1.3"
+                    fill="none"
+                    strokeLinecap="round"
+                  />
+                )}
+              </svg>
             </button>
             <button
               type="button"
               onClick={stop}
-              className="ghost"
+              className="ghost icon-btn"
               disabled={speechState !== 'speaking'}
+              aria-label="停止朗读"
+              title="停止朗读"
             >
-              停止朗读
+              <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+                <rect x="4" y="4" width="8" height="8" rx="1" fill="currentColor" />
+              </svg>
             </button>
-            <button type="button" onClick={resetConversation} className="ghost">
-              重新开始
+            <button
+              type="button"
+              onClick={resetConversation}
+              className="ghost icon-btn"
+              aria-label="重新开始"
+              title="重新开始"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  d="M12.5 8a4.5 4.5 0 1 1-1.3-3.2"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  fill="none"
+                  strokeLinecap="round"
+                />
+                <path d="M11 2.5v3h3" stroke="currentColor" strokeWidth="1.4" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
             </button>
             {!voiceReady && <span className="warn">当前浏览器不支持语音合成</span>}
           </div>
