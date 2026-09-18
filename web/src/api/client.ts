@@ -13,12 +13,6 @@ export interface ChatResponse {
   sessionId?: string | null;
 }
 
-export interface HealthResponse {
-  ok: boolean;
-  knowledgeChunks?: number;
-  llmProvider?: string;
-}
-
 export async function sendChat(
   message: string,
   sessionId?: string,
@@ -48,10 +42,4 @@ export async function fetchSuggestions(): Promise<string[]> {
   if (!res.ok) throw new Error(`suggestions ${res.status}`);
   const data = (await res.json()) as { items?: string[] };
   return data.items ?? [];
-}
-
-export async function fetchHealth(): Promise<HealthResponse> {
-  const res = await fetch('/api/health');
-  if (!res.ok) throw new Error(`health ${res.status}`);
-  return (await res.json()) as HealthResponse;
 }

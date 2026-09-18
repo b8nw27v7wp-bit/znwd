@@ -36,13 +36,6 @@ export function Live2DStage({ mood }: Live2DStageProps) {
 
   return (
     <div className="stage" data-mood={mood} aria-label="虚拟接待员形象">
-      <div className="stage-badge">
-        {mood === 'speaking'
-          ? '正在朗读'
-          : mood === 'thinking'
-            ? '思考中'
-            : '待机'}
-      </div>
       <div className={`avatar bounce-${bounce}`}>
         <div className="avatar-glow" />
         <div className="avatar-head">
@@ -62,10 +55,6 @@ export function Live2DStage({ mood }: Live2DStageProps) {
           <div className="avatar-collar" />
         </div>
       </div>
-      <p className="stage-caption">AI 虚拟接待员 · Live2D 就绪</p>
-      <p className="stage-hint">
-        可将 Cubism 模型放入 public/live2d 后替换此占位层
-      </p>
     </div>
   );
 }

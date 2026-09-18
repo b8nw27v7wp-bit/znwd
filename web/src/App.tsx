@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { fetchHealth, fetchSuggestions, sendChat } from './api/client';
+import { fetchSuggestions, sendChat } from './api/client';
 import { ChatPanel } from './components/ChatPanel';
 import { Composer } from './components/Composer';
 import { Live2DStage } from './components/Live2DStage';
@@ -7,7 +7,6 @@ import { useSpeech } from './hooks/useSpeech';
 import type { UiMessage } from './components/MessageBubble';
 
 const IDLE_MS = 120_000;
-const HEALTH_MS = 15_000;
 
 function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -32,7 +31,6 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [sessionId, setSessionId] = useState(() => newSessionId());
   const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [online, setOnline] = useState<'connecting' | 'online' | 'offline'>('connecting');
   const [voiceReady, setVoiceReady] = useState(
     () => typeof window !== 'undefined' && 'speechSynthesis' in window,
   );
@@ -78,26 +76,6 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-
-    const probe = async () => {
-      try {
-        await fetchHealth();
-        if (!cancelled) setOnline('online');
-      } catch {
-        if (!cancelled) setOnline('offline');
-      }
-    };
-
-    probe();
-    const timer = window.setInterval(probe, HEALTH_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, []);
-
-  useEffect(() => {
     const bump = () => touch();
     const events: (keyof WindowEventMap)[] = [
       'pointerdown',
@@ -136,10 +114,6 @@ export default function App() {
 
       const userMsg: UiMessage = { id: uid(), role: 'user', text };
       setMessages((prev) => [...prev, userMsg]);
-      // 打过招呼后不再常驻推荐（复位后由 welcome 状态恢复）
-      if (messages[0]?.id === 'welcome' && messages.length > 1) {
-        // no-op; showSuggestions already derived from length
-      }
 
       try {
         const data = await sendChat(text, sessionId);
@@ -151,16 +125,12 @@ export default function App() {
           sources: data.sources?.map((s) => ({ title: s.title, snippet: s.snippet })),
         };
         setMessages((prev) => [...prev, botMsg]);
-        setOnline('online');
         if (typeof speechSynthesis !== 'undefined') {
           speak(data.answer);
         } else {
           setVoiceReady(false);
         }
       } catch (err) {
-        if (err instanceof TypeError || (err instanceof Error && /fetch|network/i.test(err.message))) {
-          setOnline('offline');
-        }
         const fail: UiMessage = {
           id: uid(),
           role: 'assistant',
@@ -207,7 +177,6 @@ export default function App() {
             suggestions={suggestions}
             showSuggestions={showSuggestions}
             onSuggest={handleSend}
-            online={online}
           />
           <Composer onSend={handleSend} busy={busy} onTouch={touch} />
         </div>

@@ -48,22 +48,10 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 0;
   position: relative;
   min-height: 180px;
   padding: 14px 12px 4px;
-}
-
-.stage-badge {
-  position: absolute;
-  top: 20px;
-  left: 20px;
-  font-size: 12px;
-  color: #6e6e73;
-  background: #fff;
-  border: 1px solid #e8e8ed;
-  border-radius: 999px;
-  padding: 4px 10px;
 }
 
 .avatar {
@@ -210,21 +198,6 @@
   background: #f5f5f7;
 }
 
-.stage-caption {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.stage-hint {
-  margin: 0;
-  font-size: 11px;
-  color: #6e6e73;
-  text-align: center;
-  max-width: 180px;
-  line-height: 1.4;
-}
-
 .voice-controls {
   display: flex;
   gap: 6px;
@@ -270,13 +243,6 @@
   border-bottom: 1px solid #f0f0f2;
 }
 
-.chat-header-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
-
 .chat-header h1 {
   margin: 0 0 4px;
   font-size: 16px;
@@ -288,35 +254,6 @@
   margin: 0;
   color: #6e6e73;
   font-size: 12px;
-}
-
-.status-pill {
-  flex-shrink: 0;
-  font-size: 12px;
-  border-radius: 999px;
-  padding: 4px 10px;
-  border: 1px solid #d2d2d7;
-  background: #fff;
-  color: #6e6e73;
-  white-space: nowrap;
-}
-
-.status-online {
-  border-color: #c7e0c3;
-  background: #f3faf2;
-  color: #1d6b1d;
-}
-
-.status-offline {
-  border-color: #f0c2c2;
-  background: #fff5f5;
-  color: #a4262c;
-}
-
-.status-connecting {
-  border-color: #e8e8ed;
-  background: #f5f5f7;
-  color: #6e6e73;
 }
 
 .suggestions {

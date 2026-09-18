@@ -8,7 +8,6 @@ interface ChatPanelProps {
   suggestions: string[];
   showSuggestions: boolean;
   onSuggest: (q: string) => void;
-  online: 'connecting' | 'online' | 'offline';
 }
 
 export function ChatPanel({
@@ -18,7 +17,6 @@ export function ChatPanel({
   suggestions,
   showSuggestions,
   onSuggest,
-  online,
 }: ChatPanelProps) {
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -26,25 +24,11 @@ export function ChatPanel({
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, busy, showSuggestions]);
 
-  const statusText =
-    online === 'online' ? '在线' : online === 'connecting' ? '连接中…' : '服务未连接';
-
   return (
     <div className="chat-panel">
       <div className="chat-header">
-        <div className="chat-header-row">
-          <div>
-            <h1>对话咨询</h1>
-            <p>可询问院区介绍、参观流程、开放平台等信息</p>
-          </div>
-          <span
-            className={`status-pill status-${online}`}
-            role="status"
-            aria-live="polite"
-          >
-            {statusText}
-          </span>
-        </div>
+        <h1>对话咨询</h1>
+        <p>可询问院区介绍、参观流程、开放平台等信息</p>
       </div>
       <div className="message-list">
         {messages.map((m) => (
