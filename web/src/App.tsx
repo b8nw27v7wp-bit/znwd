@@ -31,9 +31,6 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [sessionId, setSessionId] = useState(() => newSessionId());
   const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [voiceReady, setVoiceReady] = useState(
-    () => typeof window !== 'undefined' && 'speechSynthesis' in window,
-  );
   const lastActiveRef = useRef(Date.now());
   const busyRef = useRef(false);
   const { state: speechState, speak, stop, muted, toggleMute } = useSpeech();
@@ -125,11 +122,7 @@ export default function App() {
           sources: data.sources?.map((s) => ({ title: s.title, snippet: s.snippet })),
         };
         setMessages((prev) => [...prev, botMsg]);
-        if (typeof speechSynthesis !== 'undefined') {
-          speak(data.answer);
-        } else {
-          setVoiceReady(false);
-        }
+        speak(data.answer);
       } catch (err) {
         const fail: UiMessage = {
           id: uid(),
@@ -156,7 +149,6 @@ export default function App() {
           <ChatPanel
             messages={messages}
             busy={busy}
-            disabled={!voiceReady}
             suggestions={suggestions}
             showSuggestions={showSuggestions}
             onSuggest={handleSend}

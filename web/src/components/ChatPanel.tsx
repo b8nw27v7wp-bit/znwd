@@ -4,7 +4,6 @@ import { MessageBubble, type UiMessage } from './MessageBubble';
 interface ChatPanelProps {
   messages: UiMessage[];
   busy: boolean;
-  disabled: boolean;
   suggestions: string[];
   showSuggestions: boolean;
   onSuggest: (q: string) => void;
@@ -13,7 +12,6 @@ interface ChatPanelProps {
 export function ChatPanel({
   messages,
   busy,
-  disabled,
   suggestions,
   showSuggestions,
   onSuggest,
@@ -56,13 +54,6 @@ export function ChatPanel({
         )}
         <div ref={endRef} />
       </div>
-      <p className="panel-foot">
-        {busy
-          ? '回答生成中，请稍候'
-          : disabled
-            ? '语音服务不可用，仍可文字提问'
-            : '回答将自动语音朗读'}
-      </p>
     </div>
   );
 }
