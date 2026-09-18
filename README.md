@@ -61,8 +61,9 @@ znwd/
 ## 常用 API
 
 - `GET /api/health`
-- `GET /api/suggestions`
-- `POST /api/chat` — `{ "message": "...", "sessionId": "..." }`（同会话多轮）
+- `GET /api/suggestions`（`?zone=` 按展区）
+- `GET /api/zones`
+- `POST /api/chat` — `{ "message": "...", "sessionId": "..." }`（Hybrid RAG）
 - `GET|DELETE /api/sessions/:sessionId`
 - `POST /api/feedback` — `{ "rating": "up"|"down" }`
 - `GET /api/stats`

@@ -1,30 +1,43 @@
 import type { ChatMessage, ChatModel } from '../llm/types.js';
-import type { Retriever } from '../knowledge/retriever.js';
+import type { HybridHit, HybridRetriever } from '../knowledge/hybridRetriever.js';
 
 export interface RagAnswer {
   answer: string;
-  sources: Array<{ title: string; snippet: string; score: number; sourcePath: string }>;
+  sources: Array<{
+    title: string;
+    snippet: string;
+    score: number;
+    sourcePath: string;
+    zone?: string;
+    zoneTitle?: string;
+    vectorScore?: number;
+    keywordScore?: number;
+  }>;
   mode: 'rag' | 'llm_only';
   provider: string;
+  retrieval: 'hybrid' | 'keyword';
 }
 
 const SYSTEM_BASE =
-  '你是研究院门口的 AI 虚拟接待员。用简体中文、礼貌、简洁地回答参观与院内业务相关问题。优先依据提供的企业知识；知识不足时明确说明并给出可操作建议。避免编造不确定的数据。';
+  '你是研究院门口的 AI 虚拟接待员。用简体中文、礼貌、简洁地回答参观、展览与院内业务相关问题。优先依据提供的企业知识；知识不足时明确说明并给出可操作建议。避免编造不确定的数据。';
 
 export async function answerQuestion(
-  retriever: Retriever,
+  retriever: HybridRetriever,
   model: ChatModel,
   message: string,
   options: { topK?: number; history?: ChatMessage[] } = {},
 ): Promise<RagAnswer> {
   const topK = options.topK ?? 4;
   const history = (options.history ?? []).slice(-12);
-  const hits = retriever.retrieve(message, topK);
+  const hits: HybridHit[] = await retriever.retrieve(message, topK);
   const messages: ChatMessage[] = [];
 
   if (hits.length > 0) {
     const contextBlock = hits
-      .map((h, i) => `【片段 ${i + 1}｜${h.title}｜${h.sourcePath}】\n${h.text}`)
+      .map(
+        (h, i) =>
+          `【片段 ${i + 1}｜${h.title}｜${h.zoneTitle || h.zone || ''}｜${h.sourcePath}】\n${h.text}`,
+      )
       .join('\n\n');
     messages.push({
       role: 'system',
@@ -48,10 +61,15 @@ export async function answerQuestion(
     sources: hits.map((h) => ({
       title: h.title,
       snippet: h.text.slice(0, 160),
-      score: Number(h.score.toFixed(4)),
+      score: Number((h.score ?? 0).toFixed(4)),
       sourcePath: h.sourcePath,
+      zone: h.zone,
+      zoneTitle: h.zoneTitle,
+      vectorScore: h.vectorScore,
+      keywordScore: h.keywordScore,
     })),
     mode: hits.length > 0 ? 'rag' : 'llm_only',
     provider: result.provider,
+    retrieval: 'hybrid',
   };
 }

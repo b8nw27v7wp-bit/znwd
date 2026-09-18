@@ -2,6 +2,24 @@
 
 本项目版本与变更记录。日期：YYYY-MM-DD。
 
+## [0.4.0] — 2026-09-17
+
+Hybrid RAG 落地。
+
+### Added
+
+- 知识库按展区目录重构 + `_meta/zones.json`（分区/推荐/媒体映射）  
+- Hybrid 检索：关键词 + 向量 **RRF** 融合  
+- Embedding 适配：`bag`（离线默认）/ `openai_compat`（内网向量 API）  
+- 向量索引持久化 `server/indexes/vectors.*.json`  
+- `GET /api/zones`；`GET /api/suggestions?zone=` 按展区切换推荐  
+- chat `sources` 带 `zone`/`vectorScore`/`keywordScore`；响应 `retrieval: hybrid`  
+
+### Notes
+
+- 生产建议 `EMBED_PROVIDER=openai_compat` + 中文 bge 类模型  
+- `bag` 仅为离线兜底，不是语义嵌入  
+
 ## [0.3.0] — 2026-09-17
 
 ### Added

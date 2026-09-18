@@ -11,3 +11,4 @@ coverage/
 *.tsbuildinfo
 dev.out.log
 dev.err.log
+server/indexes/

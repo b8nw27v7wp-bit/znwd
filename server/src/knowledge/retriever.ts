@@ -18,7 +18,6 @@ function isCjk(ch: string): boolean {
   );
 }
 
-/** 英文词 + 中文单字与二元组，提高中文短语命中 */
 function tokenize(text: string): string[] {
   const lower = text.toLowerCase().replace(/[^\p{L}\p{N}一-鿿]+/gu, ' ');
   const tokens: string[] = [];
@@ -55,14 +54,10 @@ function scoreText(queryTokens: string[], doc: string, titleBoost = 1): number {
       hit += weight * (1 + Math.log(1 + f));
     }
   }
-  if (titleBoost > 1) {
-    // 标题命中单独加权由调用方拼 title 文本体现
-    return (hit * titleBoost) / Math.sqrt(queryTokens.length + 1);
-  }
-  return hit / Math.sqrt(queryTokens.length + 1);
+  return (hit * titleBoost) / Math.sqrt(queryTokens.length + 1);
 }
 
-/** 轻量关键词检索（中文 bigram + 标题加权） */
+/** 关键词路：中文 bigram + 标题/标签加权 */
 export class Retriever {
   private chunks: KnowledgeChunk[] = [];
 
@@ -81,11 +76,9 @@ export class Retriever {
     const scored = this.chunks
       .map((c) => {
         const titleScore = scoreText(qTokens, c.title, 2.2);
+        const zoneScore = scoreText(qTokens, `${c.zone} ${c.zoneTitle} ${(c.tags || []).join(' ')}`, 1.5);
         const bodyScore = scoreText(qTokens, c.text, 1);
-        return {
-          ...c,
-          score: titleScore + bodyScore,
-        };
+        return { ...c, score: titleScore + zoneScore + bodyScore };
       })
       .filter((c) => c.score > 0)
       .sort((a, b) => b.score - a.score);

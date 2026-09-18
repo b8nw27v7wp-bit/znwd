@@ -3,8 +3,10 @@ import { fileURLToPath } from 'node:url';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import { createChatModel } from './llm/index.js';
-import { loadKnowledge } from './knowledge/loader.js';
-import { Retriever } from './knowledge/retriever.js';
+import { createEmbeddingProvider } from './embedding/index.js';
+import { loadKnowledge, loadZonesMeta, type ZonesMeta } from './knowledge/loader.js';
+import { VectorStore } from './knowledge/vectorStore.js';
+import { HybridRetriever } from './knowledge/hybridRetriever.js';
 import { registerChatRoutes } from './routes/chat.js';
 import { registerKnowledgeRoutes } from './routes/knowledge.js';
 import { SessionStore } from './session/store.js';
@@ -43,10 +45,22 @@ async function main() {
   const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
   const knowledgeDir = path.resolve(repoRoot, process.env.KNOWLEDGE_DIR || './knowledge');
   const chatPerMin = Number(process.env.CHAT_RATE_PER_MIN || 30);
+  const indexDir = path.resolve(
+    repoRoot,
+    process.env.INDEX_DIR || path.join('server', 'indexes'),
+  );
 
-  const retriever = new Retriever();
+  const embedder = createEmbeddingProvider(process.env);
+  const vectorStore = new VectorStore(
+    embedder,
+    path.join(indexDir, `vectors.${embedder.name}.json`),
+  );
+  const retriever = new HybridRetriever(vectorStore);
+
+  let zonesMeta: ZonesMeta = await loadZonesMeta(knowledgeDir);
   const initial = await loadKnowledge(knowledgeDir);
-  retriever.replace(initial);
+  await retriever.replace(initial);
+  zonesMeta = await loadZonesMeta(knowledgeDir);
 
   const model = createChatModel(process.env);
   const sessions = new SessionStore();
@@ -60,17 +74,38 @@ async function main() {
     ok: true,
     knowledgeChunks: retriever.list().length,
     llmProvider: model.name,
+    embedding: vectorStore.stats().provider,
+    retrieval: retriever.stats(),
     knowledgeDir,
     activeSessions: sessions.count(),
     uptimeSec: Math.floor(process.uptime()),
   }));
 
-  registerKnowledgeRoutes(app, { retriever, knowledgeDir });
-  registerChatRoutes(app, { retriever, model, sessions, analytics, chatLimiter });
+  registerKnowledgeRoutes(app, {
+    retriever,
+    knowledgeDir,
+    zonesMeta: () => zonesMeta,
+  });
+
+  registerChatRoutes(app, {
+    retriever,
+    model,
+    sessions,
+    analytics,
+    chatLimiter,
+    zonesMeta: () => zonesMeta,
+  });
+
+  // reload 后同步 zones
+  app.addHook('onResponse', async (req) => {
+    if (req.url === '/api/knowledge/reload' && req.method === 'POST') {
+      zonesMeta = await loadZonesMeta(knowledgeDir);
+    }
+  });
 
   await app.listen({ port, host });
   app.log.info(
-    `virtual-receptionist server on :${port}, knowledge=${knowledgeDir}, rate=${chatPerMin}/min`,
+    `server :${port} knowledge=${knowledgeDir} embed=${embedder.name} rate=${chatPerMin}/min`,
   );
 }
 

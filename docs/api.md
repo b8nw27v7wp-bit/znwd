@@ -35,26 +35,28 @@ Base URL：开发态经 Vite 代理为 `http://localhost:5173`；直连后端为
 
 ## GET /api/suggestions
 
-展厅推荐问题（固定 4 条，与示例知识对齐）。
+`?zone=` 可选：`zoneId` 或 `mediaId`（来自 `knowledge/_meta/zones.json`）。不传返回全馆汇总推荐。
 
 **200 示例**
 
 ```json
 {
-  "items": [
-    "研究院主要做哪些方向？",
-    "参观需要预约吗？",
-    "能否现场参观？有讲解吗？",
-    "如何接入开放平台？"
-  ]
+  "items": ["参观需要预约吗？", "能否现场参观？有讲解吗？", "开放日如何安排？"],
+  "zone": "visit"
 }
 ```
 
 ---
 
+## GET /api/zones
+
+返回展览分区与媒体映射（`zones.json`）。
+
+---
+
 ## POST /api/chat
 
-问答主接口。携带同一 `sessionId` 可保留最近多轮上下文（上限 6 轮，TTL 10 分钟，内存态）。
+问答主接口（**Hybrid RAG**：关键词 + 向量 RRF）。携带同一 `sessionId` 可保留最近多轮上下文。
 
 **请求**
 
@@ -85,16 +87,19 @@ Base URL：开发态经 Vite 代理为 `http://localhost:5173`；直连后端为
   ],
   "mode": "rag",
   "provider": "mock",
-  "sessionId": "optional-id"
+  "retrieval": "hybrid",
+  "sessionId": "optional-id",
+  "latencyMs": 3
 }
 ```
 
 | 字段 | 说明 |
 |------|------|
 | `answer` | 模型回复正文（前端用于气泡与 TTS） |
-| `sources` | 检索命中；`mode=llm_only` 时通常为空 |
+| `sources` | 检索命中；含 `zone`/`zoneTitle`/`keywordScore`/`vectorScore` |
 | `mode` | `rag` 有命中；`llm_only` 无命中仍生成 |
 | `provider` | 实际使用的 LLM 实现名 |
+| `retrieval` | 当前为 `hybrid` |
 
 **错误**
 
@@ -225,6 +230,10 @@ Base URL：开发态经 Vite 代理为 `http://localhost:5173`；直连后端为
 | `PORT` | `8787` | 监听端口 |
 | `HOST` | `0.0.0.0` | 监听地址；展厅本机可用 `127.0.0.1` |
 | `CHAT_RATE_PER_MIN` | `30` | 每 IP 每分钟 chat 上限 |
+| `EMBED_PROVIDER` | `bag` | `bag` \| `openai_compat` |
+| `EMBED_BASE_URL` | 可回落 `LLM_BASE_URL` | embeddings 接口 |
+| `EMBED_MODEL` | 空 | 向量模型名（openai_compat 必填） |
+| `INDEX_DIR` | `./server/indexes` | 向量索引目录 |
 
 ---
 

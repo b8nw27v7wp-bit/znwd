@@ -1,18 +1,20 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { answerQuestion } from '../rag/pipeline.js';
 import type { ChatModel } from '../llm/types.js';
-import type { Retriever } from '../knowledge/retriever.js';
+import type { HybridRetriever } from '../knowledge/hybridRetriever.js';
 import type { SessionStore } from '../session/store.js';
 import type { Analytics } from '../analytics/stats.js';
 import type { RateLimiter } from '../http/rateLimit.js';
-import { SUGGESTIONS } from '../knowledge/suggestions.js';
+import { suggestionsForZone } from '../knowledge/suggestions.js';
+import type { ZonesMeta } from '../knowledge/loader.js';
 
 interface RouteDeps {
-  retriever: Retriever;
+  retriever: HybridRetriever;
   model: ChatModel;
   sessions: SessionStore;
   analytics: Analytics;
   chatLimiter: RateLimiter;
+  zonesMeta: () => ZonesMeta;
 }
 
 function clientIp(req: FastifyRequest): string {
@@ -27,18 +29,19 @@ function sanitizeSessionId(raw: unknown): string | undefined {
 }
 
 export function registerChatRoutes(app: FastifyInstance, deps: RouteDeps): void {
-  app.get('/api/suggestions', async () => ({ items: [...SUGGESTIONS] }));
+  app.get<{ Querystring: { zone?: string } }>('/api/suggestions', async (req) => ({
+    items: suggestionsForZone(deps.zonesMeta(), req.query.zone),
+    zone: req.query.zone ?? null,
+  }));
+
+  app.get('/api/zones', async () => deps.zonesMeta());
 
   app.get<{ Params: { sessionId: string } }>('/api/sessions/:sessionId', async (req, reply) => {
     const id = sanitizeSessionId(req.params.sessionId);
     if (!id) return reply.code(400).send({ error: 'sessionId is required' });
     const data = deps.sessions.peek(id);
     if (!data) return reply.code(404).send({ error: 'session not found or expired' });
-    return {
-      sessionId: id,
-      messages: data.messages,
-      lastActive: data.lastActive,
-    };
+    return { sessionId: id, messages: data.messages, lastActive: data.lastActive };
   });
 
   app.delete<{ Params: { sessionId: string } }>('/api/sessions/:sessionId', async (req, reply) => {
@@ -104,6 +107,7 @@ export function registerChatRoutes(app: FastifyInstance, deps: RouteDeps): void 
         sources: result.sources,
         mode: result.mode,
         provider: result.provider,
+        retrieval: result.retrieval,
         sessionId: sessionId ?? null,
         latencyMs,
       };

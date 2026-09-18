@@ -1,45 +1,88 @@
 # 企业知识库维护
 
-## 位置与格式
+## 目录结构（展览分区）
 
-- 目录：仓库根 `knowledge/`（可用 `KNOWLEDGE_DIR` 指到别处）。  
-- 扩展名：`.md` / `.markdown` / `.txt`（递归子目录）。  
-- 标题：优先取首个 `# ` 一级标题；否则用文件名。  
-
-当前示例：
+知识按**展区/专题**分目录，`_meta/zones.json` 定义分区、别名与推荐问题：
 
 ```
 knowledge/
-├── 研究院概况.md
-├── 参观接待流程.md
-└── 智能网联开放平台.md
+  _meta/
+    zones.json          # 展区元数据 + 推荐问题 + 媒体映射
+  01_研究院概况/
+  02_开放平台/
+  03_参观指南/
+  90_通识/
 ```
 
-## 写入原则
+- 跳过 `_meta/` 目录扫描（不进入检索）。
+- 每个专题目录下放 `.md` / `.txt`（可用 YAML frontmatter 覆盖 `title` / `zone` / `tags`）。
 
-1. **一问可答**：尽量短段落，段间空行，避免大段无结构粘贴。  
-2. **可检索**：正文出现与真实提问一致的关键词（参观、预约、开放平台…）。  
-3. **勿混工程文**：架构/API 不要放进 `knowledge/`，见 [development.md](./development.md)。  
-4. **密级**：仅放允许在展厅内网检索的内容；密级文档须另做权限方案（当前阶段无权限体系）。  
-5. **可替换**：整目录备份后替换即可，无需改代码。  
+示例 frontmatter：
 
-## 切块行为
+```markdown
+---
+title: 参观接待流程
+zone: visit
+tags: 预约, 讲解, 开放日
+---
+```
 
-`server/src/knowledge/loader.ts` 按空行分段，约 500 字符一块，过长再硬切。过细的标题层级有利于多块命中。
+未写 frontmatter 时：`zone` 由顶层目录名匹配 `zones.json` 的 `dir` 推断。
+
+## zones.json
+
+```json
+{
+  "zones": [
+    { "id": "visit", "dir": "03_参观指南", "title": "参观指南",
+      "aliases": ["参观", "预约"], "suggestions": ["…"] }
+  ],
+  "media": [
+    { "mediaId": "exhibit-xxx", "title": "…", "zoneId": "visit" }
+  ]
+}
+```
+
+旁侧展览播放时，前端可调 `GET /api/suggestions?zone=<zoneId|mediaId>` 切换推荐问题。
+
+## Hybrid 检索（当前实现）
+
+问答检索为 **关键词 + 向量** 两路 RRF 融合：
+
+| 路 | 说明 |
+|----|------|
+| 关键词 | 中文 bigram + 标题/标签/正文加权 |
+| 向量 | `EMBED_PROVIDER`：`bag`（离线哈希，默认）或 `openai_compat`（内网 embeddings） |
+
+- 索引文件：`server/indexes/vectors.<provider>.json`（gitignore）。
+- `POST /api/knowledge/reload` 会重建两路索引。
+
+### 切换到真实向量（推荐内网）
+
+`server/.env`：
+
+```
+EMBED_PROVIDER=openai_compat
+EMBED_BASE_URL=https://your-gateway/v1
+EMBED_API_KEY=...
+EMBED_MODEL=bge-small-zh   # 按网关实际模型名
+```
 
 ## 更新流程
 
-1. 编辑或新增 `knowledge/` 下文件。  
-2. 调 `POST /api/knowledge/reload`，或重启 `dev:server`。  
-3. 确认 `GET /api/health` 的 `knowledgeChunks` 变化。  
-4. 用真实问题点一次 `/api/chat`，看 `sources[].sourcePath`。  
+1. 在对应展区目录增删改 Markdown。  
+2. 如需改推荐/分区，改 `_meta/zones.json`。  
+3. `POST /api/knowledge/reload`。  
+4. `GET /api/knowledge/list` 确认 `chunkCount` 与 `retrieval.vector`。  
 
-## 检索说明（当前实现）
+## 检索验收口令
 
-- 中文按字、英文按词，停用词过滤，对 title+正文打分取 top-4。  
-- 无向量模型；命中依赖用词重合。提问口语化时，知识里请写入同义表述（如「预约 / 预定 / 提前联系」）。  
-- 全无重合时：`mode=llm_only`，界面提示未命中内部资料。  
+| 问题 | 期望 |
+|------|------|
+| 智慧交通展区展示什么？ | 命中「展览区：智慧交通」 |
+| 开放日讲解多久？ | 命中「开放日与讲解」/参观指南 |
+| 如何接入开放平台？ | 命中开放平台文档 |
 
-## 与 LLM 的关系
+## 与 LLM 关系
 
-命中片段会拼进 system 的 `【企业知识】`；无命中标记为 `（无命中片段）`。切换 `openai_compat` 后知识与内网模型可组合使用，见 [api.md](./api.md)。
+命中片段拼进 system 的 `【企业知识】`；无命中为 `（无命中片段）`。详见 [api.md](./api.md)。

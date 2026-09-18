@@ -1,0 +1,55 @@
+{
+  "zones": [
+    {
+      "id": "overview",
+      "dir": "01_研究院概况",
+      "title": "研究院概况",
+      "aliases": ["研究院", "概况", "研究方向", "展览", "展区", "智慧交通"],
+      "suggestions": [
+        "研究院主要做哪些方向？",
+        "智慧交通展区展示什么？",
+        "参观请如何安排？"
+      ]
+    },
+    {
+      "id": "platform",
+      "dir": "02_开放平台",
+      "title": "智能网联开放平台",
+      "aliases": ["开放平台", "接入", "接口", "合作", "课题"],
+      "suggestions": [
+        "如何接入开放平台？",
+        "开放平台提供哪些服务？"
+      ]
+    },
+    {
+      "id": "visit",
+      "dir": "03_参观指南",
+      "title": "参观指南",
+      "aliases": ["参观", "预约", "讲解", "开放日", "到访"],
+      "suggestions": [
+        "参观需要预约吗？",
+        "能否现场参观？有讲解吗？",
+        "开放日如何安排？"
+      ]
+    },
+    {
+      "id": "safety",
+      "dir": "90_通识",
+      "title": "观众须知",
+      "aliases": ["安全", "须知", "注意事项", "拍摄"],
+      "suggestions": ["展厅有哪些安全注意事项？"]
+    }
+  ],
+  "media": [
+    {
+      "mediaId": "exhibit-smart-traffic",
+      "title": "智慧交通展项",
+      "zoneId": "overview"
+    },
+    {
+      "mediaId": "exhibit-open-platform",
+      "title": "开放平台展项",
+      "zoneId": "platform"
+    }
+  ]
+}
