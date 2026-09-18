@@ -5,20 +5,46 @@ interface ChatPanelProps {
   messages: UiMessage[];
   busy: boolean;
   disabled: boolean;
+  suggestions: string[];
+  showSuggestions: boolean;
+  onSuggest: (q: string) => void;
+  online: 'connecting' | 'online' | 'offline';
 }
 
-export function ChatPanel({ messages, busy, disabled }: ChatPanelProps) {
+export function ChatPanel({
+  messages,
+  busy,
+  disabled,
+  suggestions,
+  showSuggestions,
+  onSuggest,
+  online,
+}: ChatPanelProps) {
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, busy]);
+  }, [messages, busy, showSuggestions]);
+
+  const statusText =
+    online === 'online' ? '在线' : online === 'connecting' ? '连接中…' : '服务未连接';
 
   return (
     <div className="chat-panel">
       <div className="chat-header">
-        <h1>对话咨询</h1>
-        <p>可询问院区介绍、参观流程、开放平台等信息</p>
+        <div className="chat-header-row">
+          <div>
+            <h1>对话咨询</h1>
+            <p>可询问院区介绍、参观流程、开放平台等信息</p>
+          </div>
+          <span
+            className={`status-pill status-${online}`}
+            role="status"
+            aria-live="polite"
+          >
+            {statusText}
+          </span>
+        </div>
       </div>
       <div className="message-list">
         {messages.map((m) => (
@@ -29,17 +55,30 @@ export function ChatPanel({ messages, busy, disabled }: ChatPanelProps) {
             <div className="bubble bubble-bot bubble-busy">正在生成回答…</div>
           </div>
         )}
+        {showSuggestions && suggestions.length > 0 && (
+          <div className="suggestions" aria-label="推荐问题">
+            {suggestions.map((q) => (
+              <button
+                key={q}
+                type="button"
+                className="chip"
+                disabled={busy}
+                onClick={() => onSuggest(q)}
+              >
+                {q}
+              </button>
+            ))}
+          </div>
+        )}
         <div ref={endRef} />
       </div>
-      <ComposerHint disabled={disabled} busy={busy} />
+      <p className="panel-foot">
+        {busy
+          ? '回答生成中，请稍候'
+          : disabled
+            ? '语音服务不可用，仍可文字提问'
+            : '回答将自动语音朗读'}
+      </p>
     </div>
-  );
-}
-
-function ComposerHint({ disabled, busy }: { disabled: boolean; busy: boolean }) {
-  return (
-    <p className="panel-foot">
-      {busy ? '回答生成中，请稍候' : disabled ? '语音服务不可用，仍可文字提问' : '回答将自动语音朗读'}
-    </p>
   );
 }

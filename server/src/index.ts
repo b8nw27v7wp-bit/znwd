@@ -6,6 +6,7 @@ import { createChatModel } from './llm/index.js';
 import { loadKnowledge } from './knowledge/loader.js';
 import { Retriever } from './knowledge/retriever.js';
 import { registerChatRoutes } from './routes/chat.js';
+import { SessionStore } from './session/store.js';
 
 // 轻量 .env 加载（无 dotenv 依赖）
 async function loadDotEnv(): Promise<void> {
@@ -63,7 +64,7 @@ async function main() {
     return { ok: true, knowledgeChunks: chunks.length };
   });
 
-  registerChatRoutes(app, { retriever, model });
+  registerChatRoutes(app, { retriever, model, sessions: new SessionStore() });
 
   await app.listen({ port, host });
   app.log.info(`virtual-receptionist server on :${port}, knowledge=${knowledgeDir}`);

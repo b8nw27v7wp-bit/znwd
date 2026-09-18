@@ -13,7 +13,16 @@ export interface ChatResponse {
   sessionId?: string | null;
 }
 
-export async function sendChat(message: string, sessionId?: string): Promise<ChatResponse> {
+export interface HealthResponse {
+  ok: boolean;
+  knowledgeChunks?: number;
+  llmProvider?: string;
+}
+
+export async function sendChat(
+  message: string,
+  sessionId?: string,
+): Promise<ChatResponse> {
   const res = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -32,4 +41,17 @@ export async function sendChat(message: string, sessionId?: string): Promise<Cha
   }
 
   return (await res.json()) as ChatResponse;
+}
+
+export async function fetchSuggestions(): Promise<string[]> {
+  const res = await fetch('/api/suggestions');
+  if (!res.ok) throw new Error(`suggestions ${res.status}`);
+  const data = (await res.json()) as { items?: string[] };
+  return data.items ?? [];
+}
+
+export async function fetchHealth(): Promise<HealthResponse> {
+  const res = await fetch('/api/health');
+  if (!res.ok) throw new Error(`health ${res.status}`);
+  return (await res.json()) as HealthResponse;
 }

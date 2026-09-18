@@ -3,14 +3,16 @@ import { useState, type FormEvent, type KeyboardEvent } from 'react';
 interface ComposerProps {
   onSend: (text: string) => void;
   busy: boolean;
+  onTouch?: () => void;
 }
 
-export function Composer({ onSend, busy }: ComposerProps) {
+export function Composer({ onSend, busy, onTouch }: ComposerProps) {
   const [value, setValue] = useState('');
 
   const submit = () => {
     const text = value.trim();
     if (!text || busy) return;
+    onTouch?.();
     onSend(text);
     setValue('');
   };
@@ -33,7 +35,10 @@ export function Composer({ onSend, busy }: ComposerProps) {
         rows={2}
         value={value}
         placeholder="请输入问题，Enter 发送"
-        onChange={(e) => setValue(e.target.value)}
+        onChange={(e) => {
+          onTouch?.();
+          setValue(e.target.value);
+        }}
         onKeyDown={onKeyDown}
         disabled={busy}
       />

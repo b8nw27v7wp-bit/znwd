@@ -15,8 +15,10 @@ export async function answerQuestion(
   retriever: Retriever,
   model: ChatModel,
   message: string,
-  topK = 4,
+  options: { topK?: number; history?: ChatMessage[] } = {},
 ): Promise<RagAnswer> {
+  const topK = options.topK ?? 4;
+  const history = (options.history ?? []).slice(-12);
   const hits = retriever.retrieve(message, topK);
   const messages: ChatMessage[] = [];
 
@@ -32,6 +34,11 @@ export async function answerQuestion(
     messages.push({ role: 'system', content: `${SYSTEM_BASE}\n\n【企业知识】\n（无命中片段）` });
   }
 
+  for (const turn of history) {
+    if (turn.role === 'user' || turn.role === 'assistant') {
+      messages.push({ role: turn.role, content: turn.content });
+    }
+  }
   messages.push({ role: 'user', content: message });
 
   const result = await model.complete({ messages });

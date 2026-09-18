@@ -60,7 +60,8 @@ znwd/
 ## 常用 API
 
 - `GET /api/health`
-- `POST /api/chat` — `{ "message": "..." }`
+- `GET /api/suggestions`
+- `POST /api/chat` — `{ "message": "...", "sessionId": "..." }`（同会话多轮）
 - `POST /api/knowledge/reload`
 
 详情：[docs/api.md](docs/api.md)。

@@ -2,6 +2,22 @@
 
 本项目版本与变更记录。日期：YYYY-MM-DD。
 
+## [0.2.0] — 2026-09-17
+
+接待体验增强（feature: reception-ux）。
+
+### Added
+
+- 会话多轮上下文：内存 `SessionStore`，同 `sessionId` 最近 6 轮 / TTL 10 分钟  
+- `GET /api/suggestions` 推荐问题；前端 chips 点击即问  
+- 闲置 **120s** 自动复位（新会话、欢迎语、停朗读）  
+- 顶栏连接状态（连接中/在线/服务未连接），15s health 探测  
+- 左侧「重新开始」按钮  
+
+### Notes
+
+- 会话仅存进程内存，重启即清空；无 STT/向量库  
+
 ## [0.1.0] — 2026-09-17
 
 首个可运行框架（feature/virtual-receptionist）。
