@@ -6,9 +6,11 @@ import { createChatModel } from './llm/index.js';
 import { loadKnowledge } from './knowledge/loader.js';
 import { Retriever } from './knowledge/retriever.js';
 import { registerChatRoutes } from './routes/chat.js';
+import { registerKnowledgeRoutes } from './routes/knowledge.js';
 import { SessionStore } from './session/store.js';
+import { Analytics } from './analytics/stats.js';
+import { RateLimiter } from './http/rateLimit.js';
 
-// 轻量 .env 加载（无 dotenv 依赖）
 async function loadDotEnv(): Promise<void> {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const envPath = path.resolve(here, '../.env');
@@ -38,15 +40,18 @@ async function main() {
 
   const port = Number(process.env.PORT || 8787);
   const host = process.env.HOST || '0.0.0.0';
-  // 默认相对仓库根：server/src 向上两级
   const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
   const knowledgeDir = path.resolve(repoRoot, process.env.KNOWLEDGE_DIR || './knowledge');
+  const chatPerMin = Number(process.env.CHAT_RATE_PER_MIN || 30);
 
   const retriever = new Retriever();
   const initial = await loadKnowledge(knowledgeDir);
   retriever.replace(initial);
 
   const model = createChatModel(process.env);
+  const sessions = new SessionStore();
+  const analytics = new Analytics();
+  const chatLimiter = new RateLimiter(chatPerMin, 60_000);
 
   const app = Fastify({ logger: true });
   await app.register(cors, { origin: true });
@@ -56,18 +61,17 @@ async function main() {
     knowledgeChunks: retriever.list().length,
     llmProvider: model.name,
     knowledgeDir,
+    activeSessions: sessions.count(),
+    uptimeSec: Math.floor(process.uptime()),
   }));
 
-  app.post('/api/knowledge/reload', async () => {
-    const chunks = await loadKnowledge(knowledgeDir);
-    retriever.replace(chunks);
-    return { ok: true, knowledgeChunks: chunks.length };
-  });
-
-  registerChatRoutes(app, { retriever, model, sessions: new SessionStore() });
+  registerKnowledgeRoutes(app, { retriever, knowledgeDir });
+  registerChatRoutes(app, { retriever, model, sessions, analytics, chatLimiter });
 
   await app.listen({ port, host });
-  app.log.info(`virtual-receptionist server on :${port}, knowledge=${knowledgeDir}`);
+  app.log.info(
+    `virtual-receptionist server on :${port}, knowledge=${knowledgeDir}, rate=${chatPerMin}/min`,
+  );
 }
 
 main().catch((err) => {

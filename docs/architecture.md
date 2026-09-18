@@ -52,7 +52,10 @@
 | `src/knowledge/loader.ts` | 扫描 `.md`/`.txt`，分块 |
 | `src/knowledge/retriever.ts` | 中英文分词式关键词检索，top-k |
 | `src/rag/pipeline.ts` | 组 prompt（含会话历史）、调 ChatModel、组装 sources |
-| `src/session/store.ts` | 内存多轮会话（6 轮 / TTL 10 分钟） |
+| `src/session/store.ts` | 内存多轮会话（6 轮 / TTL 10 分钟 / peek） |
+| `src/analytics/stats.ts` | 问答与反馈内存统计 |
+| `src/http/rateLimit.ts` | 每 IP chat 限流 |
+| `src/routes/knowledge.ts` | 知识 list / reload |
 | `src/knowledge/suggestions.ts` | 展厅推荐问题 |
 | `src/llm/*` | `mock` / `openai_compat` 实现 |
 

@@ -63,6 +63,10 @@ znwd/
 - `GET /api/health`
 - `GET /api/suggestions`
 - `POST /api/chat` — `{ "message": "...", "sessionId": "..." }`（同会话多轮）
+- `GET|DELETE /api/sessions/:sessionId`
+- `POST /api/feedback` — `{ "rating": "up"|"down" }`
+- `GET /api/stats`
+- `GET /api/knowledge/list`
 - `POST /api/knowledge/reload`
 
 详情：[docs/api.md](docs/api.md)。

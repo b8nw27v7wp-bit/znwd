@@ -2,6 +2,18 @@
 
 本项目版本与变更记录。日期：YYYY-MM-DD。
 
+## [0.3.0] — 2026-09-17
+
+### Added
+
+- 检索：中文二元组 + 标题加权  
+- `GET/DELETE /api/sessions/:sessionId` 会话查看/删除  
+- `POST /api/feedback` 点赞点踩  
+- `GET /api/stats` 运行统计与最近问答  
+- `GET /api/knowledge/list` 知识文件清单；reload 返回分文件块数  
+- 每 IP 限流 `CHAT_RATE_PER_MIN`（默认 30/min），chat 超限 429  
+- chat 响应增加 `latencyMs`；health 增加 `activeSessions`/`uptimeSec`  
+
 ## [0.2.2] — 2026-09-17
 
 ### Changed

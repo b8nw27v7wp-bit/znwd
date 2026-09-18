@@ -17,7 +17,9 @@ Base URL：开发态经 Vite 代理为 `http://localhost:5173`；直连后端为
   "ok": true,
   "knowledgeChunks": 3,
   "llmProvider": "mock",
-  "knowledgeDir": "E:/znwd/knowledge"
+  "knowledgeDir": "E:/znwd/knowledge",
+  "activeSessions": 0,
+  "uptimeSec": 12
 }
 ```
 
@@ -26,6 +28,8 @@ Base URL：开发态经 Vite 代理为 `http://localhost:5173`；直连后端为
 | `knowledgeChunks` | 当前索引中的知识块数量 |
 | `llmProvider` | `mock` \| `openai_compat` 等实现名 |
 | `knowledgeDir` | 实际知识目录绝对路径 |
+| `activeSessions` | 未过期内存会话数 |
+| `uptimeSec` | 进程运行秒数 |
 
 ---
 
@@ -98,6 +102,96 @@ Base URL：开发态经 Vite 代理为 `http://localhost:5173`；直连后端为
 |--------|------|--------|
 | 400 | 缺省或空白 `message` | `{ "error": "message is required" }` |
 | 500 | LLM/内部异常 | `{ "error": "<message>" }` |
+| 429 | 超过 `CHAT_RATE_PER_MIN` | `{ "error": "too many requests", "retryAfterSec": n }` |
+
+成功响应额外字段：`latencyMs`（服务端耗时毫秒）。
+
+---
+
+## GET /api/sessions/:sessionId
+
+查看会话历史（只读，不刷新 TTL）。过期或不存在 → 404。
+
+**200**
+
+```json
+{
+  "sessionId": "s-abc",
+  "messages": [
+    { "role": "user", "content": "…" },
+    { "role": "assistant", "content": "…" }
+  ],
+  "lastActive": 1710000000000
+}
+```
+
+---
+
+## DELETE /api/sessions/:sessionId
+
+删除会话（前端「重置」可选用）。
+
+**200**：`{ "ok": true, "sessionId": "…" }`
+
+---
+
+## POST /api/feedback
+
+回答点赞/点踩，计入统计。
+
+**请求**
+
+```json
+{ "sessionId": "optional", "rating": "up", "comment": "optional" }
+```
+
+| 字段 | 必填 | 说明 |
+|------|------|------|
+| `rating` | 是 | `up` \| `down`，否则 400 |
+| `sessionId` | 否 | 关联会话 |
+| `comment` | 否 | ≤500 字 |
+
+**200**：`{ "ok": true }`
+
+---
+
+## GET /api/stats
+
+运行统计（内存态，进程重启清零）。
+
+**200 示例（节选）**
+
+```json
+{
+  "uptimeSec": 60,
+  "chatTotal": 2,
+  "ragHits": 2,
+  "llmOnly": 0,
+  "errors": 0,
+  "activeSessions": 1,
+  "feedback": { "up": 1, "down": 0 },
+  "recent": [ { "at": 0, "mode": "rag", "messagePreview": "…", "latencyMs": 2 } ]
+}
+```
+
+---
+
+## GET /api/knowledge/list
+
+列出知识库文件与分块统计。
+
+**200**
+
+```json
+{
+  "knowledgeDir": "…/knowledge",
+  "fileCount": 3,
+  "chunkCount": 3,
+  "docs": [
+    { "path": "参观接待流程.md", "bytes": 512, "mtime": "…", "chunks": 1, "title": "参观接待流程" }
+  ]
+}
+```
 
 ---
 
@@ -108,7 +202,11 @@ Base URL：开发态经 Vite 代理为 `http://localhost:5173`；直连后端为
 **200 示例**
 
 ```json
-{ "ok": true, "knowledgeChunks": 5 }
+{
+  "ok": true,
+  "knowledgeChunks": 3,
+  "files": [{ "sourcePath": "参观接待流程.md", "chunks": 1 }]
+}
 ```
 
 ---
@@ -126,6 +224,7 @@ Base URL：开发态经 Vite 代理为 `http://localhost:5173`；直连后端为
 | `KNOWLEDGE_DIR` | `./knowledge` | 相对仓库根 |
 | `PORT` | `8787` | 监听端口 |
 | `HOST` | `0.0.0.0` | 监听地址；展厅本机可用 `127.0.0.1` |
+| `CHAT_RATE_PER_MIN` | `30` | 每 IP 每分钟 chat 上限 |
 
 ---
 
@@ -133,10 +232,16 @@ Base URL：开发态经 Vite 代理为 `http://localhost:5173`；直连后端为
 
 ```bash
 curl -s http://127.0.0.1:8787/api/health
+curl -s http://127.0.0.1:8787/api/stats
+curl -s http://127.0.0.1:8787/api/knowledge/list
 
 curl -s -X POST http://127.0.0.1:8787/api/chat \
   -H "content-type: application/json" \
-  -d "{\"message\":\"能否现场参观？\"}"
+  -d "{\"message\":\"能否现场参观？\",\"sessionId\":\"demo\"}"
+
+curl -s -X POST http://127.0.0.1:8787/api/feedback \
+  -H "content-type: application/json" \
+  -d "{\"sessionId\":\"demo\",\"rating\":\"up\"}"
 
 curl -s -X POST http://127.0.0.1:8787/api/knowledge/reload
 ```
