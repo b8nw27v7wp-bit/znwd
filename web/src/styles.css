@@ -55,7 +55,7 @@
 }
 
 .mascot {
-  width: min(200px, 70%);
+  width: min(220px, 78%);
   max-height: 100%;
   display: flex;
   align-items: center;
@@ -66,48 +66,45 @@
 .mascot-svg {
   width: 100%;
   height: auto;
-  max-height: min(280px, 42vh);
+  max-height: min(340px, 44vh);
   display: block;
   overflow: visible;
 }
 
 .mascot--idle .mascot-svg {
-  animation: mascot-breath 3.6s ease-in-out infinite;
+  animation: mascot-breath 4s ease-in-out infinite;
 }
 
 .mascot--thinking .mascot-svg {
-  animation: mascot-think 1.4s ease-in-out infinite;
+  animation: mascot-think 1.6s ease-in-out infinite;
 }
 
 .mascot--speaking .mascot-svg {
-  animation: mascot-talk 0.9s ease-in-out infinite;
-}
-
-.mascot-head {
-  transform-origin: 120px 120px;
+  animation: mascot-talk 1s ease-in-out infinite;
 }
 
 .mascot-eyes.is-blink ellipse {
-  ry: 2px;
+  ry: 1.2px;
 }
 
 .mascot-eyes ellipse {
   transition: ry 80ms linear;
 }
 
-.mascot-dots .dot {
+.mascot-dots .dot,
+.dot {
   opacity: 0.35;
 }
 
-.mascot-dots .d1 {
+.d1 {
   animation: dot-pulse 1.2s ease-in-out infinite;
 }
 
-.mascot-dots .d2 {
+.d2 {
   animation: dot-pulse 1.2s ease-in-out 0.15s infinite;
 }
 
-.mascot-dots .d3 {
+.d3 {
   animation: dot-pulse 1.2s ease-in-out 0.3s infinite;
 }
 
@@ -117,17 +114,17 @@
     transform: translateY(0) scale(1);
   }
   50% {
-    transform: translateY(-4px) scale(1.02);
+    transform: translateY(-3px) scale(1.01);
   }
 }
 
 @keyframes mascot-think {
   0%,
   100% {
-    transform: translateY(0) rotate(-1deg);
+    transform: translateY(0) rotate(-0.6deg);
   }
   50% {
-    transform: translateY(-3px) rotate(1.5deg);
+    transform: translateY(-2px) rotate(0.8deg);
   }
 }
 
@@ -137,7 +134,7 @@
     transform: translateY(0);
   }
   50% {
-    transform: translateY(-2px);
+    transform: translateY(-1.5px);
   }
 }
 
