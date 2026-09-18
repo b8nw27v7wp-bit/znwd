@@ -9,76 +9,118 @@ interface Live2DStageProps {
   mood: AvatarMood;
 }
 
+/** 正式数字人：将授权文件命名为 hostess.vrm 放入 public/models/ */
 const VRM_URL = '/models/hostess.vrm';
 
+/** 通用职业女讲解员风格参数（不基于任何真人照片） */
+const STYLE = {
+  skin: 0xf2d4c2,
+  hair: 0x1a1a1e,
+  suit: 0x2c2c30,
+  shirt: 0xf7f7f8,
+  accent: 0x3db882,
+  lips: 0xc4545a,
+};
+
 function createFaceTexture(): THREE.CanvasTexture {
+  const w = 768;
   const c = document.createElement('canvas');
-  c.width = 512;
-  c.height = 512;
+  c.width = w;
+  c.height = w;
   const g = c.getContext('2d')!;
-  // 妆面底：偏白肤色
-  g.fillStyle = '#f0d0bc';
-  g.fillRect(0, 0, 512, 512);
+
+  // 柔和底色 + 中心高光（示意鼻梁、前额）
+  const base = g.createRadialGradient(w * 0.45, w * 0.35, w * 0.08, w * 0.5, w * 0.5, w * 0.7);
+  base.addColorStop(0, '#f7dcc8');
+  base.addColorStop(0.55, '#f0d0bc');
+  base.addColorStop(1, '#e6c0aa');
+  g.fillStyle = base;
+  g.fillRect(0, 0, w, w);
+
   // 淡妆腮红
-  g.fillStyle = 'rgba(220,140,130,0.35)';
-  g.beginPath();
-  g.ellipse(140, 300, 42, 24, 0, 0, Math.PI * 2);
-  g.fill();
-  g.beginPath();
-  g.ellipse(372, 300, 42, 24, 0, 0, Math.PI * 2);
-  g.fill();
-  // 眉
-  g.strokeStyle = '#2a2a2e';
-  g.lineWidth = 10;
+  const blush = (cx: number, cy: number) => {
+    const rg = g.createRadialGradient(cx, cy, 4, cx, cy, 48);
+    rg.addColorStop(0, 'rgba(220,140,130,0.42)');
+    rg.addColorStop(1, 'rgba(220,140,130,0)');
+    g.fillStyle = rg;
+    g.beginPath();
+    g.arc(cx, cy, 48, 0, Math.PI * 2);
+    g.fill();
+  };
+  blush(w * 0.28, w * 0.58);
+  blush(w * 0.72, w * 0.58);
+
+  // 眉毛：柔和弓形
+  g.strokeStyle = '#2f2a28';
+  g.lineWidth = 9;
   g.lineCap = 'round';
+  const brow = (x0: number, y0: number, cx: number, cy: number, x1: number, y1: number) => {
+    g.beginPath();
+    g.moveTo(x0, y0);
+    g.quadraticCurveTo(cx, cy, x1, y1);
+    g.stroke();
+  };
+  brow(w * 0.24, w * 0.4, w * 0.32, w * 0.345, w * 0.42, w * 0.4);
+  brow(w * 0.58, w * 0.4, w * 0.68, w * 0.345, w * 0.76, w * 0.4);
+
+  // 眼影
+  const shadow = (cx: number, cy: number) => {
+    const rg = g.createRadialGradient(cx, cy, 2, cx, cy, 36);
+    rg.addColorStop(0, 'rgba(170,120,115,0.35)');
+    rg.addColorStop(1, 'rgba(170,120,115,0)');
+    g.fillStyle = rg;
+    g.beginPath();
+    g.ellipse(cx, cy, 40, 16, 0, 0, Math.PI * 2);
+    g.fill();
+  };
+  shadow(w * 0.32, w * 0.47);
+  shadow(w * 0.68, w * 0.47);
+
+  // 眼睛：杏仁形 + 高光
+  const eye = (cx: number, cy: number) => {
+    g.fillStyle = '#2b2b2e';
+    g.beginPath();
+    g.ellipse(cx, cy, 26, 28, 0, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = '#1f1f22';
+    g.lineWidth = 3;
+    g.beginPath();
+    g.ellipse(cx, cy, 28, 30, 0, Math.PI, 2 * Math.PI);
+    g.stroke();
+    g.fillStyle = '#fff';
+    g.beginPath();
+    g.arc(cx + 8, cy - 8, 8, 0, Math.PI * 2);
+    g.fill();
+    g.beginPath();
+    g.arc(cx - 6, cy + 4, 3, 0, Math.PI * 2);
+    g.fill();
+  };
+  eye(w * 0.32, w * 0.5);
+  eye(w * 0.68, w * 0.5);
+
+  // 鼻影
+  g.strokeStyle = 'rgba(190,150,130,0.45)';
+  g.lineWidth = 5;
   g.beginPath();
-  g.moveTo(150, 220);
-  g.quadraticCurveTo(190, 200, 230, 215);
+  g.moveTo(w * 0.5, w * 0.52);
+  g.quadraticCurveTo(w * 0.48, w * 0.62, w * 0.46, w * 0.66);
+  g.quadraticCurveTo(w * 0.5, w * 0.68, w * 0.54, w * 0.66);
   g.stroke();
+
+  // 唇：偏暖珊瑚红
+  const lip = STYLE.lips;
+  g.fillStyle = `#${lip.toString(16).padStart(6, '0')}`;
   g.beginPath();
-  g.moveTo(282, 215);
-  g.quadraticCurveTo(322, 200, 362, 220);
-  g.stroke();
-  // 眼线 + 瞳
-  g.fillStyle = '#2b2b2e';
-  g.beginPath();
-  g.ellipse(190, 270, 22, 26, 0, 0, Math.PI * 2);
+  g.moveTo(w * 0.4, w * 0.76);
+  g.quadraticCurveTo(w * 0.46, w * 0.735, w * 0.5, w * 0.745);
+  g.quadraticCurveTo(w * 0.54, w * 0.735, w * 0.6, w * 0.76);
+  g.quadraticCurveTo(w * 0.55, w * 0.82, w * 0.5, w * 0.825);
+  g.quadraticCurveTo(w * 0.45, w * 0.82, w * 0.4, w * 0.76);
   g.fill();
-  g.beginPath();
-  g.ellipse(322, 270, 22, 26, 0, 0, Math.PI * 2);
-  g.fill();
-  g.fillStyle = '#fff';
-  g.beginPath();
-  g.arc(198, 262, 7, 0, Math.PI * 2);
-  g.fill();
-  g.beginPath();
-  g.arc(330, 262, 7, 0, Math.PI * 2);
-  g.fill();
-  // 眼影淡彩
-  g.fillStyle = 'rgba(180,120,120,0.25)';
-  g.beginPath();
-  g.ellipse(190, 245, 28, 12, 0, 0, Math.PI * 2);
-  g.fill();
-  g.beginPath();
-  g.ellipse(322, 245, 28, 12, 0, 0, Math.PI * 2);
-  g.fill();
-  // 鼻
-  g.strokeStyle = 'rgba(180,140,120,0.5)';
-  g.lineWidth = 4;
-  g.beginPath();
-  g.moveTo(256, 280);
-  g.lineTo(250, 340);
-  g.lineTo(268, 342);
-  g.stroke();
-  // 唇
-  g.fillStyle = '#c45c5c';
-  g.beginPath();
-  g.moveTo(220, 400);
-  g.quadraticCurveTo(256, 385, 292, 400);
-  g.quadraticCurveTo(256, 425, 220, 400);
-  g.fill();
+
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
   return tex;
 }
 
@@ -88,113 +130,141 @@ interface ProcChar {
   mouth: THREE.Mesh;
   leftArm: THREE.Object3D;
   rightArm: THREE.Object3D;
-  hairBack: THREE.Object3D;
-  mouthMaterial: THREE.MeshStandardMaterial;
+  faceMat: THREE.MeshStandardMaterial;
 }
 
-/** 原创职业女讲解员（几何体 + 人脸贴图），不对照任何真人 */
 function buildProceduralHostess(): ProcChar {
   const group = new THREE.Group();
 
-  const skin = new THREE.MeshStandardMaterial({ color: 0xf0d0bc, roughness: 0.75 });
-  const hairMat = new THREE.MeshStandardMaterial({ color: 0x1c1c20, roughness: 0.45 });
-  const suit = new THREE.MeshStandardMaterial({ color: 0x2b2b2e, roughness: 0.85 });
-  const shirt = new THREE.MeshStandardMaterial({ color: 0xf5f5f7, roughness: 0.8 });
-  const green = new THREE.MeshStandardMaterial({ color: 0x3db882, roughness: 0.6 });
+  const skin = new THREE.MeshStandardMaterial({ color: STYLE.skin, roughness: 0.68 });
+  const hairMat = new THREE.MeshStandardMaterial({
+    color: STYLE.hair,
+    roughness: 0.32,
+    metalness: 0.08,
+  });
+  const suit = new THREE.MeshStandardMaterial({ color: STYLE.suit, roughness: 0.82 });
+  const shirt = new THREE.MeshStandardMaterial({ color: STYLE.shirt, roughness: 0.78 });
+  const accent = new THREE.MeshStandardMaterial({ color: STYLE.accent, roughness: 0.55 });
 
-  // 躯干（西装）
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 0.55, 8, 16), suit);
+  // 下装/躯干
+  const hips = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.34, 0.35, 20), suit);
+  hips.position.y = 0.42;
+  hips.scale.z = 0.72;
+  group.add(hips);
+
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.36, 0.42, 10, 20), suit);
   torso.position.y = 0.95;
-  torso.scale.set(1, 1, 0.72);
+  torso.scale.set(1, 1, 0.7);
   group.add(torso);
 
-  // 衬衫
-  const chest = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.28, 0.2), shirt);
-  chest.position.set(0, 1.18, 0.22);
+  // 收腰
+  const waist = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.32, 0.22, 16), suit);
+  waist.position.y = 0.72;
+  waist.scale.z = 0.7;
+  group.add(waist);
+
+  const chest = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.3, 0.18), shirt);
+  chest.position.set(0, 1.16, 0.2);
   group.add(chest);
 
-  // 绿色丝巾
-  const scarf = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.32, 0.08), green);
-  scarf.position.set(0, 1.05, 0.28);
+  // 西装翻领
+  const lapelL = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.26, 0.06), suit);
+  lapelL.position.set(-0.12, 1.12, 0.26);
+  lapelL.rotation.z = 0.25;
+  group.add(lapelL);
+  const lapelR = lapelL.clone();
+  lapelR.position.x = 0.12;
+  lapelR.rotation.z = -0.25;
+  group.add(lapelR);
+
+  const scarf = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.28, 0.06), accent);
+  scarf.position.set(0, 1.02, 0.26);
   group.add(scarf);
 
   // 手臂
-  const armGeo = new THREE.CapsuleGeometry(0.11, 0.42, 6, 12);
+  const armGeo = new THREE.CapsuleGeometry(0.095, 0.4, 8, 14);
   const leftArm = new THREE.Group();
-  const leftArmMesh = new THREE.Mesh(armGeo, suit);
-  leftArmMesh.position.y = -0.28;
-  leftArm.add(leftArmMesh);
-  leftArm.position.set(-0.48, 1.25, 0);
-  leftArm.rotation.z = 0.25;
+  const lam = new THREE.Mesh(armGeo, suit);
+  lam.position.y = -0.27;
+  leftArm.add(lam);
+  leftArm.position.set(-0.42, 1.22, 0);
+  leftArm.rotation.z = 0.22;
   group.add(leftArm);
 
   const rightArm = new THREE.Group();
-  const rightArmMesh = new THREE.Mesh(armGeo, suit);
-  rightArmMesh.position.y = -0.28;
-  rightArm.add(rightArmMesh);
-  rightArm.position.set(0.48, 1.25, 0);
-  rightArm.rotation.z = -0.25;
+  const ram = new THREE.Mesh(armGeo, suit);
+  ram.position.y = -0.27;
+  rightArm.add(ram);
+  rightArm.position.set(0.42, 1.22, 0);
+  rightArm.rotation.z = -0.22;
   group.add(rightArm);
 
-  // 手
-  const handGeo = new THREE.SphereGeometry(0.09, 12, 12);
+  const handGeo = new THREE.SphereGeometry(0.075, 14, 14);
   const handL = new THREE.Mesh(handGeo, skin);
-  handL.position.set(0, -0.55, 0);
+  handL.position.set(0, -0.52, 0.02);
   leftArm.add(handL);
   const handR = handL.clone();
   rightArm.add(handR);
 
-  // 颈
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 0.14, 12), skin);
-  neck.position.y = 1.42;
+  // 颈 / 头（鹅蛋：y 略长）
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.16, 14), skin);
+  neck.position.y = 1.4;
   group.add(neck);
 
-  // 头（鹅蛋脸：纵向略长）
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.28, 32, 32), skin);
-  head.scale.set(0.92, 1.08, 0.88);
-  head.position.y = 1.68;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.27, 40, 40), skin);
+  head.scale.set(0.9, 1.06, 0.88);
+  head.position.y = 1.66;
   group.add(head);
 
-  // 人脸贴图
   const faceMat = new THREE.MeshStandardMaterial({
     map: createFaceTexture(),
-    roughness: 0.7,
+    roughness: 0.65,
   });
-  const face = new THREE.Mesh(new THREE.CircleGeometry(0.22, 32), faceMat);
-  face.position.set(0, 1.68, 0.245);
+  const face = new THREE.Mesh(new THREE.CircleGeometry(0.215, 48), faceMat);
+  face.position.set(0, 1.66, 0.238);
   group.add(face);
 
-  // 长直发：后发板 + 顶发 + 侧发
-  const hairBack = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.95, 0.22), hairMat);
-  hairBack.position.set(0, 1.45, -0.12);
+  // 黑色长发：中分顶盖 + 后披发 + 鬓角（利落盘起感 + 两侧垂发）
+  const hairCap = new THREE.Mesh(
+    new THREE.SphereGeometry(0.295, 32, 32, 0, Math.PI * 2, 0, Math.PI * 0.52),
+    hairMat,
+  );
+  hairCap.position.set(0, 1.7, 0);
+  hairCap.scale.set(1.02, 0.92, 1.0);
+  group.add(hairCap);
+
+  // 后发披肩
+  const hairBack = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 0.72, 8, 16), hairMat);
+  hairBack.position.set(0, 1.35, -0.1);
+  hairBack.scale.set(1.05, 1, 0.55);
   group.add(hairBack);
 
-  const hairTop = new THREE.Mesh(new THREE.SphereGeometry(0.31, 24, 24, 0, Math.PI * 2, 0, Math.PI * 0.55), hairMat);
-  hairTop.position.set(0, 1.72, 0);
-  hairTop.scale.set(1.05, 0.95, 1.0);
-  group.add(hairTop);
+  // 两侧长直发丝
+  const lockGeo = new THREE.CapsuleGeometry(0.045, 0.55, 6, 10);
+  const lockL = new THREE.Mesh(lockGeo, hairMat);
+  lockL.position.set(-0.26, 1.35, 0.1);
+  group.add(lockL);
+  const lockR = lockL.clone();
+  lockR.position.x = 0.26;
+  group.add(lockR);
 
-  const sideL = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.7, 0.14), hairMat);
-  sideL.position.set(-0.28, 1.42, 0.08);
-  group.add(sideL);
-  const sideR = sideL.clone();
-  sideR.position.x = 0.28;
-  group.add(sideR);
+  // 中分缝
+  const part = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.08, 0.32), skin);
+  part.position.set(0, 1.9, 0.02);
+  group.add(part);
 
-  // 刘海
-  const bangs = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.12, 0.08), hairMat);
-  bangs.position.set(0, 1.82, 0.2);
-  group.add(bangs);
-
-  // 口型
-  const mouthMaterial = new THREE.MeshStandardMaterial({ color: 0xc45c5c, roughness: 0.55 });
-  const mouth = new THREE.Mesh(new THREE.SphereGeometry(0.035, 12, 12), mouthMaterial);
-  mouth.position.set(0, 1.58, 0.26);
-  mouth.scale.set(1.4, 0.55, 0.4);
+  // 口型（叠在唇部高度）
+  const mouthMaterial = new THREE.MeshStandardMaterial({
+    color: STYLE.lips,
+    roughness: 0.45,
+  });
+  const mouth = new THREE.Mesh(new THREE.SphereGeometry(0.032, 16, 16), mouthMaterial);
+  mouth.position.set(0, 1.575, 0.25);
+  mouth.scale.set(1.55, 0.5, 0.35);
   group.add(mouth);
 
-  group.position.y = -0.9;
-  return { group, head, mouth, leftArm, rightArm, hairBack, mouthMaterial };
+  group.position.y = -0.85;
+  return { group, head, mouth, leftArm, rightArm, faceMat };
 }
 
 export function Live2DStage({ mood }: Live2DStageProps) {
@@ -209,28 +279,30 @@ export function Live2DStage({ mood }: Live2DStageProps) {
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
     mount.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(28, 1, 0.1, 100);
-    camera.position.set(0, 1.35, 3.2);
-    camera.lookAt(0, 1.25, 0);
+    const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 50);
+    camera.position.set(0, 1.42, 2.55);
+    camera.lookAt(0, 1.28, 0);
 
-    const hemi = new THREE.HemisphereLight(0xffffff, 0xf0f0f5, 1.05);
-    scene.add(hemi);
-    const key = new THREE.DirectionalLight(0xffffff, 0.85);
-    key.position.set(2, 3, 4);
+    scene.add(new THREE.HemisphereLight(0xfffaf5, 0xe8e8ed, 0.95));
+    const key = new THREE.DirectionalLight(0xfff2e8, 0.95);
+    key.position.set(1.6, 2.8, 3.2);
     scene.add(key);
-    const fill = new THREE.DirectionalLight(0xdfe8ff, 0.35);
-    fill.position.set(-2, 1, 2);
+    const rim = new THREE.DirectionalLight(0xdce8ff, 0.45);
+    rim.position.set(-2, 1.5, -1);
+    scene.add(rim);
+    const fill = new THREE.DirectionalLight(0xffffff, 0.25);
+    fill.position.set(-1.2, 0.8, 2.5);
     scene.add(fill);
 
-    let proc: ProcChar | null = null;
-    let vrm: import('@pixiv/three-vrm').VRM | null = null;
     let disposed = false;
-
-    proc = buildProceduralHostess();
+    let proc: ProcChar | null = buildProceduralHostess();
     scene.add(proc.group);
+    let vrm: import('@pixiv/three-vrm').VRM | null = null;
 
     const loader = new GLTFLoader();
     loader.register((parser) => new VRMLoaderPlugin(parser));
@@ -241,7 +313,6 @@ export function Live2DStage({ mood }: Live2DStageProps) {
         const model = gltf.userData.vrm as import('@pixiv/three-vrm').VRM | undefined;
         if (!model || !proc) return;
         VRMUtils.removeUnnecessaryVertices(gltf.scene);
-        VRMUtils.combineSkeletons(gltf.scene);
         scene.remove(proc.group);
         vrm = model;
         vrm.scene.rotation.y = Math.PI;
@@ -250,13 +321,13 @@ export function Live2DStage({ mood }: Live2DStageProps) {
       },
       undefined,
       () => {
-        // 无 VRM 时保留程序化形象
+        /* 无授权 VRM 时使用程序化角色 */
       },
     );
 
     const resize = () => {
-      const w = mount.clientWidth || 320;
-      const h = mount.clientHeight || 420;
+      const w = Math.max(1, mount.clientWidth);
+      const h = Math.max(1, mount.clientHeight);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h, false);
@@ -277,33 +348,33 @@ export function Live2DStage({ mood }: Live2DStageProps) {
       const m = moodRef.current;
 
       if (proc) {
-        const breath = m === 'speaking' ? 0.012 : 0.008;
-        proc.group.position.y = -0.9 + Math.sin(t * (m === 'thinking' ? 2.2 : 1.4)) * breath;
-        proc.head.rotation.y = m === 'thinking' ? Math.sin(t * 2.4) * 0.08 : Math.sin(t * 0.7) * 0.03;
-        proc.head.rotation.x = m === 'thinking' ? 0.04 : Math.sin(t * 0.9) * 0.02;
+        proc.group.position.y = -0.85 + Math.sin(t * 1.35) * 0.01;
+        const head = proc.head;
+        head.rotation.y = m === 'thinking' ? Math.sin(t * 2.1) * 0.07 : Math.sin(t * 0.55) * 0.025;
+        head.rotation.x = m === 'thinking' ? 0.035 : Math.sin(t * 0.8) * 0.015;
         if (m === 'speaking') {
-          const open = 0.4 + Math.abs(Math.sin(t * 12)) * 0.85;
-          proc.mouth.scale.set(1.5, open, 0.45);
+          const open = 0.35 + Math.abs(Math.sin(t * 11)) * 0.9;
+          proc.mouth.scale.set(1.7, open, 0.4);
+        } else if (m === 'thinking') {
+          proc.mouth.scale.set(1.4, 0.35, 0.35);
         } else {
-          proc.mouth.scale.set(1.35, 0.45, 0.4);
+          proc.mouth.scale.set(1.55, 0.5, 0.35);
         }
-        proc.leftArm.rotation.x = m === 'speaking' ? Math.sin(t * 3) * 0.08 : 0;
-        proc.rightArm.rotation.x = m === 'speaking' ? Math.sin(t * 3 + 1) * 0.08 : 0;
+        proc.leftArm.rotation.x = m === 'speaking' ? Math.sin(t * 2.8) * 0.07 : 0;
+        proc.rightArm.rotation.x = m === 'speaking' ? Math.sin(t * 2.8 + 0.8) * 0.07 : 0;
       }
 
       if (vrm) {
         vrm.update(dt);
-        const s = vrm.scene;
-        s.position.y = -0.9 + Math.sin(t * 1.4) * 0.01;
-        if (m === 'thinking' && vrm.lookAt) {
-          vrm.lookAt.target?.position.set(Math.sin(t) * 0.5, 1.4, 2);
-        }
+        vrm.scene.position.y = -0.9 + Math.sin(t * 1.35) * 0.01;
         const human = vrm.humanoid;
-        if (human) {
-          const head = human.getRawBoneNode('head');
-          if (head) {
-            head.rotation.y = m === 'thinking' ? Math.sin(t * 2.2) * 0.08 : 0;
-          }
+        const headBone =
+          human?.getRawBoneNode?.('head') ??
+          (human && 'getBoneNode' in human
+            ? (human as { getBoneNode: (n: string) => THREE.Object3D | null }).getBoneNode('head')
+            : null);
+        if (headBone) {
+          headBone.rotation.y = m === 'thinking' ? Math.sin(t * 2) * 0.07 : 0;
         }
       }
 
@@ -318,15 +389,15 @@ export function Live2DStage({ mood }: Live2DStageProps) {
       if (vrm) {
         scene.remove(vrm.scene);
         VRMUtils.deepDispose(vrm.scene);
-        vrm = null;
       }
       if (proc) {
         scene.remove(proc.group);
         proc.group.traverse((obj) => {
           if (obj instanceof THREE.Mesh) {
             obj.geometry.dispose();
-            if (Array.isArray(obj.material)) obj.material.forEach((m) => m.dispose());
-            else obj.material.dispose();
+            const mat = obj.material;
+            if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+            else mat.dispose();
           }
         });
       }
