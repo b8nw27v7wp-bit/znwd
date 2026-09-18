@@ -12,6 +12,7 @@ import { registerKnowledgeRoutes } from './routes/knowledge.js';
 import { SessionStore } from './session/store.js';
 import { Analytics } from './analytics/stats.js';
 import { RateLimiter } from './http/rateLimit.js';
+import { LruCache, JsonlStore, type CachedAnswer } from './http/cache.js';
 
 async function loadDotEnv(): Promise<void> {
   const here = path.dirname(fileURLToPath(import.meta.url));
@@ -33,7 +34,7 @@ async function loadDotEnv(): Promise<void> {
       if (process.env[key] === undefined) process.env[key] = val;
     }
   } catch {
-    // .env 可选
+    // optional
   }
 }
 
@@ -43,14 +44,21 @@ async function main() {
   const port = Number(process.env.PORT || 8787);
   const host = process.env.HOST || '0.0.0.0';
   const here = path.dirname(fileURLToPath(import.meta.url));
-  // src/ → server/；dist/ → server/
   const serverRoot = path.resolve(here, '..');
   const repoRoot = path.resolve(serverRoot, '..');
   const knowledgeDir = path.resolve(repoRoot, process.env.KNOWLEDGE_DIR || './knowledge');
   const chatPerMin = Number(process.env.CHAT_RATE_PER_MIN || 30);
   const indexDir = path.resolve(
-    process.env.INDEX_DIR ? path.resolve(repoRoot, process.env.INDEX_DIR) : path.join(serverRoot, 'indexes'),
+    process.env.INDEX_DIR
+      ? path.resolve(repoRoot, process.env.INDEX_DIR)
+      : path.join(serverRoot, 'indexes'),
   );
+  const dataDir = path.resolve(
+    process.env.DATA_DIR ? path.resolve(repoRoot, process.env.DATA_DIR) : path.join(serverRoot, 'data'),
+  );
+  const adminToken = process.env.ADMIN_TOKEN || undefined;
+  const cacheSize = Number(process.env.ANSWER_CACHE_SIZE || 200);
+  const watchKnowledge = (process.env.KNOWLEDGE_WATCH || 'false').toLowerCase() === 'true';
 
   const embedder = createEmbeddingProvider(process.env);
   const vectorStore = new VectorStore(
@@ -66,6 +74,8 @@ async function main() {
   const sessions = new SessionStore();
   const analytics = new Analytics();
   const chatLimiter = new RateLimiter(chatPerMin, 60_000);
+  const answerCache = new LruCache<CachedAnswer>(cacheSize);
+  const logStore = new JsonlStore(dataDir, 'events');
 
   const app = Fastify({ logger: true });
   await app.register(cors, { origin: true });
@@ -78,10 +88,18 @@ async function main() {
     retrieval: retriever.stats(),
     knowledgeDir,
     activeSessions: sessions.count(),
+    answerCacheSize: answerCache.size,
+    dataDir,
+    watchKnowledge,
     uptimeSec: Math.floor(process.uptime()),
   }));
 
-  registerKnowledgeRoutes(app, { retriever, knowledgeDir });
+  registerKnowledgeRoutes(app, {
+    retriever,
+    knowledgeDir,
+    adminToken,
+    onReloaded: () => answerCache.clear(),
+  });
   registerChatRoutes(app, {
     retriever,
     model,
@@ -89,11 +107,34 @@ async function main() {
     analytics,
     chatLimiter,
     knowledgeDir,
+    adminToken,
+    answerCache,
+    logStore,
   });
+
+  if (watchKnowledge) {
+    const { watch } = await import('node:fs');
+    let timer: NodeJS.Timeout | null = null;
+    const reload = async () => {
+      try {
+        const chunks = await loadKnowledge(knowledgeDir);
+        await retriever.replace(chunks);
+        answerCache.clear();
+        app.log.info(`knowledge watched reload: ${chunks.length} chunks`);
+      } catch (e) {
+        app.log.error(e);
+      }
+    };
+    watch(knowledgeDir, { recursive: true }, () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => void reload(), 800);
+    });
+    app.log.info(`knowledge watch enabled: ${knowledgeDir}`);
+  }
 
   await app.listen({ port, host });
   app.log.info(
-    `server :${port} knowledge=${knowledgeDir} embed=${embedder.name} rate=${chatPerMin}/min`,
+    `server :${port} knowledge=${knowledgeDir} embed=${embedder.name} rate=${chatPerMin}/min data=${dataDir}`,
   );
 }
 

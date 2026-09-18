@@ -12,3 +12,4 @@ coverage/
 dev.out.log
 dev.err.log
 server/indexes/
+server/data/

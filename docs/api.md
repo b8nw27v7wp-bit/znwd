@@ -220,6 +220,31 @@ Base URL：开发态经 Vite 代理为 `http://localhost:5173`；直连后端为
 
 ---
 
+## POST /api/chat/stream
+
+SSE 流式问答。请求体同 `/api/chat`。
+
+事件：
+
+- `event: meta` → `{ mode, sources, provider, sessionId }`
+- `event: delta` → `{ text }`
+- `event: done` → `{ latencyMs, answer, sources, mode }`
+- `event: error` → `{ error }`
+
+---
+
+## 管理与其它
+
+| 接口 | 说明 |
+|------|------|
+| `GET /api/stats` | 若配置 `ADMIN_TOKEN`，需 `Authorization: Bearer <token>` |
+| `POST /api/knowledge/reload` | 同上（可选） |
+| `GET /api/openapi.json` | 简易 API 清单 |
+
+环境变量补充：`ADMIN_TOKEN`、`ANSWER_CACHE_SIZE`、`DATA_DIR`、`KNOWLEDGE_WATCH`。
+
+---
+
 ## 环境变量（server）
 
 见 `server/.env.example`：

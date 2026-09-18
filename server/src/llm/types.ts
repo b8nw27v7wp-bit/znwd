@@ -15,4 +15,6 @@ export interface ChatCompletionResult {
 export interface ChatModel {
   readonly name: string;
   complete(input: ChatCompletionInput): Promise<ChatCompletionResult>;
+  /** 可选流式；无实现时由路由回退 complete */
+  stream?(input: ChatCompletionInput): AsyncGenerator<string>;
 }

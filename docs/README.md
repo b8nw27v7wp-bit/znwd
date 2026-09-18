@@ -12,7 +12,8 @@
 | [development.md](./development.md) | 本地开发、目录规范、提交约定 |
 | [knowledge.md](./knowledge.md) | 知识库分区维护与 Hybrid 检索 |
 | [deployment.md](./deployment.md) | 展厅/一体机部署 |
-| [code-review.md](./code-review.md) | 代码排查与已修 bug 记录 |
+| [code-review.md](./code-review.md) | 早期代码排查 |
+| [code-audit.md](./code-audit.md) | 代码审计与功能测试报告 |
 | [compose/spec/](./compose/spec/) | 历史功能 Spec |
 | [../CHANGELOG.md](../CHANGELOG.md) | 版本变更记录 |
 

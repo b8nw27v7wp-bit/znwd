@@ -2,6 +2,27 @@
 
 本项目版本与变更记录。日期：YYYY-MM-DD。
 
+## [0.6.0] — 2026-09-17
+
+### Added
+
+- SSE `POST /api/chat/stream`；答案 LRU 缓存；JSONL 事件日志  
+- 领域同义词检索扩展；Mock grounded 摘要回复  
+- `GET /api/openapi.json`；可选 `ADMIN_TOKEN` / `KNOWLEDGE_WATCH`  
+- 单元测试 `npm test -w server`；API 审计脚本 `server/scripts/api-audit.mjs`  
+- 审计报告 `docs/code-audit.md`  
+
+### Fixed
+
+- 流式接口 `stream({ messages })` 参数  
+- 答案缓存命中时写入会话，避免追问丢上下文  
+- knowledge reload 清空答案缓存  
+- feedback rating 类型导致构建失败  
+
+### Test
+
+- unit 10/10；api-audit 20/20  
+
 ## [0.5.2] — 2026-09-17
 
 ### Changed

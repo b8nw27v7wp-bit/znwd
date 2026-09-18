@@ -1,16 +1,19 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import path from 'node:path';
 import { loadKnowledge, loadZonesMeta } from '../knowledge/loader.js';
 import type { HybridRetriever } from '../knowledge/hybridRetriever.js';
+import { adminOk } from '../http/cache.js';
 
 export function registerKnowledgeRoutes(
   app: FastifyInstance,
   deps: {
     retriever: HybridRetriever;
     knowledgeDir: string;
+    adminToken?: string;
+    onReloaded?: () => void;
   },
 ): void {
-  const { knowledgeDir, retriever } = deps;
+  const { knowledgeDir, retriever, adminToken } = deps;
 
   app.get('/api/knowledge/list', async () => {
     const root = path.resolve(knowledgeDir);
@@ -43,9 +46,13 @@ export function registerKnowledgeRoutes(
     };
   });
 
-  app.post('/api/knowledge/reload', async () => {
+  app.post('/api/knowledge/reload', async (req: FastifyRequest, reply) => {
+    if (!adminOk(req.headers.authorization, adminToken)) {
+      return reply.code(401).send({ error: 'unauthorized' });
+    }
     const chunks = await loadKnowledge(knowledgeDir);
     await retriever.replace(chunks);
+    deps.onReloaded?.();
     const byFile = new Map<string, number>();
     for (const c of chunks) byFile.set(c.sourcePath, (byFile.get(c.sourcePath) || 0) + 1);
     return {

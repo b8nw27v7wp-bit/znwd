@@ -1,4 +1,5 @@
 import type { KnowledgeChunk } from './loader.js';
+import { expandQueryText } from './synonyms.js';
 
 export interface RetrievedChunk extends KnowledgeChunk {
   score: number;
@@ -70,7 +71,8 @@ export class Retriever {
   }
 
   retrieve(query: string, topK = 4): RetrievedChunk[] {
-    const qTokens = tokenize(query);
+    const expanded = expandQueryText(query);
+    const qTokens = tokenize(expanded);
     if (qTokens.length === 0 || this.chunks.length === 0) return [];
 
     const scored = this.chunks
