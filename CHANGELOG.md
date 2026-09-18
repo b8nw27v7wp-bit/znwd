@@ -2,6 +2,27 @@
 
 本项目版本与变更记录。日期：YYYY-MM-DD。
 
+## [0.8.0] — 2026-09-18
+
+Phase B/C：回答质量评测闭环 + 展览运营（`plan.md`）。
+
+### Added
+
+- 检索评测：`server/eval/retrieval-cases.json` + `npm run eval:retrieval` → `docs/eval/baseline.json`（bag 基线 top1 **0.90** / top3 **1.00**）  
+- `docs/eval.md`：评测方法、C1/C2 内网 Embedding/LLM 接入步骤  
+- `GET /api/admin/feedback-stats`（JSON / `?format=csv`）；feedback 支持可选 `question`  
+- 展览 zone 联动：URL `?zone=`、`window.znwdSetZone(zoneId|mediaId)`、`znwd:zone` CustomEvent  
+
+### Changed
+
+- 答案缓存 key 含 retriever **generation**（K3），reload 后不串代  
+- 同义词表扩展（作业/模板/触摸/展品等），评测 top3 命中率 0.93→1.00  
+- `plan.md` Phase A/B/C 勾选完成  
+
+### Test
+
+- unit **19/19**；api-audit **21/21**（含 feedback-stats）；web/server build PASS；`npm run eval:retrieval` bag top1 0.90 / top3 1.00  
+
 ## [0.7.0] — 2026-09-17
 
 Phase A 可上线加固（`plan.md` S1–S3 / E1–E4 / P1）。

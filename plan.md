@@ -268,16 +268,16 @@ node server/scripts/api-audit.mjs
 
 ### Phase B
 
-- [ ] C1 openai_compat embeddings  
-- [ ] C2 openai_compat LLM  
-- [ ] C3 retrieval eval 集 + 脚本 + baseline  
-- [ ] C4 synonyms/检索迭代  
-- [ ] K3 cache key 含索引版本  
-- [ ] 评测报告落盘  
+- [x] C1 openai_compat embeddings（代码就绪；本机无内网 `.env`，见 `docs/eval.md` 接入步骤）  
+- [x] C2 openai_compat LLM（同上，Mock 离线兜底）  
+- [x] C3 retrieval eval 集 + 脚本 + baseline（`npm run eval:retrieval`；bag top1 0.90 / top3 1.00）  
+- [x] C4 synonyms/检索迭代  
+- [x] K3 cache key 含索引版本（generation）  
+- [x] 评测报告落盘（`docs/eval.md` + `docs/eval/baseline.json`）  
 
 ### Phase C
 
-- [ ] P2 展览 zone 联动  
-- [ ] P3 feedback 统计接口/导出  
-- [ ] C5/C6/E6 按需  
-- [ ] 文档与 CHANGELOG 终稿  
+- [x] P2 展览 zone 联动（`?zone=` + `window.znwdSetZone` / `znwd:zone`）  
+- [x] P3 feedback 统计接口/导出（`/api/admin/feedback-stats`，`?format=csv`）  
+- [x] C5/C6/E6 按需 — **本机暂不做**：无 PDF 样本/指代评测需求/知识规模仍 8 chunks；接口与索引已可扩展  
+- [x] 文档与 CHANGELOG 终稿  

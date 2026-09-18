@@ -43,15 +43,17 @@ function rec(name, ok, detail) {
   );
 
   const cacheQ = '如何联系合作？';
+  const sidCacheA = `cache-a-${Date.now()}`;
+  const sidCacheB = `cache-b-${Date.now()}`;
   const ca = await j('/api/chat', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ message: cacheQ, sessionId: 'cache-a' }),
+    body: JSON.stringify({ message: cacheQ, sessionId: sidCacheA }),
   });
   const c1b = await j('/api/chat', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ message: cacheQ, sessionId: 'cache-b' }),
+    body: JSON.stringify({ message: cacheQ, sessionId: sidCacheB }),
   });
   rec(
     'chat-cache',
@@ -84,17 +86,18 @@ function rec(name, ok, detail) {
   );
 
   // use unique question so cache path is also isolated; then follow-up
+  const mt1 = `mt1-${Date.now()}`;
   await j('/api/chat', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ message: '清洁作业流程是怎样的？', sessionId: 'mt1' }),
+    body: JSON.stringify({ message: '清洁作业流程是怎样的？', sessionId: mt1 }),
   });
   await j('/api/chat', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ message: '那检测呢？', sessionId: 'mt1' }),
+    body: JSON.stringify({ message: '那检测呢？', sessionId: mt1 }),
   });
-  const ses = await j('/api/sessions/mt1');
+  const ses = await j(`/api/sessions/${mt1}`);
   rec('session-history', ses.status === 200 && ses.body.messages?.length >= 4, `msgs=${ses.body.messages?.length}`);
 
   // cache-hit must still write session（随机 id，避免进程内旧会话）
@@ -121,7 +124,7 @@ function rec(name, ok, detail) {
   const fb = await j('/api/feedback', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ sessionId: 'mt1', rating: 'up' }),
+    body: JSON.stringify({ sessionId: mt1, rating: 'up', question: '审计冒烟问题' }),
   });
   rec('feedback-ok', fb.status === 200 && fb.body.ok === true);
   const fbBad = await j('/api/feedback', {
@@ -159,11 +162,18 @@ function rec(name, ok, detail) {
   const oa = await j('/api/openapi.json');
   rec('openapi', oa.status === 200 && !!oa.body.paths?.['/api/chat']);
 
-  const del = await j('/api/sessions/mt1', { method: 'DELETE' });
+  const del = await j(`/api/sessions/${mt1}`, { method: 'DELETE' });
   rec('session-delete', del.status === 200 && del.body.ok === true);
 
-  const ls = await j('/api/sessions/mt1');
+  const ls = await j(`/api/sessions/${mt1}`);
   rec('session-gone', ls.status === 404);
+
+  const fstats = await j('/api/admin/feedback-stats');
+  rec(
+    'feedback-stats',
+    fstats.status === 200 && typeof fstats.body.total === 'number' && Array.isArray(fstats.body.topDown),
+    `total=${fstats.body.total} down=${fstats.body.down}`,
+  );
 
   const fs = await import('node:fs/promises');
   try {

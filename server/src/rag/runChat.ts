@@ -63,7 +63,7 @@ function writeChatLog(
 export async function runChat(deps: RunChatDeps, input: RunChatInput): Promise<RunChatResponse> {
   const { message, sessionId } = input;
   const started = input.started ?? Date.now();
-  const key = answerCacheKey(message, deps.model.name);
+  const key = answerCacheKey(message, deps.model.name, deps.retriever.generation());
   const history = deps.sessions.history(sessionId);
   const hit = deps.answerCache.get(key);
 

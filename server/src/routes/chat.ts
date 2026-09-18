@@ -84,7 +84,7 @@ export function registerChatRoutes(app: FastifyInstance, deps: RouteDeps): void 
     return { ok: deps.sessions.reset(id), sessionId: id };
   });
 
-  app.post<{ Body: { sessionId?: string; rating?: string; comment?: string } }>(
+  app.post<{ Body: { sessionId?: string; rating?: string; comment?: string; question?: string } }>(
     '/api/feedback',
     async (req, reply) => {
       const rating = req.body?.rating;
@@ -96,17 +96,36 @@ export function registerChatRoutes(app: FastifyInstance, deps: RouteDeps): void 
       const sessionId = sanitizeSessionId(req.body?.sessionId);
       const comment =
         typeof req.body?.comment === 'string' ? req.body.comment.slice(0, 500) : undefined;
+      const question =
+        typeof req.body?.question === 'string' ? req.body.question.slice(0, 200) : undefined;
       const item = {
         at: Date.now(),
         sessionId: sessionId ?? null,
         rating: rating as 'up' | 'down',
         comment,
+        question,
       };
       deps.analytics.logFeedback(item);
       deps.logStore.append({ type: 'feedback', ...item });
       return { ok: true };
     },
   );
+
+  /** P3：反馈统计；`?format=csv` 导出 */
+  app.get<{ Querystring: { format?: string } }>('/api/admin/feedback-stats', async (req, reply) => {
+    if (!adminOk(req.headers.authorization, deps.adminToken, adminOpts)) {
+      return denyAdmin(req, reply, deps.adminTokenRequired);
+    }
+    const format = (req.query.format || 'json').toLowerCase();
+    if (format === 'csv') {
+      const csv = deps.analytics.feedbackCsv();
+      return reply
+        .header('content-type', 'text/csv; charset=utf-8')
+        .header('content-disposition', 'attachment; filename="feedback.csv"')
+        .send(csv);
+    }
+    return deps.analytics.feedbackStats();
+  });
 
   app.get('/api/stats', async (req, reply) => {
     if (!adminOk(req.headers.authorization, deps.adminToken, adminOpts)) {
@@ -117,7 +136,7 @@ export function registerChatRoutes(app: FastifyInstance, deps: RouteDeps): void 
 
   app.get('/api/openapi.json', async () => ({
     openapi: '3.0.0',
-    info: { title: 'Virtual Hostess API', version: '0.7.0' },
+    info: { title: 'Virtual Hostess API', version: '0.8.0' },
     servers: [{ url: '/' }],
     paths: {
       '/api/health': { get: { summary: 'Health' } },
@@ -127,6 +146,7 @@ export function registerChatRoutes(app: FastifyInstance, deps: RouteDeps): void 
       '/api/zones': { get: { summary: 'Zones' } },
       '/api/knowledge/list': { get: { summary: 'Knowledge list' } },
       '/api/knowledge/reload': { post: { summary: 'Reload knowledge' } },
+      '/api/admin/feedback-stats': { get: { summary: 'Feedback stats / CSV' } },
     },
   }));
 

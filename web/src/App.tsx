@@ -26,11 +26,28 @@ function welcomeMessages(): UiMessage[] {
   ];
 }
 
+function readUrlZone(): string | undefined {
+  try {
+    const v = new URL(window.location.href).searchParams.get('zone');
+    return v && v.trim() ? v.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** 展览联动：?zone= 或 window.znwdSetZone('pv-clean') / dispatchEvent znwd:zone */
+declare global {
+  interface Window {
+    znwdSetZone?: (zone: string) => void;
+  }
+}
+
 export default function App() {
   const [messages, setMessages] = useState<UiMessage[]>(welcomeMessages);
   const [busy, setBusy] = useState(false);
   const [sessionId, setSessionId] = useState(() => newSessionId());
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [zone, setZone] = useState<string | undefined>(() => readUrlZone());
   const lastActiveRef = useRef(Date.now());
   const busyRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -62,8 +79,34 @@ export default function App() {
   }, [stop]);
 
   useEffect(() => {
+    const applyZone = (z: string) => {
+      const next = z.trim();
+      if (!next) return;
+      setZone(next);
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.set('zone', next);
+        window.history.replaceState({}, '', url.toString());
+      } catch {
+        /* ignore */
+      }
+    };
+    const onCustom = (e: Event) => {
+      const d = (e as CustomEvent).detail;
+      const z = typeof d === 'string' ? d : (d as { zone?: string } | null)?.zone;
+      if (typeof z === 'string') applyZone(z);
+    };
+    window.znwdSetZone = applyZone;
+    window.addEventListener('znwd:zone', onCustom as EventListener);
+    return () => {
+      window.removeEventListener('znwd:zone', onCustom as EventListener);
+      delete window.znwdSetZone;
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
-    fetchSuggestions()
+    fetchSuggestions(zone)
       .then((items) => {
         if (!cancelled) setSuggestions(items);
       })
@@ -73,7 +116,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [zone]);
 
   useEffect(() => {
     const bump = () => touch();

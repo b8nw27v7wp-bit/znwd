@@ -33,8 +33,9 @@ export class LruCache<V> {
   }
 }
 
-export function answerCacheKey(message: string, model: string): string {
-  return model + '::' + message.trim().toLowerCase().slice(0, 300);
+/** K3：cache key 含索引 generation，reload 后旧代答案不会误命中 */
+export function answerCacheKey(message: string, model: string, indexGen = 0): string {
+  return `${model}::g${indexGen}::${message.trim().toLowerCase().slice(0, 300)}`;
 }
 
 export interface CachedAnswer {

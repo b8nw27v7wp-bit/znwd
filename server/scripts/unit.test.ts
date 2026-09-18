@@ -230,6 +230,29 @@ test('MockChatModel stream yields pieces', async () => {
   assert.ok(pieces.join('').includes('测试问题'));
 });
 
-test('answerCacheKey stable', () => {
-  assert.equal(answerCacheKey('  太阳能  ', 'mock'), answerCacheKey('太阳能', 'mock'));
+test('answerCacheKey includes generation', () => {
+  assert.equal(answerCacheKey('  太阳能  ', 'mock', 0), answerCacheKey('太阳能', 'mock', 0));
+  assert.notEqual(answerCacheKey('太阳能', 'mock', 0), answerCacheKey('太阳能', 'mock', 2));
+});
+
+test('expandQueryText covers eval synonyms', () => {
+  const q = expandQueryText('太阳能组件怎么清洗');
+  assert.ok(q.includes('光伏') || q.includes('清洁') || q.includes('清洗'));
+  const w = expandQueryText('风机叶片裂纹');
+  assert.ok(w.includes('检测') || w.includes('缺陷') || w.includes('风电'));
+});
+
+test('Analytics feedbackStats groups down by question', () => {
+  const a = new Analytics();
+  a.logFeedback({ at: 1, sessionId: 's1', rating: 'down', question: '叶片检测要停机吗？' });
+  a.logFeedback({ at: 2, sessionId: 's2', rating: 'down', question: '叶片检测要停机吗？', comment: '讲不清' });
+  a.logFeedback({ at: 3, sessionId: 's3', rating: 'up', question: '光伏清洁' });
+  const s = a.feedbackStats();
+  assert.equal(s.total, 3);
+  assert.equal(s.down, 2);
+  assert.equal(s.topDown[0]?.question, '叶片检测要停机吗？');
+  assert.equal(s.topDown[0]?.down, 2);
+  const csv = a.feedbackCsv();
+  assert.ok(csv.startsWith('at,sessionId,rating,question,comment'));
+  assert.ok(csv.includes('叶片检测要停机吗？'));
 });

@@ -158,7 +158,7 @@ Base URL：开发态经 Vite 代理为 `http://localhost:5173`；直连后端为
 **请求**
 
 ```json
-{ "sessionId": "optional", "rating": "up", "comment": "optional" }
+{ "sessionId": "optional", "rating": "up", "comment": "optional", "question": "optional 上一问摘要" }
 ```
 
 | 字段 | 必填 | 说明 |
@@ -166,11 +166,20 @@ Base URL：开发态经 Vite 代理为 `http://localhost:5173`；直连后端为
 | `rating` | 是 | `up` \| `down`，否则 400 |
 | `sessionId` | 否 | 关联会话 |
 | `comment` | 否 | ≤500 字 |
+| `question` | 否 | ≤200 字，供负反馈运营分析 |
 
 **200**：`{ "ok": true }`
 
 ---
 
+## GET /api/admin/feedback-stats
+
+负反馈汇总（管理接口，鉴权规则同 `/api/stats`）。
+
+- 默认 JSON：`{ total, up, down, downRate, topDown[], recentDown[] }`
+- `?format=csv`：`text/csv` 附件 `feedback.csv`
+
+---
 ## GET /api/stats
 
 运行统计（内存态，进程重启清零）。
@@ -277,6 +286,7 @@ SSE 流式问答。请求体同 `/api/chat`。
 | `INDEX_DIR` | `./server/indexes` | 向量索引目录 |
 | `LOG_MAX_BYTES` | `5000000` | events.jsonl 轮转阈值 |
 | `LOG_MESSAGE_MODE` | `hash` | `hash` \| `preview`；JSONL 不再落盘完整 question |
+| 答案缓存 key | — | 含 model + **retriever generation** + message（reload 后不串代） |
 
 ---
 
