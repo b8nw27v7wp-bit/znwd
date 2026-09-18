@@ -10,7 +10,7 @@ commits: b558d5ee91b7f6b1cea3838a5d211c2c676b2726..HEAD
 
 ## Report
 
-**What was built** — 同 `sessionId` 多轮 RAG 上下文（内存 6 轮/TTL 10 分钟）；`GET /api/suggestions` + 前端推荐 chips；闲置 120s 自动复位；15s health 状态条与「重新开始」。Mock 在多轮时回显「已结合前序 N 轮」便于验收。
+**What was built** — 同 `sessionId` 多轮 RAG 上下文（内存 6 轮/TTL 10 分钟）；`GET /api/suggestions` + 前端推荐 chips；闲置 120s 自动复位；15s health 状态条与「重新开始」。Mock 在多轮时回显「已结合前序 N 轮」便于验收。布局调整为整页仅占左 1/3、上形象下聊天。
 
 **Verification** — `npm run build -w server` / `-w web` PASS；curl：suggestions 4 条；同 session 第二问 answer 含「已结合前序 1 轮对话上下文」且 `mode=rag`。
 
