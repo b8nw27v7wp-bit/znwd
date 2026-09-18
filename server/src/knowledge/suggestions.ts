@@ -27,5 +27,3 @@ export function suggestionsForZone(zonesMeta: ZonesMeta, zoneOrMedia?: string): 
     );
   return zone?.suggestions?.length ? zone.suggestions : allSuggestions(zonesMeta);
 }
-
-export const SUGGESTIONS = DEFAULT;

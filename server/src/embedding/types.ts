@@ -1,6 +1,11 @@
 export interface EmbeddingProvider {
   readonly name: string;
   readonly dims: number | 'auto';
+  /**
+   * 是否为语义向量：bag 特征哈希为 false（其向量路只等于模糊关键词匹配，
+   * 不能用来给「无关问题」兜底命中），openai_compat 为 true。
+   */
+  readonly semantic: boolean;
   embed(texts: string[]): Promise<number[][]>;
 }
 
@@ -19,12 +24,4 @@ export function cosine(a: number[], b: number[]): number {
   }
   if (na === 0 || nb === 0) return 0;
   return dot / (Math.sqrt(na) * Math.sqrt(nb));
-}
-
-function l2(vec: number[]): number[] {
-  let s = 0;
-  for (const x of vec) s += x * x;
-  if (s <= 0) return vec.map(() => 0);
-  const inv = 1 / Math.sqrt(s);
-  return vec.map((x) => x * inv);
 }

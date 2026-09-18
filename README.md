@@ -43,19 +43,29 @@ znwd/
 
 ## 常用 API
 
-- `GET /api/health`
+- `GET /api/health`（含 `retrieval.mode`/`semantic`/`thresholds`、`corsOrigins`）
 - `GET /api/suggestions`（`?zone=pv-clean` / `wind-inspect` / `exhibit-*`）
 - `GET /api/zones`
-- `POST /api/chat` — `{ "message", "sessionId" }`
-- `POST /api/chat/stream` — SSE
-- `GET /api/openapi.json`
+- `POST /api/chat` — `{ "message", "sessionId" }` → 含 `noHit`（知识库未覆盖）
+- `POST /api/chat/stream` — SSE（`meta` → `delta`* → `done`）
+- `GET /api/openapi.json`（含 components schemas）
 - `GET|DELETE /api/sessions/:sessionId`
-- `POST /api/feedback`
-- `GET /api/stats`（可选 `ADMIN_TOKEN`）
+- `POST /api/feedback`（未带 `question` 时自动取会话最后一条提问）
+- `GET /api/stats`（可选 `ADMIN_TOKEN`；含 `noHit` 计数）
 - `GET /api/knowledge/list`
 - `POST /api/knowledge/reload`（可选 `ADMIN_TOKEN`）
 
-测试：`npm test -w server`；API 审计：`node server/scripts/api-audit.mjs`。审计报告：[docs/code-audit.md](docs/code-audit.md)。
+## 校验命令
+
+```bash
+npm test -w server           # 单元测试
+npm run eval:retrieval       # 检索评测（top1/top3 + 闸门漏答清单）
+npm run calibrate -w server  # 相关性阈值标定（改知识后必跑）
+npm run dev:server           # 另开终端后：
+node server/scripts/api-audit.mjs
+```
+
+审计报告：[docs/code-audit.md](docs/code-audit.md)。评测方法：[docs/eval.md](docs/eval.md)。
 
 ## 配置
 
@@ -66,7 +76,9 @@ LLM_PROVIDER=mock | openai_compat
 LLM_BASE_URL=...
 EMBED_PROVIDER=bag | openai_compat
 EMBED_MODEL=...
+# CORS_ORIGINS=https://exhibit.your-host
 # ADMIN_TOKEN=secret
+# MIN_RELEVANCE_SCORE=3.5   # 用 npm run calibrate -w server 标定
 # KNOWLEDGE_WATCH=true
 ```
 

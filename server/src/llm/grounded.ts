@@ -1,9 +1,14 @@
-import type { KnowledgeChunk } from '../knowledge/loader.js';
-
 function pickLines(text: string, max = 3): string[] {
   return text
     .split(/\n+/)
-    .map((l) => l.replace(/^#+\s*/, '').replace(/\*\*/g, '').trim())
+    .map((l) =>
+      l
+        .replace(/^#+\s*/, '')
+        .replace(/^\s*[-*+•]\s+/, '')
+        .replace(/^\s*\d+[.、)]\s*/, '')
+        .replace(/\*\*/g, '')
+        .trim(),
+    )
     .filter((l) => l.length >= 8 && !l.startsWith('|') && !l.startsWith('---'))
     .slice(0, max);
 }
@@ -31,15 +36,16 @@ export interface GroundedAnswerInput {
  */
 export function buildGroundedAnswer(input: GroundedAnswerInput): string {
   const chunks = extractChunks(input.context);
-  const noHit = input.context.includes('（无命中片段）');
   const multi = input.historyTurns > 0 ? `\n（已结合前序 ${input.historyTurns} 轮对话）` : '';
 
-  if (noHit || chunks.length === 0) {
+  if (chunks.length === 0) {
     return [
-      `关于「${input.question}」：`,
-      `当前知识库未检索到直接相关内容。`,
-      `可查看对应展区说明，或询问现场讲解员/业务同事。${multi}`,
-      `（Mock 演示回复 · 未绑定知识片段）`,
+      `关于「${input.question}」：展厅资料中没有这方面的内容。`,
+      `可以换个问法，例如：`,
+      `   · 光伏清洁无人机是做什么的？`,
+      `   · 风场检测无人机怎么检测叶片？`,
+      `   · 提供哪些培训与服务合作？`,
+      `（Mock 演示回复 · 未命中知识片段）${multi}`,
     ].join('\n');
   }
 
@@ -57,8 +63,4 @@ export function buildGroundedAnswer(input: GroundedAnswerInput): string {
   lines.push(`\n如需完整参数或方案对接，请联系现场讲解或业务同事。${multi}`);
   lines.push(`（Mock 演示回复 · 基于检索片段整理）`);
   return lines.join('\n');
-}
-
-export function relatedFromChunks(chunks: KnowledgeChunk[], usedPaths: Set<string>): string[] {
-  return chunks.filter((c) => !usedPaths.has(c.sourcePath)).slice(0, 3).map((c) => c.title);
 }

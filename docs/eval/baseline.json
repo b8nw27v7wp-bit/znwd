@@ -1,16 +1,22 @@
 {
   "summary": {
-    "at": "2026-09-18T14:01:03.999Z",
+    "at": "2026-09-18T15:07:24.403Z",
     "embedProvider": "bag",
+    "semantic": false,
     "llmProvider": "mock",
-    "knowledgeChunks": 8,
+    "knowledgeChunks": 23,
     "generation": 1,
     "cases": 30,
     "openCases": 2,
-    "top1Hit": 27,
+    "top1Hit": 29,
     "top3Hit": 30,
-    "top1Rate": 0.9,
-    "top3Rate": 1
+    "top1Rate": 0.9667,
+    "top3Rate": 1,
+    "gatedTop1Rate": 0.9667,
+    "gatedTop3Rate": 1,
+    "gateBlockedCount": 0,
+    "gateBlocked": [],
+    "minKeywordScore": 3.8
   },
   "rows": [
     {
@@ -20,7 +26,9 @@
       "top1": "光伏清洁无人机产品概述",
       "top1Path": "01_光伏清洁无人机\\产品概述.md",
       "hit1": true,
-      "hit3": true
+      "hit3": true,
+      "gated": false,
+      "keywordBestScore": 13.876
     },
     {
       "id": "pv-02",
@@ -29,7 +37,9 @@
       "top1": "光伏清洁无人机产品概述",
       "top1Path": "01_光伏清洁无人机\\产品概述.md",
       "hit1": true,
-      "hit3": true
+      "hit3": true,
+      "gated": false,
+      "keywordBestScore": 6.9467
     },
     {
       "id": "pv-03",
@@ -38,7 +48,9 @@
       "top1": "清洁流程与作业说明",
       "top1Path": "01_光伏清洁无人机\\清洁流程与作业.md",
       "hit1": true,
-      "hit3": true
+      "hit3": true,
+      "gated": false,
+      "keywordBestScore": 8.2996
     },
     {
       "id": "pv-04",
@@ -47,7 +59,9 @@
       "top1": "光伏清洁无人机产品概述",
       "top1Path": "01_光伏清洁无人机\\产品概述.md",
       "hit1": true,
-      "hit3": true
+      "hit3": true,
+      "gated": false,
+      "keywordBestScore": 8.6878
     },
     {
       "id": "pv-05",
@@ -56,7 +70,9 @@
       "top1": "光伏清洁无人机产品概述",
       "top1Path": "01_光伏清洁无人机\\产品概述.md",
       "hit1": true,
-      "hit3": true
+      "hit3": true,
+      "gated": false,
+      "keywordBestScore": 8.6818
     },
     {
       "id": "pv-06",
@@ -65,7 +81,9 @@
       "top1": "展区：光伏清洁无人机",
       "top1Path": "01_光伏清洁无人机\\展览_光伏清洁.md",
       "hit1": true,
-      "hit3": true
+      "hit3": true,
+      "gated": false,
+      "keywordBestScore": 9.9258
     },
     {
       "id": "pv-07",
@@ -74,7 +92,9 @@
       "top1": "光伏清洁无人机产品概述",
       "top1Path": "01_光伏清洁无人机\\产品概述.md",
       "hit1": true,
-      "hit3": true
+      "hit3": true,
+      "gated": false,
+      "keywordBestScore": 5.7255
     },
     {
       "id": "pv-08",
@@ -83,7 +103,9 @@
       "top1": "光伏清洁无人机产品概述",
       "top1Path": "01_光伏清洁无人机\\产品概述.md",
       "hit1": true,
-      "hit3": true
+      "hit3": true,
+      "gated": false,
+      "keywordBestScore": 10.7078
     },
     {
       "id": "wind-01",
@@ -92,7 +114,9 @@
       "top1": "风场检测无人机产品概述",
       "top1Path": "02_风场检测无人机\\产品概述.md",
       "hit1": true,
-      "hit3": true
+      "hit3": true,
+      "gated": false,
+      "keywordBestScore": 13.6775
     },
     {
       "id": "wind-02",
@@ -101,16 +125,20 @@
       "top1": "叶片检测说明",
       "top1Path": "02_风场检测无人机\\叶片检测说明.md",
       "hit1": true,
-      "hit3": true
+      "hit3": true,
+      "gated": false,
+      "keywordBestScore": 9.6328
     },
     {
       "id": "wind-03",
       "question": "风机叶片裂纹怎么发现？",
       "expectZone": "wind-inspect",
-      "top1": "风场检测无人机产品概述",
-      "top1Path": "02_风场检测无人机\\产品概述.md",
+      "top1": "叶片检测说明",
+      "top1Path": "02_风场检测无人机\\叶片检测说明.md",
       "hit1": true,
-      "hit3": true
+      "hit3": true,
+      "gated": false,
+      "keywordBestScore": 5.9339
     },
     {
       "id": "wind-04",
@@ -119,7 +147,9 @@
       "top1": "风场检测无人机产品概述",
       "top1Path": "02_风场检测无人机\\产品概述.md",
       "hit1": true,
-      "hit3": true
+      "hit3": true,
+      "gated": false,
+      "keywordBestScore": 7.6954
     },
     {
       "id": "wind-05",
@@ -128,7 +158,9 @@
       "top1": "风场检测无人机产品概述",
       "top1Path": "02_风场检测无人机\\产品概述.md",
       "hit1": true,
-      "hit3": true
+      "hit3": true,
+      "gated": false,
+      "keywordBestScore": 8.4572
     },
     {
       "id": "wind-06",
@@ -137,7 +169,9 @@
       "top1": "展区：风场检测无人机",
       "top1Path": "02_风场检测无人机\\展览_风场检测.md",
       "hit1": true,
-      "hit3": true
+      "hit3": true,
+      "gated": false,
+      "keywordBestScore": 8.4264
     },
     {
       "id": "wind-07",
@@ -146,7 +180,9 @@
       "top1": "风场检测无人机产品概述",
       "top1Path": "02_风场检测无人机\\产品概述.md",
       "hit1": true,
-      "hit3": true
+      "hit3": true,
+      "gated": false,
+      "keywordBestScore": 8.1087
     },
     {
       "id": "wind-08",
@@ -155,7 +191,9 @@
       "top1": "叶片检测说明",
       "top1Path": "02_风场检测无人机\\叶片检测说明.md",
       "hit1": true,
-      "hit3": true
+      "hit3": true,
+      "gated": false,
+      "keywordBestScore": 5.0471
     },
     {
       "id": "svc-01",
@@ -164,7 +202,9 @@
       "top1": "服务、培训与合作",
       "top1Path": "03_服务与合作\\服务培训与合作.md",
       "hit1": true,
-      "hit3": true
+      "hit3": true,
+      "gated": false,
+      "keywordBestScore": 8.3923
     },
     {
       "id": "svc-02",
@@ -173,7 +213,9 @@
       "top1": "服务、培训与合作",
       "top1Path": "03_服务与合作\\服务培训与合作.md",
       "hit1": true,
-      "hit3": true
+      "hit3": true,
+      "gated": false,
+      "keywordBestScore": 9.393
     },
     {
       "id": "svc-03",
@@ -182,7 +224,9 @@
       "top1": "服务、培训与合作",
       "top1Path": "03_服务与合作\\服务培训与合作.md",
       "hit1": true,
-      "hit3": true
+      "hit3": true,
+      "gated": false,
+      "keywordBestScore": 11.9194
     },
     {
       "id": "svc-04",
@@ -191,7 +235,9 @@
       "top1": "服务、培训与合作",
       "top1Path": "03_服务与合作\\服务培训与合作.md",
       "hit1": true,
-      "hit3": true
+      "hit3": true,
+      "gated": false,
+      "keywordBestScore": 6.7796
     },
     {
       "id": "svc-05",
@@ -200,7 +246,9 @@
       "top1": "清洁流程与作业说明",
       "top1Path": "01_光伏清洁无人机\\清洁流程与作业.md",
       "hit1": false,
-      "hit3": true
+      "hit3": true,
+      "gated": false,
+      "keywordBestScore": 6.2663
     },
     {
       "id": "svc-06",
@@ -209,7 +257,9 @@
       "top1": "服务、培训与合作",
       "top1Path": "03_服务与合作\\服务培训与合作.md",
       "hit1": true,
-      "hit3": true
+      "hit3": true,
+      "gated": false,
+      "keywordBestScore": 6.7294
     },
     {
       "id": "safe-01",
@@ -218,25 +268,31 @@
       "top1": "展厅参观须知",
       "top1Path": "90_通识\\展厅参观须知.md",
       "hit1": true,
-      "hit3": true
+      "hit3": true,
+      "gated": false,
+      "keywordBestScore": 19.93
     },
     {
       "id": "safe-02",
       "question": "可以摸无人机吗？",
       "expectZone": "safety",
-      "top1": "展区：光伏清洁无人机",
-      "top1Path": "01_光伏清洁无人机\\展览_光伏清洁.md",
-      "hit1": false,
-      "hit3": true
+      "top1": "展厅参观须知",
+      "top1Path": "90_通识\\展厅参观须知.md",
+      "hit1": true,
+      "hit3": true,
+      "gated": false,
+      "keywordBestScore": 9.4901
     },
     {
       "id": "safe-03",
       "question": "拍照能开闪光灯吗？",
       "expectZone": "safety",
-      "top1": "展区：光伏清洁无人机",
-      "top1Path": "01_光伏清洁无人机\\展览_光伏清洁.md",
-      "hit1": false,
-      "hit3": true
+      "top1": "展厅参观须知",
+      "top1Path": "90_通识\\展厅参观须知.md",
+      "hit1": true,
+      "hit3": true,
+      "gated": false,
+      "keywordBestScore": 6.0478
     },
     {
       "id": "safe-04",
@@ -245,7 +301,9 @@
       "top1": "展厅参观须知",
       "top1Path": "90_通识\\展厅参观须知.md",
       "hit1": true,
-      "hit3": true
+      "hit3": true,
+      "gated": false,
+      "keywordBestScore": 6.4952
     },
     {
       "id": "safe-05",
@@ -254,7 +312,9 @@
       "top1": "展厅参观须知",
       "top1Path": "90_通识\\展厅参观须知.md",
       "hit1": true,
-      "hit3": true
+      "hit3": true,
+      "gated": false,
+      "keywordBestScore": 9.2688
     },
     {
       "id": "safe-06",
@@ -263,7 +323,9 @@
       "top1": "展厅参观须知",
       "top1Path": "90_通识\\展厅参观须知.md",
       "hit1": true,
-      "hit3": true
+      "hit3": true,
+      "gated": false,
+      "keywordBestScore": 7.5877
     },
     {
       "id": "mix-01",
@@ -272,7 +334,9 @@
       "top1": "光伏清洁无人机产品概述",
       "top1Path": "01_光伏清洁无人机\\产品概述.md",
       "hit1": true,
-      "hit3": true
+      "hit3": true,
+      "gated": false,
+      "keywordBestScore": 6.3253
     },
     {
       "id": "mix-02",
@@ -281,7 +345,9 @@
       "top1": "风场检测无人机产品概述",
       "top1Path": "02_风场检测无人机\\产品概述.md",
       "hit1": true,
-      "hit3": true
+      "hit3": true,
+      "gated": false,
+      "keywordBestScore": 10.3593
     }
   ]
 }

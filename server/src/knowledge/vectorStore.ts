@@ -192,10 +192,16 @@ export class VectorStore {
     const d = this.data;
     return {
       provider: d.providerName || this.embedder.name,
+      semantic: this.embedder.semantic,
       dims: d.dims,
       vectors: d.vectors.size,
       fingerprint: d.fingerprint,
       indexFile: this.indexFile,
     };
+  }
+
+  /** 向量路是否具备语义能力（bag 特征哈希为 false） */
+  semantic(): boolean {
+    return this.embedder.semantic;
   }
 }

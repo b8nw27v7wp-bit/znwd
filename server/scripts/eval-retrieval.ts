@@ -58,6 +58,9 @@ async function main() {
   const scored = cases.filter((c) => c.zone || c.sourcePathIncludes);
   let top1 = 0;
   let top3 = 0;
+  let gatedTop1 = 0;
+  let gatedTop3 = 0;
+  const gateBlocked: string[] = [];
   const rows: Array<{
     id: string;
     question: string;
@@ -66,10 +69,13 @@ async function main() {
     top1Path: string | null;
     hit1: boolean;
     hit3: boolean;
+    gated: boolean;
+    keywordBestScore: number;
   }> = [];
 
   for (const c of scored) {
     const hits = await retriever.retrieve(c.question, 4);
+    const outcome = await retriever.retrieveWithDiagnostics(c.question, { topK: 4 });
     const top = hits.slice(0, 3);
     const match = (h: { zone?: string; sourcePath: string } | undefined) => {
       if (!h) return false;
@@ -81,6 +87,13 @@ async function main() {
     const hit3 = top.some(match);
     if (hit1) top1++;
     if (hit3) top3++;
+    // 闸门（生产路径）是否把这条例本该答的问题拦了 —— 误拦就是漏答
+    const gTop = outcome.hits.slice(0, 3);
+    const gHit1 = match(outcome.hits[0]);
+    const gHit3 = gTop.some(match);
+    if (gHit1) gatedTop1++;
+    if (gHit3) gatedTop3++;
+    if (outcome.hits.length === 0) gateBlocked.push(c.id);
     rows.push({
       id: c.id,
       question: c.question,
@@ -89,6 +102,8 @@ async function main() {
       top1Path: hits[0]?.sourcePath ?? null,
       hit1,
       hit3,
+      gated: outcome.diagnostics.gated,
+      keywordBestScore: outcome.diagnostics.keywordBestScore,
     });
   }
 
@@ -96,6 +111,7 @@ async function main() {
   const summary = {
     at: new Date().toISOString(),
     embedProvider: embedder.name,
+    semantic: embedder.semantic,
     llmProvider: process.env.LLM_PROVIDER || 'mock',
     knowledgeChunks: chunks.length,
     generation: retriever.generation(),
@@ -105,12 +121,19 @@ async function main() {
     top3Hit: top3,
     top1Rate: Number((top1 / n).toFixed(4)),
     top3Rate: Number((top3 / n).toFixed(4)),
+    /** 生产路径（含相关性闸门）指标；gateBlocked 是漏答（该答没答） */
+    gatedTop1Rate: Number((gatedTop1 / n).toFixed(4)),
+    gatedTop3Rate: Number((gatedTop3 / n).toFixed(4)),
+    gateBlockedCount: gateBlocked.length,
+    gateBlocked,
+    minKeywordScore: retriever.stats().thresholds.minKeywordScore,
   };
 
   console.log(JSON.stringify(summary, null, 2));
   for (const r of rows) {
     console.log(
       (r.hit1 ? 'H1' : r.hit3 ? 'H3' : 'MISS'),
+      r.gated ? 'GATED' : '     ',
       r.id,
       r.question,
       '→',

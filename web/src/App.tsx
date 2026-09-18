@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { fetchSuggestions, sendChat, sendChatStream } from './api/client';
+import { fetchSuggestions, sendChat, sendChatStream, sendFeedback } from './api/client';
 import { ChatPanel } from './components/ChatPanel';
 import { Composer } from './components/Composer';
 import { Live2DStage } from './components/Live2DStage';
@@ -53,7 +53,10 @@ export default function App() {
   const abortRef = useRef<AbortController | null>(null);
   const { state: speechState, speak, stop, muted, toggleMute } = useSpeech();
 
-  busyRef.current = busy;
+  // ref 只在 effect 里同步：渲染期写 ref 在并发渲染下会读到错值
+  useEffect(() => {
+    busyRef.current = busy;
+  }, [busy]);
 
   const touch = useCallback(() => {
     lastActiveRef.current = Date.now();
@@ -65,8 +68,8 @@ export default function App() {
     return 'idle' as const;
   }, [speechState, busy]);
 
-  const showSuggestions =
-    messages.length <= 1 && messages[0]?.id === 'welcome' && !busy;
+  const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
+  const showSuggestions = !busy && (messages.length <= 1 || lastAssistant?.noHit === true);
 
   const resetConversation = useCallback(() => {
     abortRef.current?.abort();
@@ -179,6 +182,7 @@ export default function App() {
           text: data.answer,
           mode: data.mode as 'rag' | 'llm_only',
           sources: data.sources?.map((s) => ({ title: s.title, snippet: s.snippet })),
+          noHit: data.noHit === true,
           streaming: false,
           error: false,
         });
@@ -197,6 +201,14 @@ export default function App() {
         try {
           const data = await sendChatStream(text, sessionId, {
             signal: ac.signal,
+            onMeta: (meta) => {
+              // 来源与"知识库未覆盖"提示在首个事件就渲染，不必等整段回答
+              patchBot({
+                mode: meta.mode as 'rag' | 'llm_only',
+                sources: meta.sources.map((s) => ({ title: s.title, snippet: s.snippet })),
+                noHit: meta.noHit === true,
+              });
+            },
             onDelta: (delta) => {
               setMessages((prev) =>
                 prev.map((m) =>
@@ -235,6 +247,23 @@ export default function App() {
     [busy, sessionId, speak, stop, touch],
   );
 
+  const handleFeedback = useCallback(
+    async (messageId: string, rating: 'up' | 'down') => {
+      const index = messages.findIndex((m) => m.id === messageId);
+      const question = index > 0 ? messages[index - 1]?.text : undefined;
+      setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, feedback: rating } : m)));
+      try {
+        await sendFeedback({ rating, sessionId, question });
+      } catch {
+        // 反馈失败不影响参观者主流程，仅回滚标记
+        setMessages((prev) =>
+          prev.map((m) => (m.id === messageId ? { ...m, feedback: undefined } : m)),
+        );
+      }
+    },
+    [messages, sessionId],
+  );
+
   return (
     <div className="app">
       <section className="rail">
@@ -248,6 +277,7 @@ export default function App() {
             suggestions={suggestions}
             showSuggestions={showSuggestions}
             onSuggest={handleSend}
+            onFeedback={handleFeedback}
           />
           <div className="chat-footer">
             <div className="chat-toolbar" aria-label="功能选项">

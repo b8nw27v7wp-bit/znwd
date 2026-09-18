@@ -16,10 +16,12 @@ export interface ChatResponse {
   sessionId?: string | null;
   latencyMs?: number;
   cached?: boolean;
+  /** 知识库未覆盖（相关性闸门拦截） */
+  noHit?: boolean;
 }
 
 export interface StreamHandlers {
-  onMeta?: (meta: { mode: string; sources: ChatSource[]; provider: string }) => void;
+  onMeta?: (meta: { mode: string; sources: ChatSource[]; provider: string; noHit?: boolean }) => void;
   onDelta?: (text: string) => void;
   signal?: AbortSignal;
 }
@@ -119,6 +121,7 @@ export async function sendChatStream(
   let provider = '';
   let answer = '';
   let gotDone = false;
+  let noHit = false;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -128,11 +131,17 @@ export async function sendChatStream(
     buffer = rest;
     for (const ev of events) {
       if (ev.event === 'meta') {
-        const d = ev.data as { mode?: 'rag' | 'llm_only'; sources?: ChatSource[]; provider?: string };
+        const d = ev.data as {
+          mode?: 'rag' | 'llm_only';
+          sources?: ChatSource[];
+          provider?: string;
+          noHit?: boolean;
+        };
         mode = d.mode ?? mode;
         sources = d.sources ?? [];
         provider = d.provider ?? provider;
-        handlers.onMeta?.({ mode, sources, provider });
+        if (typeof d.noHit === 'boolean') noHit = d.noHit;
+        handlers.onMeta?.({ mode, sources, provider, noHit });
       } else if (ev.event === 'delta') {
         const d = ev.data as { text?: string };
         if (d.text) {
@@ -145,10 +154,12 @@ export async function sendChatStream(
           sources?: ChatSource[];
           mode?: 'rag' | 'llm_only';
           latencyMs?: number;
+          noHit?: boolean;
         };
         if (typeof d.answer === 'string') answer = d.answer;
         if (d.sources) sources = d.sources;
         if (d.mode) mode = d.mode;
+        if (typeof d.noHit === 'boolean') noHit = d.noHit;
         gotDone = true;
         return {
           answer,
@@ -157,6 +168,7 @@ export async function sendChatStream(
           provider,
           sessionId: sessionId ?? null,
           latencyMs: d.latencyMs,
+          noHit,
         };
       } else if (ev.event === 'error') {
         const d = ev.data as { message?: string; error?: string };
@@ -178,4 +190,18 @@ export async function fetchSuggestions(zone?: string): Promise<string[]> {
   if (!res.ok) throw new Error(`suggestions ${res.status}`);
   const data = (await res.json()) as { items?: string[] };
   return data.items ?? [];
+}
+
+/** 访客反馈：服务端在未带 question 时取会话里最后一条提问 */
+export async function sendFeedback(input: {
+  rating: 'up' | 'down';
+  sessionId?: string;
+  question?: string;
+}): Promise<void> {
+  const res = await fetch('/api/feedback', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error(`feedback ${res.status}`);
 }

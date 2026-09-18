@@ -45,6 +45,8 @@ export interface CachedAnswer {
   provider: string;
   retrieval: string;
   cached: boolean;
+  /** 相关性闸门拦截（知识库未覆盖） */
+  noHit?: boolean;
 }
 
 export interface JsonlStoreOptions {

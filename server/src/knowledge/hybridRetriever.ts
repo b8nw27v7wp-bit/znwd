@@ -14,6 +14,36 @@ export interface HybridStats {
   vector: ReturnType<VectorStore['stats']>;
   indexReady: boolean;
   generation: number;
+  /** 向量路是否具备语义能力（bag 为 false，此时 mode 恒为 keyword） */
+  semantic: boolean;
+  degradedReason: string | null;
+  thresholds: { minKeywordScore: number; minVectorScore: number };
+}
+
+export interface HybridOptions {
+  /** 关键词路最低分：低于此值且向量路不可用时视为「知识库未覆盖」 */
+  minKeywordScore?: number;
+  /** 语义向量路最低余弦（仅 semantic 向量生效） */
+  minVectorScore?: number;
+}
+
+export type RetrievalReason = 'keyword_hit' | 'vector_hit' | 'below_threshold' | 'no_candidates';
+
+export interface RetrievalDiagnostics {
+  mode: 'keyword' | 'hybrid';
+  semantic: boolean;
+  degraded: boolean;
+  gated: boolean;
+  reason: RetrievalReason;
+  keywordBestScore: number;
+  vectorBestCosine: number;
+  candidates: number;
+  thresholds: { minKeywordScore: number; minVectorScore: number };
+}
+
+export interface RetrievalOutcome {
+  hits: HybridHit[];
+  diagnostics: RetrievalDiagnostics;
 }
 
 /** RRF 融合关键词与向量两路排序 */
@@ -28,6 +58,8 @@ function rrfFuse(
       chunk: KnowledgeChunk;
       keywordScore: number;
       vectorScore: number;
+      matched: string[];
+      matchedTokens: number;
       kwRank?: number;
       vecRank?: number;
     }
@@ -38,6 +70,8 @@ function rrfFuse(
       chunk: c,
       keywordScore: c.score,
       vectorScore: 0,
+      matched: c.matched,
+      matchedTokens: c.matchedTokens,
       kwRank: i + 1,
     });
   });
@@ -52,6 +86,8 @@ function rrfFuse(
         chunk: v.chunk,
         keywordScore: 0,
         vectorScore: v.score,
+        matched: [],
+        matchedTokens: 0,
         vecRank: i + 1,
       });
     }
@@ -75,6 +111,8 @@ function rrfFuse(
       score: Number(fuse.toFixed(6)),
       keywordScore: Number(item.keywordScore.toFixed(4)),
       vectorScore: Number(item.vectorScore.toFixed(4)),
+      matchedTokens: item.matchedTokens,
+      matched: item.matched,
       fuseScore: Number(fuse.toFixed(6)),
     });
   }
@@ -89,11 +127,23 @@ interface Snapshot {
   ready: boolean;
 }
 
+/** 由 scripts/calibrate.ts 在现有知识库上标定：在域最低 5.05 / 域外最高 2.64（取区间中点 3.8） */
+export const DEFAULT_MIN_KEYWORD_SCORE = 3.8;
+export const DEFAULT_MIN_VECTOR_SCORE = 0.35;
+
 export class HybridRetriever {
   private snapshot: Snapshot = { gen: 0, keyword: new Retriever(), ready: false };
   private replaceChain: Promise<unknown> = Promise.resolve();
+  private readonly minKeywordScore: number;
+  private readonly minVectorScore: number;
 
-  constructor(private readonly vectors: VectorStore) {}
+  constructor(
+    private readonly vectors: VectorStore,
+    options: HybridOptions = {},
+  ) {
+    this.minKeywordScore = options.minKeywordScore ?? DEFAULT_MIN_KEYWORD_SCORE;
+    this.minVectorScore = options.minVectorScore ?? DEFAULT_MIN_VECTOR_SCORE;
+  }
 
   generation(): number {
     return this.snapshot.gen;
@@ -128,33 +178,100 @@ export class HybridRetriever {
     return this.snapshot.keyword.retrieve(query, topK);
   }
 
+  /** 原始融合结果（不套相关性闸门），供评测与排查使用 */
   async retrieve(query: string, topK = 4): Promise<HybridHit[]> {
+    return (await this.retrieveWithDiagnostics(query, { topK, applyGate: false })).hits;
+  }
+
+  /**
+   * 带诊断检索：关键词路低于阈值、且语义向量路不可用或余弦过低时返回空命中，
+   * 让上层明确回答「知识库未覆盖」，而不是拿无关片段硬答。
+   */
+  async retrieveWithDiagnostics(
+    query: string,
+    options: { topK?: number; applyGate?: boolean } = {},
+  ): Promise<RetrievalOutcome> {
+    const topK = options.topK ?? 4;
+    const applyGate = options.applyGate ?? true;
     const snap = this.snapshot;
     const kw = snap.keyword.retrieve(query, Math.max(topK * 2, 8));
+
     // 固定向量 data 引用；命中 chunk 对齐到 keyword 快照，避免 reload 中混代
     const vecData = this.vectors.snapshot();
+    const semantic = this.vectors.semantic();
     let vecRaw: Array<{ id: string; score: number; chunk: KnowledgeChunk }> = [];
-    try {
-      vecRaw = await this.vectors.searchOn(vecData, query, Math.max(topK * 2, 8));
-    } catch {
-      vecRaw = [];
+    if (vecData.vectors.size > 0) {
+      try {
+        vecRaw = await this.vectors.searchOn(vecData, query, Math.max(topK * 2, 8));
+      } catch {
+        vecRaw = [];
+      }
     }
     const chunkById = new Map(snap.keyword.list().map((c) => [c.id, c] as const));
     const vec = vecRaw.flatMap((v) => {
       const chunk = chunkById.get(v.id);
       return chunk ? [{ id: v.id, score: v.score, chunk }] : [];
     });
-    const fused = rrfFuse(kw, vec);
-    return fused.slice(0, topK);
+
+    const keywordBestScore = kw[0]?.score ?? 0;
+    const vectorBestCosine = vec[0]?.score ?? 0;
+    const keywordPass = kw.length > 0 && keywordBestScore >= this.minKeywordScore;
+    const vectorPass = semantic && vec.length > 0 && vectorBestCosine >= this.minVectorScore;
+
+    let gated = false;
+    let reason: RetrievalReason;
+    if (keywordPass) {
+      reason = 'keyword_hit';
+    } else if (vectorPass) {
+      reason = 'vector_hit';
+    } else if (applyGate) {
+      gated = true;
+      reason = kw.length === 0 && vec.length === 0 ? 'no_candidates' : 'below_threshold';
+    } else {
+      reason = kw.length > 0 ? 'keyword_hit' : vec.length > 0 ? 'vector_hit' : 'no_candidates';
+    }
+
+    const useKeyword = gated ? [] : kw;
+    const useVector = gated ? [] : vec;
+
+    // mode 如实上报：只有语义向量真的参与融合时才算 hybrid
+    const mode: 'keyword' | 'hybrid' = semantic && useVector.length > 0 ? 'hybrid' : 'keyword';
+    const hits = rrfFuse(useKeyword, useVector).slice(0, topK);
+
+    return {
+      hits,
+      diagnostics: {
+        mode,
+        semantic,
+        degraded: !semantic,
+        gated,
+        reason,
+        keywordBestScore: Number(keywordBestScore.toFixed(4)),
+        vectorBestCosine: Number(vectorBestCosine.toFixed(4)),
+        candidates: kw.length + vec.filter((v) => !kw.some((k) => k.id === v.id)).length,
+        thresholds: {
+          minKeywordScore: this.minKeywordScore,
+          minVectorScore: this.minVectorScore,
+        },
+      },
+    };
   }
 
   stats(): HybridStats {
+    const semantic = this.vectors.semantic();
+    const vs = this.vectors.stats();
     return {
-      mode: 'hybrid',
+      mode: semantic && vs.vectors > 0 ? 'hybrid' : 'keyword',
       keywordChunks: this.snapshot.keyword.list().length,
-      vector: this.vectors.stats(),
+      vector: vs,
       indexReady: this.snapshot.ready,
       generation: this.snapshot.gen,
+      semantic,
+      degradedReason: semantic ? null : 'EMBED_PROVIDER=bag（特征哈希，非语义向量）',
+      thresholds: {
+        minKeywordScore: this.minKeywordScore,
+        minVectorScore: this.minVectorScore,
+      },
     };
   }
 }

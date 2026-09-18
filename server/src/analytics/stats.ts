@@ -6,6 +6,9 @@ export interface ChatLogItem {
   messagePreview: string;
   answerPreview: string;
   latencyMs: number;
+  /** 相关性闸门拦截（知识库未覆盖）——运营据此补资料 */
+  noHit?: boolean;
+  retrieval?: 'hybrid' | 'keyword';
   error?: string;
 }
 
@@ -28,10 +31,12 @@ export class Analytics {
   private chatTotal = 0;
   private ragHits = 0;
   private errors = 0;
+  private noHits = 0;
 
   logChat(item: ChatLogItem): void {
     this.chatTotal++;
     if (item.mode === 'rag') this.ragHits++;
+    if (item.noHit) this.noHits++;
     if (item.error) this.errors++;
     this.logs.unshift(item);
     if (this.logs.length > MAX_LOGS) this.logs.length = MAX_LOGS;
@@ -49,6 +54,7 @@ export class Analytics {
       at: l.at,
       sessionId: l.sessionId,
       mode: l.mode,
+      noHit: l.noHit ?? false,
       messagePreview: l.messagePreview,
       latencyMs: l.latencyMs,
       error: l.error ?? null,
@@ -58,6 +64,8 @@ export class Analytics {
       chatTotal: this.chatTotal,
       ragHits: this.ragHits,
       llmOnly: this.chatTotal - this.ragHits - this.errors,
+      /** 知识库未覆盖（闸门拦截）次数：这类问题就是下一批要补的资料 */
+      noHit: this.noHits,
       errors: this.errors,
       activeSessions,
       feedback: { up, down },
@@ -86,6 +94,14 @@ export class Analytics {
       down,
       downRate: total ? Number((down / total).toFixed(4)) : 0,
       topDown,
+      /** 最近反馈（含正向）：便于核对某条回答是否被投诉 */
+      recent: this.feedback.slice(0, 20).map((f) => ({
+        at: f.at,
+        sessionId: f.sessionId,
+        rating: f.rating,
+        question: f.question ?? null,
+        comment: f.comment ?? null,
+      })),
       recentDown: downItems.slice(0, 20).map((f) => ({
         at: f.at,
         sessionId: f.sessionId,

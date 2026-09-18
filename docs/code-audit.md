@@ -1,7 +1,45 @@
 # 代码审计与功能测试报告
 
-> 最近更新：2026-09-17（Phase A 合入后补记）  
-> 范围：当前仓库静态排查 + 本地 API 冒烟。实现细节以代码为准。
+> 最近更新：2026-09-18（第二轮加固后）
+> 范围：当前仓库静态排查 + 对抗性探测 + 本地 API 冒烟。实现细节以代码为准。
+
+## 第二轮基线（0.9.0）
+
+| 项 | 结果 |
+|----|------|
+| 单元测试 `npm test -w server` | **32/32 PASS** |
+| API 审计 `node server/scripts/api-audit.mjs` | **34/34 PASS** |
+| 检索评测 `npm run eval:retrieval` | top1 **0.9667** / top3 **1.00**；闸门漏答 **0** |
+| 相关性标定 `npm run calibrate -w server` | 域外最高 2.64 < 阈值 3.8 < 在域最低 5.05 |
+| 构建 `npm run build` | server + web PASS |
+| 闸门实测（/api/chat 直连） | 域内 6/6 正常作答；域外 10/10 判为未覆盖 |
+
+### 实测发现与处置
+
+| # | 问题 | 证据 | 处置 |
+|---|------|------|------|
+| 1 | 非字符串入参打成 500 | `{"message":12345}` → 500 internal_error（`(body.message ?? '').trim()` 抛 TypeError） | `http/request.ts` 统一解析 → 400 `validation_error` |
+| 2 | CORS 任意源放行 | 带 `Origin: https://evil.example` 请求，ACAO 原样回显该源，预检 204 放行；SSE 另手写 `*` | `http/cors.ts` 白名单策略，HTTP/SSE 同一口径 |
+| 3 | 404/405 绕过统一信封 | `GET /api/nope` → Fastify 默认体（`statusCode`、无 requestId） | `setNotFoundHandler` → `not_found` 信封 |
+| 4 | 检索永远有命中 | 「今天上海天气怎么样？」→ `mode=rag`、4 条风场资料、答「根据展厅资料」 | 相关性闸门 + 无命中专用 system 指令 |
+| 5 | 单字命中污染打分 | 阈值标定显示域外最高分 2.46 > 部分在域问题 | 分词改 bigram-only + IDF 加权 |
+| 6 | 检索模式写死 hybrid | `stats().mode` 与 `RagAnswer.retrieval` 恒为 `hybrid`，bag 兜底时也在说谎 | 按实际参与上报，附 `semantic`/`degradedReason`/`thresholds` |
+| 7 | SSE 回答不进缓存 | 流式问完再非流式问仍重跑 | 两入口共用缓存读写 |
+| 8 | SSE 无反代友好处理 | 无 `x-accel-buffering`、无心跳 | 补头 + 15s 心跳 + 断开即停 |
+| 9 | 审计脚本硬编码绝对路径 | `E:/znwd/server/data/events.jsonl`，换机即 FAIL | 改为脚本相对路径 + `AUDIT_BASE` |
+| 10 | 文档与代码互相打脸 | CHANGELOG 0.2.2 声称删除形象区技术提示，代码里仍在；code-audit 写 17/17 与 CHANGELOG 的 19/19 不一致 | 代码对齐声明，本文与 CHANGELOG 同步更新 |
+| 11 | 反馈闭环缺前端 | 服务端有 `/api/feedback` + 统计 + CSV，前端无入口 | 助手气泡加「有帮助 / 没帮助」 |
+| 12 | 分块器不适应长文档 | 6 篇 md 全部 < 500 字 → 每篇 1 块，切分/重叠逻辑从未被真实长文考验 | 标题感知分块 + 超长段落滑窗重叠，并补单测 |
+
+### 本轮引入并已修复的自身缺陷（记录备查）
+
+- 客户端断开检测写成 `req.raw.on('close')`：该事件在请求体读完即触发，导致 SSE 首事件后 break 且不 `end`，连接挂死。改为监听 `reply.raw` 的 `close` 并用 `writableEnded` 判定。
+
+---
+
+（以下为 0.8.0 及更早的历史审计正文，部分结论已被本轮取代，保留作对照。）
+
+## 历史基线（Phase A，0.8.0）
 
 **Phase A 之后的基线**：`npm test -w server` **17/17**；`node server/scripts/api-audit.mjs` **20/20**；前端已接 **SSE**（失败回退 POST）；`HOST` 默认 `127.0.0.1`；生产强制 `ADMIN_TOKEN`；错误信封脱敏；chat/SSE 共用 `runChat`/`streamChat`。
 

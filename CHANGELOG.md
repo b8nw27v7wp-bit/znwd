@@ -2,6 +2,47 @@
 
 本项目版本与变更记录。日期：YYYY-MM-DD。
 
+## [0.9.0] — 2026-09-18
+
+第二轮加固：入参边界、CORS 白名单、统一 404 信封、相关性闸门、检索如实上报、分块器、反馈闭环、测试与文档对齐。
+起点是 MiMo 版 0.8.0 的一轮实测：单测 19/19、api-audit 21/21 属实，但边界与产品闭环比文档写的弱。
+
+### Fixed
+
+- **非字符串入参导致 500**：`{"message":12345}` 原样 `trim()` 抛 TypeError → 500。新增 `http/request.ts` 统一解析，现返回 400 `validation_error`（`message must be a string`）。
+- **CORS 任意源放行**：`origin: true` 会把 `https://evil.example` 原样回显，SSE 路由还手写 `access-control-allow-origin: *`。改为 `http/cors.ts` 统一策略：默认仅放行 localhost/127.0.0.1，生产用 `CORS_ORIGINS` 白名单，SSE 与 HTTP 同一口径。
+- **404/405 绕过统一信封**：未知路由原先返回 Fastify 默认体（含 `statusCode`、无 `requestId`）。新增 `setNotFoundHandler` → `{ error: "not_found", message, requestId }`。
+- **检索永远「有命中」**：相关性无下限，任何问题都会拿无关片段硬答（「今天上海天气怎么样？」原样返回 4 条风场资料 + 「根据展厅资料」）。现引入闸门：关键词分低于 `MIN_RELEVANCE_SCORE` 且语义向量路不达标时返回空命中，回答明确说资料中没有并给推荐问法。
+- **单字命中污染打分**：中文分词把单个汉字也算命中，导致「今天上海天气怎么样」关键词分 2.46，高于若干真实问题。改为 bigram-only + IDF 加权。
+- **`retrieval`/`stats().mode` 写死 `hybrid`**：即使向量路是特征哈希或为空也这么报。现按实际参与情况上报 `hybrid`/`keyword`，并给出 `semantic`/`degradedReason`/`thresholds`。
+- **SSE 回答不进答案缓存**：流式问完再非流式问会重跑一遍。现两个入口共用缓存读写，SSE 命中缓存时直接回放。
+- **SSE 未做反代友好处理**：补 `x-accel-buffering: no`、15s 心跳注释、客户端断开即停止生成。
+- **反馈无法关联问题**：`/api/feedback` 未带 `question` 时，从会话里取最后一条用户提问。
+- **限流淘汰非 LRU**：命中即刷新插入序，活跃 IP 不再被误删。
+- **分块器不适应长文档**：原先只在段落累计超长时才切，且超长按字符硬切无重叠。现按 markdown 标题分段、段落打包、超长段落滑窗切分带重叠。
+- 清理无引用导出（`relatedFromChunks`、`SYNONYM_MAP`、`SUGGESTIONS`、`l2`）。
+
+### Added
+
+- `server/scripts/calibrate.ts` + `npm run calibrate -w server`：在现有知识库上标定在域/域外分数区间，给出 `MIN_RELEVANCE_SCORE` 建议值（当前区间：域外最高 2.64 < 3.8 < 在域最低 5.05）。
+- 前端反馈闭环：回答下方「有帮助 / 没帮助」→ `POST /api/feedback`，失败回滚标记；命中闸门时自动展开推荐问法。
+- `noHit` 字段贯穿 `/api/chat`、SSE `meta`/`done`、`/api/stats`（`noHit` 计数 = 下一批要补的知识）。
+- `/api/admin/feedback-stats` 增加 `recent`（含正向反馈，便于核对某条回答）。
+- `/api/openapi.json` 补 components schemas（ChatRequest/ChatResponse/Source/Error）与鉴权声明。
+- 前端 `onMeta` 提前渲染来源与「未覆盖」提示；`busy` 时仍可继续输入。
+
+### Changed
+
+- 前端占位形象去掉「Live2D 就绪」等技术提示与待机徽标（0.2.2 曾声称删除，实际仍在）。
+- `Composer` 发送中按钮显示「生成中」，输入框不再禁用。
+- `RateLimiter`、`HybridRetriever`、`Retriever`、`loader.chunkText` 的行为变化均补了单测。
+
+### Test
+
+- unit **32/32**（新增入参校验、CORS 策略、分块器、bigram/IDF 打分、闸门与如实上报、noHit 统计、SSE 缓存一致性、限流 LRU）
+- api-audit **34/34**（新增 CORS 拒绝、非字符串 400、404 信封、闸门两侧、SSE 反代头、SSE 缓存、反馈问题回填、health 检索真相、openapi schemas）；脚本不再硬编码 `E:/znwd/...` 绝对路径
+- `npm run eval:retrieval`：**top1 0.9667（29/30）/ top3 1.00**，较 0.8.0 的 0.90/1.00 提升；`knowledgeChunks` 8 → 23（标题感知分块）
+
 ## [0.8.0] — 2026-09-18
 
 Phase B/C：回答质量评测闭环 + 展览运营（`plan.md`）。

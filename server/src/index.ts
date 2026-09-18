@@ -14,6 +14,7 @@ import { Analytics } from './analytics/stats.js';
 import { RateLimiter } from './http/rateLimit.js';
 import { LruCache, JsonlStore, type CachedAnswer } from './http/cache.js';
 import { adminTokenRequired, errorPayload } from './http/errors.js';
+import { decideOrigin, resolveCorsOrigins } from './http/cors.js';
 
 async function loadDotEnv(): Promise<void> {
   const here = path.dirname(fileURLToPath(import.meta.url));
@@ -65,6 +66,9 @@ async function main() {
   const logMaxBytes = Number(process.env.LOG_MAX_BYTES || 5_000_000);
   const logMessageMode =
     (process.env.LOG_MESSAGE_MODE || 'hash').toLowerCase() === 'preview' ? 'preview' : 'hash';
+  const corsOrigins = resolveCorsOrigins(process.env);
+  const minRelevance = Number(process.env.MIN_RELEVANCE_SCORE || 3.8);
+  const minVectorScore = Number(process.env.MIN_VECTOR_SCORE || 0.35);
 
   if (requireAdmin && !adminToken) {
     console.error(
@@ -81,7 +85,10 @@ async function main() {
     embedder,
     path.join(indexDir, `vectors.${embedder.name}.json`),
   );
-  const retriever = new HybridRetriever(vectorStore);
+  const retriever = new HybridRetriever(vectorStore, {
+    minKeywordScore: minRelevance,
+    minVectorScore,
+  });
 
   const initial = await loadKnowledge(knowledgeDir);
   await retriever.replace(initial);
@@ -97,7 +104,24 @@ async function main() {
   });
 
   const app = Fastify({ logger: true });
-  await app.register(cors, { origin: true });
+  await app.register(cors, {
+    origin: (origin, cb) => {
+      const d = decideOrigin(origin, corsOrigins);
+      if (!d.allowed) app.log.warn({ origin }, 'cors origin rejected');
+      cb(null, d.allowed ? (d.origin ?? true) : false);
+    },
+  });
+  if (corsOrigins.length === 0) {
+    app.log.warn(
+      '[security] CORS_ORIGINS unset — only local dev origins (localhost/127.0.0.1) are allowed. Set CORS_ORIGINS=https://your.host before deployment.',
+    );
+  }
+
+  /** 未知路由/方法也走统一错误信封，避免暴露框架默认体 */
+  app.setNotFoundHandler((req, reply) => {
+    const rid = String(req.id ?? '');
+    return reply.code(404).send(errorPayload('not_found', '接口不存在', rid));
+  });
 
   app.setErrorHandler((err: unknown, req, reply) => {
     const rid = String(req.id ?? '');
@@ -123,6 +147,8 @@ async function main() {
     dataDir,
     watchKnowledge,
     adminTokenRequired: requireAdmin,
+    corsOrigins,
+    minRelevanceScore: minRelevance,
     host,
     uptimeSec: Math.floor(process.uptime()),
   }));
@@ -145,6 +171,8 @@ async function main() {
     adminTokenRequired: requireAdmin,
     answerCache,
     logStore,
+    corsOrigins,
+    minRelevanceScore: minRelevance,
   });
 
   if (watchKnowledge) {

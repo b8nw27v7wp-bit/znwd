@@ -30,6 +30,8 @@ export interface RunChatResponse {
   sessionId: string | null;
   latencyMs: number;
   cached: boolean;
+  /** 知识库未覆盖（相关性闸门拦截） */
+  noHit: boolean;
 }
 
 function logMode(deps: RunChatDeps): LogMessageMode {
@@ -46,6 +48,8 @@ function writeChatLog(
     answerPreview: string;
     sources?: number;
     latencyMs: number;
+    noHit?: boolean;
+    retrieval?: string;
     error?: string;
   },
 ): void {
@@ -68,6 +72,8 @@ export async function runChat(deps: RunChatDeps, input: RunChatInput): Promise<R
   const hit = deps.answerCache.get(key);
 
   if (hit && history.length === 0) {
+    const hitRetrieval = (hit.retrieval === 'hybrid' ? 'hybrid' : 'keyword') as 'hybrid' | 'keyword';
+    const hitNoHit = hit.noHit ?? hit.mode !== 'rag';
     deps.sessions.append(sessionId, message, hit.answer);
     const preview = messageLogFields(message, logMode(deps));
     deps.analytics.logChat({
@@ -78,6 +84,8 @@ export async function runChat(deps: RunChatDeps, input: RunChatInput): Promise<R
       messagePreview: preview.messagePreview ?? message.slice(0, 80),
       answerPreview: hit.answer.slice(0, 80),
       latencyMs: 0,
+      noHit: hitNoHit,
+      retrieval: hitRetrieval,
     });
     writeChatLog(deps, {
       mode: hit.mode,
@@ -86,16 +94,19 @@ export async function runChat(deps: RunChatDeps, input: RunChatInput): Promise<R
       message,
       answerPreview: hit.answer.slice(0, 200),
       latencyMs: 0,
+      noHit: hitNoHit,
+      retrieval: hitRetrieval,
     });
     return {
       answer: hit.answer,
       sources: hit.sources,
       mode: hit.mode,
       provider: hit.provider,
-      retrieval: hit.retrieval,
+      retrieval: hitRetrieval,
       sessionId: sessionId ?? null,
       latencyMs: 0,
       cached: true,
+      noHit: hitNoHit,
     };
   }
 
@@ -109,6 +120,7 @@ export async function runChat(deps: RunChatDeps, input: RunChatInput): Promise<R
     provider: result.provider,
     retrieval: result.retrieval,
     cached: false,
+    noHit: result.noHit,
   };
   if (history.length === 0) deps.answerCache.set(key, payload);
 
@@ -122,6 +134,8 @@ export async function runChat(deps: RunChatDeps, input: RunChatInput): Promise<R
     messagePreview: preview.messagePreview ?? message.slice(0, 80),
     answerPreview: result.answer.slice(0, 80),
     latencyMs,
+    noHit: result.noHit,
+    retrieval: result.retrieval,
   });
   writeChatLog(deps, {
     mode: result.mode,
@@ -131,6 +145,8 @@ export async function runChat(deps: RunChatDeps, input: RunChatInput): Promise<R
     answerPreview: result.answer.slice(0, 200),
     sources: result.sources?.length ?? 0,
     latencyMs,
+    noHit: result.noHit,
+    retrieval: result.retrieval,
   });
 
   return {
@@ -142,30 +158,106 @@ export async function runChat(deps: RunChatDeps, input: RunChatInput): Promise<R
     sessionId: sessionId ?? null,
     latencyMs,
     cached: false,
+    noHit: result.noHit,
   };
 }
 
 export type StreamChatEvent =
-  | { type: 'meta'; sources: RagSource[]; mode: 'rag' | 'llm_only'; provider: string }
+  | {
+      type: 'meta';
+      sources: RagSource[];
+      mode: 'rag' | 'llm_only';
+      provider: string;
+      noHit: boolean;
+      retrieval: 'hybrid' | 'keyword';
+    }
   | { type: 'delta'; text: string }
-  | { type: 'done'; full: string; sources: unknown[]; mode: 'rag' | 'llm_only'; latencyMs: number };
+  | {
+      type: 'done';
+      full: string;
+      sources: unknown[];
+      mode: 'rag' | 'llm_only';
+      latencyMs: number;
+      cached: boolean;
+      noHit: boolean;
+      retrieval: 'hybrid' | 'keyword';
+    };
 
-/** 与 runChat 共用会话/日志/统计；中间 yield 流事件 */
+/**
+ * 与 runChat 共用会话/日志/统计；中间 yield 流事件。
+ * 与非流式一致地读写答案缓存（此前只有 POST /api/chat 会写缓存，两个入口行为不一致）。
+ */
 export async function* streamChat(deps: RunChatDeps, input: RunChatInput): AsyncGenerator<StreamChatEvent> {
   const { message, sessionId } = input;
   const started = input.started ?? Date.now();
   const history = deps.sessions.history(sessionId);
+  const key = answerCacheKey(message, deps.model.name, deps.retriever.generation());
+  const hit = deps.answerCache.get(key);
+
+  if (hit && history.length === 0) {
+    const latencyMs = Date.now() - started;
+    deps.sessions.append(sessionId, message, hit.answer);
+    const preview = messageLogFields(message, logMode(deps));
+    const retrieval = (hit.retrieval === 'hybrid' ? 'hybrid' : 'keyword') as 'hybrid' | 'keyword';
+    deps.analytics.logChat({
+      at: started,
+      sessionId: sessionId ?? null,
+      mode: hit.mode as 'rag' | 'llm_only',
+      provider: hit.provider,
+      messagePreview: preview.messagePreview ?? message.slice(0, 80),
+      answerPreview: hit.answer.slice(0, 80),
+      latencyMs,
+      noHit: hit.noHit ?? hit.mode !== 'rag',
+      retrieval,
+    });
+    writeChatLog(deps, {
+      mode: hit.mode,
+      provider: hit.provider,
+      sessionId,
+      message,
+      answerPreview: hit.answer.slice(0, 200),
+      sources: Array.isArray(hit.sources) ? hit.sources.length : 0,
+      latencyMs,
+      noHit: hit.noHit ?? hit.mode !== 'rag',
+      retrieval,
+    });
+    yield {
+      type: 'meta',
+      sources: (hit.sources ?? []) as RagSource[],
+      mode: hit.mode as 'rag' | 'llm_only',
+      provider: hit.provider,
+      noHit: hit.noHit ?? hit.mode !== 'rag',
+      retrieval,
+    };
+    yield { type: 'delta', text: hit.answer };
+    yield {
+      type: 'done',
+      full: hit.answer,
+      sources: hit.sources,
+      mode: hit.mode as 'rag' | 'llm_only',
+      latencyMs,
+      cached: true,
+      noHit: hit.noHit ?? hit.mode !== 'rag',
+      retrieval,
+    };
+    return;
+  }
+
   let full = '';
   let mode: 'rag' | 'llm_only' = 'llm_only';
   let sources: unknown[] = [];
   let provider = deps.model.name;
+  let noHit = true;
+  let retrieval: 'hybrid' | 'keyword' = 'keyword';
 
   for await (const ev of streamAnswer(deps.retriever, deps.model, message, { history })) {
     if (ev.type === 'meta') {
       mode = ev.mode;
       sources = ev.sources;
       provider = ev.provider;
-      yield ev;
+      noHit = ev.noHit;
+      retrieval = ev.diagnostics.mode;
+      yield { type: 'meta', sources: ev.sources, mode: ev.mode, provider: ev.provider, noHit, retrieval };
     } else if (ev.type === 'delta') {
       yield ev;
     } else if (ev.type === 'done') {
@@ -175,6 +267,17 @@ export async function* streamChat(deps: RunChatDeps, input: RunChatInput): Async
 
   const latencyMs = Date.now() - started;
   deps.sessions.append(sessionId, message, full);
+  if (history.length === 0) {
+    deps.answerCache.set(key, {
+      answer: full,
+      sources,
+      mode,
+      provider,
+      retrieval,
+      cached: false,
+      noHit,
+    });
+  }
   const preview = messageLogFields(message, logMode(deps));
   deps.analytics.logChat({
     at: started,
@@ -184,6 +287,8 @@ export async function* streamChat(deps: RunChatDeps, input: RunChatInput): Async
     messagePreview: preview.messagePreview ?? message.slice(0, 80),
     answerPreview: full.slice(0, 80),
     latencyMs,
+    noHit,
+    retrieval,
   });
   writeChatLog(deps, {
     mode,
@@ -193,7 +298,9 @@ export async function* streamChat(deps: RunChatDeps, input: RunChatInput): Async
     answerPreview: full.slice(0, 200),
     sources: Array.isArray(sources) ? sources.length : 0,
     latencyMs,
+    noHit,
+    retrieval,
   });
 
-  yield { type: 'done', full, sources, mode, latencyMs };
+  yield { type: 'done', full, sources, mode, latencyMs, cached: false, noHit, retrieval };
 }

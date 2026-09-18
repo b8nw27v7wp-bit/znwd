@@ -46,13 +46,15 @@ npm run start
 | 启动脚本 | 服务开机自启（计划任务/服务化可后续加） |
 | 恢复 | server 挂掉时 health 失败 → 告警/自动拉起 |
 
-## 安全注意（Phase A）
+## 安全注意（Phase A + 第二轮加固）
 
 - `.env` 含 `LLM_API_KEY`，勿提交、勿拷到公开目录。
 - **`HOST` 默认 `127.0.0.1`**。跨机访问请：显式设 `HOST=0.0.0.0` 或保持本机监听 + Caddy/nginx 反代，并限制防火墙仅放行展厅 VLAN。
 - **生产必须设置 `ADMIN_TOKEN`**，并设 `NODE_ENV=production`（或 `REQUIRE_ADMIN_TOKEN=true`）。未设置时 `/api/stats`、`/api/knowledge/reload` 返回 **401**（开发环境未设 token 仍开放，仅限本机联调）。
-- 错误响应脱敏：5xx 仅 `{ error, message: "服务内部错误", requestId }`，堆栈只进服务端日志。
-- `KNOWLEDGE_WATCH` 为 experimental（Windows `fs.watch recursive` 不稳定）；生产知识更新用手动 `POST /api/knowledge/reload`（需 Bearer token）。
+- **CORS 必须显式配置**：`CORS_ORIGINS=https://exhibit.your-host`（逗号分隔）。未配置时只放行 localhost/127.0.0.1；早期版本 `origin: true` 会把任意来源（含恶意页面）原样放行，已在 0.9.0 修复。
+- **SSE 经反代需放行缓冲**：响应已带 `x-accel-buffering: no`，nginx 侧仍建议 `proxy_buffering off;` + `proxy_read_timeout 120s;`，否则长回答可能整段憋住不吐字。
+- 错误响应脱敏：404/5xx 仅 `{ error, message, requestId }`，堆栈只进服务端日志。
+- `KNOWLEDGE_WATCH` 为 experimental（Windows `fs.watch recursive` 不稳定）；生产知识更新用手动 `POST /api/knowledge/reload`（需 Bearer token），并重跑 `calibrate` + `eval:retrieval`。
 - JSONL 日志默认 hash 预览 + `LOG_MAX_BYTES` 轮转；勿将 `server/data/` 拷贝到公开位置。
 - 局域网演示请确认防火墙仅放行所需端口（默认 8787、5173）。
 - 建议部署层：内网 HTTPS（Caddy/nginx）、展厅 VLAN、管理端口不对办公网开放。
@@ -64,6 +66,8 @@ HOST=127.0.0.1
 NODE_ENV=production
 ADMIN_TOKEN=<强随机串>
 REQUIRE_ADMIN_TOKEN=true
+CORS_ORIGINS=https://exhibit.<内网域名或IP>
+MIN_RELEVANCE_SCORE=3.8      # 用 calibrate 在当前知识库上重标后填写
 LOG_MESSAGE_MODE=hash
 LOG_MAX_BYTES=5000000
 ```
@@ -79,6 +83,10 @@ LOG_MAX_BYTES=5000000
 | 现象 | 处理 |
 |------|------|
 | 前端能开、提问 500 | 看 server 日志；检查 LLM 配置 |
+| 什么都答「资料中没有」 | 闸门过紧：跑 `npm run calibrate -w server` 看区间，调 `MIN_RELEVANCE_SCORE`（阈值是相对量，改过知识就会平移） |
+| 明明无关的问题也给资料 | 闸门过松：同上，调高阈值；或检查 `EMBED_PROVIDER=bag` 被当成语义向量用了 |
+| 浏览器控制台 CORS 报错 | `CORS_ORIGINS` 未加当前访问来源（默认只放行本机开发源） |
+| 流式回答整段憋着不出字 | 反代缓冲：确认响应头 `x-accel-buffering: no`，nginx 加 `proxy_buffering off` |
 | 始终 `llm_only` | 关键词无交集；改知识或提问用词；再 reload |
 | 无朗读 | 系统语音；页面是否被自动播放策略限制（需用户点过页面） |
 | 5173 占用 | 改 `vite.config` 端口，或结束占用进程 |

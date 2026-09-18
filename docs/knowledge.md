@@ -43,12 +43,32 @@ knowledge/
 
 | 路 | 说明 |
 |----|------|
-| 关键词 | 中文 bigram + 标题/标签/正文加权 |
-| 向量 | `EMBED_PROVIDER=bag`（离线）或 `openai_compat`（内网 embeddings） |
+| 关键词 | 中文 **bigram**（单字不给分）+ **IDF 加权** + 标题/标签/正文加权 |
+| 向量 | `EMBED_PROVIDER=bag`（离线特征哈希，`semantic=false`）或 `openai_compat`（内网 embeddings，`semantic=true`） |
 | 融合 | RRF |
+| 闸门 | 关键词分 < `MIN_RELEVANCE_SCORE`（且语义向量路不达标）→ 判定「知识库未覆盖」，不拿无关片段硬答 |
 
-- 索引：`server/indexes/vectors.<provider>.json`（含内容指纹，知识变更自动重建）。  
+- 单字命中不再算命中：此前「今天上海天气怎么样」的关键词分（2.46）会高于若干真实问题，导致什么都能答。
+- 索引：`server/indexes/vectors.<provider>.json`（含内容指纹，知识变更自动重建）。
+- `retrieval` 与 `health.retrieval.mode` 如实上报：只有语义向量真的参与融合才是 `hybrid`，否则 `keyword`（附 `degradedReason`）。
 - `POST /api/knowledge/reload` 重建关键词 + 向量。
+
+### 分块规则
+
+- 以 markdown 标题为硬边界分段，块内携带标题（后续块标「（续）」）避免脱离上下文。
+- 段落打包到 500 字上限；单段超长时按 500/80 的窗口+重叠滑窗切分。
+- 因此**一篇长文会切成多块**（当前 8 个文件 → 23 块）；块 id 为 `<相对路径>#<序号>`。
+- 换行与标题层级都会影响块边界：整理资料时用 `##` 分节，检索精度更好。
+
+### 改知识后必做
+
+```bash
+curl -X POST http://127.0.0.1:8787/api/knowledge/reload
+npm run calibrate -w server      # 重新标定 MIN_RELEVANCE_SCORE
+npm run eval:retrieval           # top1/top3 不退化、gateBlockedCount=0
+```
+
+阈值是相对量：chunk 数变化会改变 IDF，分数整体平移，**不重标就可能把该答的问题拦掉**。
 
 内网真实向量：
 
@@ -64,7 +84,8 @@ EMBED_MODEL=bge-small-zh
 1. 替换/新增对应展区 Markdown。  
 2. 更新 `_meta/zones.json`（如有新展区）。  
 3. `POST /api/knowledge/reload`。  
-4. `GET /api/knowledge/list` 确认 `chunkCount` 与 `retrieval.vector`。  
+4. `GET /api/knowledge/list` 确认 `chunkCount` 与 `retrieval`（`mode`/`semantic`）。  
+5. 跑 `calibrate` + `eval:retrieval`。
 
 ## 验收问题示例
 
@@ -73,3 +94,4 @@ EMBED_MODEL=bge-small-zh
 | 光伏清洁无人机是做什么的？ | `01_光伏清洁无人机/产品概述` |
 | 叶片检测要停机吗？ | `02_风场检测无人机/叶片检测说明` |
 | 如何联系合作？ | `03_服务与合作` |
+| 今天上海天气怎么样？ | **noHit=true**、无 sources（闸门拦下） |

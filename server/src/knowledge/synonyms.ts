@@ -36,5 +36,3 @@ export function expandQueryText(query: string): string {
   }
   return extras.length ? `${query} ${extras.join(' ')}` : query;
 }
-
-export const SYNONYM_MAP = SYN;

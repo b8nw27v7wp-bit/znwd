@@ -29,6 +29,8 @@ function hashToken(token: string): number {
  */
 export class BagEmbeddingProvider implements EmbeddingProvider {
   readonly name = 'bag';
+  /** 特征哈希不是语义嵌入：向量路不得作为「无关键词命中」时的兜底 */
+  readonly semantic = false;
   readonly dims: number;
 
   constructor(dims = 512) {

@@ -40,11 +40,10 @@ export function Composer({ onSend, busy, onTouch }: ComposerProps) {
           setValue(e.target.value);
         }}
         onKeyDown={onKeyDown}
-        disabled={busy}
         autoComplete="off"
       />
       <button type="submit" disabled={busy || !value.trim()}>
-        发送
+        {busy ? '生成中' : '发送'}
       </button>
     </form>
   );

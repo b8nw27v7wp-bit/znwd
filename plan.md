@@ -1,6 +1,6 @@
 # 项目后端优化 Plan（交接文档）
 
-> 生成日期：2026-09-17  
+> 生成日期：2026-09-17（第二轮加固于 2026-09-18 追加，见 §11）  
 > 仓库：`E:\znwd`  
 > 分支：`feature/virtual-receptionist`（HEAD 约 `05a65e3`）  
 > 用途：**新会话直接按本文档推进**；实现细节以代码为准。
@@ -281,3 +281,47 @@ node server/scripts/api-audit.mjs
 - [x] P3 feedback 统计接口/导出（`/api/admin/feedback-stats`，`?format=csv`）  
 - [x] C5/C6/E6 按需 — **本机暂不做**：无 PDF 样本/指代评测需求/知识规模仍 8 chunks；接口与索引已可扩展  
 - [x] 文档与 CHANGELOG 终稿  
+
+---
+
+## 11. 第二轮加固（2026-09-18，0.9.0）
+
+> §0–§10 描述的是 0.8.0 状态；本轮由外部评审（Hermes）实测后重写了一批实现，细节见 `CHANGELOG.md` 的 0.9.0 与 `docs/code-audit.md` 第二轮基线。
+
+### 本轮状态（新会话从这里读）
+
+| 项 | 现状 |
+|----|------|
+| 知识 | 8 个 md → **23 chunks**（标题感知分块） |
+| 检索 | 关键词 bigram + **IDF**（单字不再给分）+ 可选语义向量 RRF |
+| 闸门 | `MIN_RELEVANCE_SCORE`（当前 3.8，`npm run calibrate -w server` 标定）；未达标答「资料中没有」 |
+| 上报 | `retrieval`/`health.retrieval.mode` 如实（bag → `keyword`，附 `degradedReason`） |
+| CORS | 默认仅本机开发源；生产用 `CORS_ORIGINS`；SSE 同策略 |
+| SSE | `x-accel-buffering: no` + 15s 心跳 + 断开即停 + 与非流式共用答案缓存 |
+| 反馈 | 前端「有帮助/没帮助」已接；`/api/stats` 有 `noHit` 计数 |
+| 测试 | unit 32/32、api-audit 34/34、eval top1 0.9667 / top3 1.00 / 闸门漏答 0 |
+
+### 本轮完成项
+
+- [x] 入参边界（非字符串 → 400，统一 `http/request.ts`）  
+- [x] CORS 白名单（HTTP + SSE 同一策略）  
+- [x] 统一 404/405 信封  
+- [x] 相关性闸门 + 无命中 system 指令 + `noHit` 贯穿接口/统计  
+- [x] 关键词打分改 bigram-only + IDF（评测 top1 0.90 → 0.9667）  
+- [x] `retrieval`/`mode` 如实上报 + `semantic`/`degradedReason`/`thresholds`  
+- [x] SSE 反代友好 + 缓存一致性 + 断线停止  
+- [x] 标题感知分块（长文档可用）+ 单测覆盖切分与重叠  
+- [x] 前端反馈闭环、来源提前渲染、未覆盖时展开推荐问法、发送中仍可输入  
+- [x] `server/scripts/calibrate.ts` 阈值标定脚本（知识变更后必跑）  
+- [x] api-audit 去绝对路径 + 11 项新检查；文档与 CHANGELOG 对齐代码  
+
+### 仍未做（按优先级）
+
+1. **接真实 LLM/Embedding**（C1/C2）：需要内网网关地址与 key；接完必须重跑 `calibrate` + `eval:retrieval`。  
+2. **知识本体仍薄**：8 篇 md，域外样本之外的行业问法大概率落入 `noHit`；用 `/api/stats` 的 `noHit` 计数驱动补资料。  
+3. **PDF/Word 入库**（C5）：loader 目前只吃 md/txt。  
+4. **指代消解**（C6）：多轮「那检测呢？」仍靠 history 直塞 prompt。  
+5. **会话/统计持久化**：内存态，重启即清（展厅 120s 闲置自动复位，暂不影响体验）。  
+6. **虚拟形象**：仍是程序化占位；用授权模型替换 `Live2DStage.tsx`。  
+7. **CI**：目前靠人工跑三条命令；建议加 GitHub Actions（build + unit + api-audit 起停）。  
+8. **右侧 2/3 展览播放**：仍为空区，只有 zone 联动接口预留。

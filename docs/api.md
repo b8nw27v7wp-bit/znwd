@@ -17,8 +17,18 @@ Base URL：开发态经 Vite 代理为 `http://localhost:5173`；直连后端为
 ```json
 {
   "ok": true,
-  "knowledgeChunks": 3,
+  "knowledgeChunks": 23,
   "llmProvider": "mock",
+  "embedding": "bag",
+  "retrieval": {
+    "mode": "keyword",
+    "semantic": false,
+    "degradedReason": "EMBED_PROVIDER=bag（特征哈希，非语义向量）",
+    "thresholds": { "minKeywordScore": 3.8, "minVectorScore": 0.35 },
+    "generation": 1
+  },
+  "corsOrigins": [],
+  "minRelevanceScore": 3.8,
   "knowledgeDir": "E:/znwd/knowledge",
   "activeSessions": 0,
   "uptimeSec": 12
@@ -29,6 +39,10 @@ Base URL：开发态经 Vite 代理为 `http://localhost:5173`；直连后端为
 |------|------|
 | `knowledgeChunks` | 当前索引中的知识块数量 |
 | `llmProvider` | `mock` \| `openai_compat` 等实现名 |
+| `retrieval.mode` | **如实上报**：仅当向量路具备语义能力且真的参与融合才是 `hybrid`，否则 `keyword` |
+| `retrieval.semantic` / `degradedReason` | 向量路是否语义向量；降级原因（如 bag 兜底） |
+| `retrieval.thresholds` | 相关性闸门当前阈值 |
+| `corsOrigins` | 配置的 CORS 白名单（空 = 仅本地开发源） |
 | `knowledgeDir` | 实际知识目录绝对路径 |
 | `activeSessions` | 未过期内存会话数 |
 | `uptimeSec` | 进程运行秒数 |
@@ -73,8 +87,8 @@ Base URL：开发态经 Vite 代理为 `http://localhost:5173`；直连后端为
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `message` | string | 是 | 用户问题；空串 400；服务端截断至 2000 字符 |
-| `sessionId` | string | 否 | 会话 ID（≤64 字符）；同 ID 多轮上下文；缺省则单轮 |
+| `message` | string | 是 | 用户问题；非字符串 / 空串 / 空 body 一律 400；服务端截断至 2000 字符 |
+| `sessionId` | string | 否 | 会话 ID（只保留 `A-Za-z0-9._-`，≤64 字符）；同 ID 多轮上下文；缺省则单轮 |
 
 **成功 200**
 
@@ -83,17 +97,19 @@ Base URL：开发态经 Vite 代理为 `http://localhost:5173`；直连后端为
   "answer": "……",
   "sources": [
     {
-      "title": "参观接待流程",
+      "title": "光伏清洁无人机产品概述",
       "snippet": "……",
-      "score": 3.5325,
-      "sourcePath": "参观接待流程.md"
+      "score": 0.0162,
+      "sourcePath": "01_光伏清洁无人机\\产品概述.md"
     }
   ],
   "mode": "rag",
   "provider": "mock",
-  "retrieval": "hybrid",
+  "retrieval": "keyword",
+  "noHit": false,
   "sessionId": "optional-id",
-  "latencyMs": 3
+  "latencyMs": 3,
+  "cached": false
 }
 ```
 
@@ -101,11 +117,18 @@ Base URL：开发态经 Vite 代理为 `http://localhost:5173`；直连后端为
 |------|------|
 | `answer` | 模型回复正文（前端用于气泡与 TTS） |
 | `sources` | 检索命中；含 `zone`/`zoneTitle`/`keywordScore`/`vectorScore` |
-| `mode` | `rag` 有命中；`llm_only` 无命中仍生成 |
-| `provider` | 实际使用的 LLM 实现名 |
-| `retrieval` | 当前为 `hybrid` |
+| `mode` | `rag` 有命中；`llm_only` 未命中 |
+| `retrieval` | `hybrid`（语义向量参与）或 `keyword`，**如实反映** |
+| `noHit` | `true` = 相关性闸门未通过（知识库未覆盖），本次回答没有任何知识片段支撑 |
+| `cached` | 是否命中答案缓存（缓存 key 含 model + 索引 generation + message） |
 
-**错误信封（Phase A）**
+**相关性闸门**
+
+关键词分 < `MIN_RELEVANCE_SCORE`（且语义向量路不可用或余弦 < `MIN_VECTOR_SCORE`）时：
+`sources` 为空、`mode=llm_only`、`noHit=true`，system 提示改为「未检索到，直接说明资料中没有」。
+阈值用 `npm run calibrate -w server` 在现有知识库上标定（改知识或同义词后应重跑）。
+
+**错误信封（Phase A + 本轮）**
 
 统一字段：
 
@@ -115,12 +138,18 @@ Base URL：开发态经 Vite 代理为 `http://localhost:5173`；直连后端为
 
 | 状态码 | 条件 | `error` 码 |
 |--------|------|------------|
-| 400 | 缺省或空白 `message` / 参数非法 | `validation_error` |
+| 400 | `message` 缺失/空白/非字符串、参数非法 | `validation_error` |
 | 401 | 管理接口未授权（生产强制 `ADMIN_TOKEN`） | `unauthorized` |
+| 404 | 未知路由或方法（含 Fastify 默认 404 已收敛） | `not_found` |
 | 429 | 超过 `CHAT_RATE_PER_MIN`（附 `retryAfterSec`） | `rate_limited` |
 | 500 | LLM/内部异常 | `internal_error`（`message` 固定为「服务内部错误」，细节只进服务端日志） |
 
 成功响应额外字段：`latencyMs`（服务端耗时毫秒）。
+
+**CORS**
+
+默认只放行 `localhost` / `127.0.0.1` / `[::1]`（任意端口）。生产用 `CORS_ORIGINS` 显式配置白名单
+（逗号分隔，支持 `*`），未命中的 Origin 不回 `access-control-allow-origin`，SSE 走同一策略。
 
 ---
 
@@ -166,9 +195,11 @@ Base URL：开发态经 Vite 代理为 `http://localhost:5173`；直连后端为
 | `rating` | 是 | `up` \| `down`，否则 400 |
 | `sessionId` | 否 | 关联会话 |
 | `comment` | 否 | ≤500 字 |
-| `question` | 否 | ≤200 字，供负反馈运营分析 |
+| `question` | 否 | ≤200 字；**缺省时服务端自动取该会话最后一条用户提问**，保证运营看到的是真实问题 |
 
 **200**：`{ "ok": true }`
+
+前端：助手回答下方「有帮助 / 没帮助」按钮即调用本接口；请求失败会回滚本地标记。
 
 ---
 
@@ -176,7 +207,15 @@ Base URL：开发态经 Vite 代理为 `http://localhost:5173`；直连后端为
 
 负反馈汇总（管理接口，鉴权规则同 `/api/stats`）。
 
-- 默认 JSON：`{ total, up, down, downRate, topDown[], recentDown[] }`
+- 默认 JSON：
+  ```json
+  {
+    "total": 4, "up": 3, "down": 1, "downRate": 0.25,
+    "topDown": [{ "question": "叶片检测要停机吗？", "down": 1, "comments": [] }],
+    "recent": [{ "at": 0, "sessionId": "s-1", "rating": "up", "question": "提供培训吗？", "comment": null }],
+    "recentDown": [{ "at": 0, "sessionId": "s-2", "question": "…", "comment": null }]
+  }
+  ```
 - `?format=csv`：`text/csv` 附件 `feedback.csv`
 
 ---
@@ -190,14 +229,19 @@ Base URL：开发态经 Vite 代理为 `http://localhost:5173`；直连后端为
 {
   "uptimeSec": 60,
   "chatTotal": 2,
-  "ragHits": 2,
-  "llmOnly": 0,
+  "ragHits": 1,
+  "llmOnly": 1,
+  "noHit": 1,
   "errors": 0,
   "activeSessions": 1,
   "feedback": { "up": 1, "down": 0 },
-  "recent": [ { "at": 0, "mode": "rag", "messagePreview": "…", "latencyMs": 2 } ]
+  "recent": [ { "at": 0, "mode": "rag", "noHit": false, "messagePreview": "…", "latencyMs": 2 } ]
 }
 ```
+
+| 字段 | 说明 |
+|------|------|
+| `noHit` | 知识库未覆盖（闸门拦截）次数——这类问题就是下一批要补的资料 |
 
 ---
 
@@ -242,12 +286,18 @@ SSE 流式问答。请求体同 `/api/chat`。
 
 事件：
 
-- `event: meta` → `{ mode, sources, provider, sessionId }`
+- `event: meta` → `{ mode, sources, provider, noHit, retrieval, sessionId }`
 - `event: delta` → `{ text }`
-- `event: done` → `{ latencyMs, answer, sources, mode }`
+- `event: done` → `{ latencyMs, answer, sources, mode, noHit, retrieval, cached }`
 - `event: error` → `{ error, message, requestId }`（不泄露堆栈）
 
-前端 `web/src/api/client.ts` 优先 SSE；失败自动回退 `POST /api/chat`。
+连接行为：
+
+- 响应头含 `x-accel-buffering: no`（nginx/Caddy 不缓冲），每 15s 发一次 `: ping` 注释心跳；
+- 客户端断开即停止生成，不再继续写响应；
+- 与非流式**共用答案缓存**：流式问过的单轮问题，再走 `POST /api/chat` 会命中 `cached: true`。
+
+前端 `web/src/api/client.ts` 优先 SSE（`meta` 到达即渲染来源与「未覆盖」提示）；失败自动回退 `POST /api/chat`。
 
 ---
 
@@ -257,9 +307,9 @@ SSE 流式问答。请求体同 `/api/chat`。
 |------|------|
 | `GET /api/stats` | 配置了 `ADMIN_TOKEN` 时需 `Authorization: Bearer <token>`；`NODE_ENV=production|prod|staging` 或 `REQUIRE_ADMIN_TOKEN=true` 时**未配置 token 即 401** |
 | `POST /api/knowledge/reload` | 同上；响应含 `generation`（索引代数） |
-| `GET /api/openapi.json` | 简易 API 清单 |
+| `GET /api/openapi.json` | API 契约（含 components schemas：ChatRequest / ChatResponse / Source / Error） |
 
-环境变量补充：`HOST`、`ADMIN_TOKEN`、`REQUIRE_ADMIN_TOKEN`、`ANSWER_CACHE_SIZE`、`DATA_DIR`、`KNOWLEDGE_WATCH`、`LOG_MAX_BYTES`、`LOG_MESSAGE_MODE`。
+环境变量补充：`HOST`、`ADMIN_TOKEN`、`REQUIRE_ADMIN_TOKEN`、`CORS_ORIGINS`、`ANSWER_CACHE_SIZE`、`MIN_RELEVANCE_SCORE`、`MIN_VECTOR_SCORE`、`DATA_DIR`、`KNOWLEDGE_WATCH`、`LOG_MAX_BYTES`、`LOG_MESSAGE_MODE`。
 
 ---
 
@@ -276,6 +326,9 @@ SSE 流式问答。请求体同 `/api/chat`。
 | `KNOWLEDGE_DIR` | `./knowledge` | 相对仓库根 |
 | `PORT` | `8787` | 监听端口 |
 | `HOST` | `127.0.0.1` | **Phase A 默认仅本机**；跨机需显式配置并限制防火墙/反代 |
+| `CORS_ORIGINS` | 空 | 逗号分隔白名单；空 = 仅本地开发源。生产必填 |
+| `MIN_RELEVANCE_SCORE` | `3.8` | 关键词分闸门（`npm run calibrate -w server` 标定） |
+| `MIN_VECTOR_SCORE` | `0.35` | 语义向量兜底的最低余弦 |
 | `ADMIN_TOKEN` | 空 | 管理接口 Bearer；生产必须设置 |
 | `REQUIRE_ADMIN_TOKEN` | 空 | `true` 时无 token 管理接口 401 |
 | `NODE_ENV` | 空 | `production`/`prod`/`staging` 时强制管理口令 |

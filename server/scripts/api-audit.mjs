@@ -1,4 +1,10 @@
-const B = 'http://127.0.0.1:8787';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const serverRoot = path.resolve(here, '..');
+/** 允许用 AUDIT_BASE 指向别的实例；默认本机 */
+const B = process.env.AUDIT_BASE || 'http://127.0.0.1:8787';
 async function j(u, opt) {
   const r = await fetch(B + u, opt);
   const t = await r.text();
@@ -152,8 +158,11 @@ function rec(name, ok, detail) {
   const kl = await j('/api/knowledge/list');
   rec(
     'knowledge-list',
-    kl.status === 200 && kl.body.fileCount >= 4 && kl.body.retrieval?.mode === 'hybrid',
-    `files=${kl.body.fileCount}`,
+    kl.status === 200 &&
+      kl.body.fileCount >= 4 &&
+      ['keyword', 'hybrid'].includes(kl.body.retrieval?.mode) &&
+      typeof kl.body.retrieval?.semantic === 'boolean',
+    `files=${kl.body.fileCount} mode=${kl.body.retrieval?.mode} semantic=${kl.body.retrieval?.semantic}`,
   );
 
   const rel = await j('/api/knowledge/reload', { method: 'POST' });
@@ -177,11 +186,98 @@ function rec(name, ok, detail) {
 
   const fs = await import('node:fs/promises');
   try {
-    const raw = await fs.readFile('E:/znwd/server/data/events.jsonl', 'utf8');
+    const raw = await fs.readFile(path.join(serverRoot, 'data', 'events.jsonl'), 'utf8');
     rec('jsonl-log', raw.trim().length > 0, `bytes=${raw.length}`);
   } catch (e) {
     rec('jsonl-log', false, String(e));
   }
+
+  // —— 本轮加固新增：CORS 策略 / 入参边界 / 统一信封 / 相关性闸门 / SSE 反代友好 / 缓存一致性 ——
+  const corsHostile = await j('/api/chat', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: 'https://evil.example' },
+    body: JSON.stringify({ message: '展厅有哪些安全注意事项？' }),
+  });
+  rec('cors-hostile-origin-ok', corsHostile.status === 200, `status=${corsHostile.status}`);
+  const corsHeader = await fetch(B + '/api/health', { headers: { origin: 'https://evil.example' } });
+  rec('cors-hostile-origin-rejected', corsHeader.headers.get('access-control-allow-origin') === null, String(corsHeader.headers.get('access-control-allow-origin')));
+  const corsDev = await fetch(B + '/api/health', { headers: { origin: 'http://localhost:5173' } });
+  rec('cors-dev-origin-allowed', corsDev.headers.get('access-control-allow-origin') === 'http://localhost:5173', String(corsDev.headers.get('access-control-allow-origin')));
+
+  const badType = await j('/api/chat', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ message: 12345 }),
+  });
+  rec('chat-400-non-string-message', badType.status === 400 && badType.body.error === 'validation_error', `status=${badType.status}`);
+
+  const noRoute = await j('/api/definitely-not-here');
+  rec(
+    'not-found-envelope',
+    noRoute.status === 404 && noRoute.body.error === 'not_found' && 'requestId' in noRoute.body,
+    JSON.stringify(noRoute.body),
+  );
+
+  const ood = await j('/api/chat', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ message: '今天上海天气怎么样？', sessionId: `ood-${Date.now()}` }),
+  });
+  rec(
+    'gate-blocks-out-of-domain',
+    ood.status === 200 && ood.body.noHit === true && ood.body.mode === 'llm_only' && (ood.body.sources || []).length === 0,
+    `noHit=${ood.body.noHit} mode=${ood.body.mode} src=${(ood.body.sources || []).length}`,
+  );
+  rec('gate-keeps-in-domain', c1.body.noHit === false && c1.body.retrieval === 'keyword', `noHit=${c1.body.noHit} retrieval=${c1.body.retrieval}`);
+
+  const hdrStream = await fetch(B + '/api/chat/stream', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ message: '提供培训吗？', sessionId: `sse-hdr-${Date.now()}` }),
+  });
+  rec('sse-no-proxy-buffering', hdrStream.headers.get('x-accel-buffering') === 'no', String(hdrStream.headers.get('x-accel-buffering')));
+  const sseBody = await hdrStream.text();
+  rec('sse-meta-carries-noHit', sseBody.includes('"noHit"') && sseBody.includes('"retrieval"'), `len=${sseBody.length}`);
+
+  const sseCacheQ = `SSE缓存一致性-${Date.now()}`;
+  await fetch(B + '/api/chat/stream', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ message: sseCacheQ, sessionId: `sse-cache-a-${Date.now()}` }),
+  }).then((r) => r.text());
+  const afterSse = await j('/api/chat', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ message: sseCacheQ, sessionId: `sse-cache-b-${Date.now()}` }),
+  });
+  rec('sse-writes-answer-cache', afterSse.body.cached === true, `cached=${afterSse.body.cached}`);
+
+  const fbSession = `fb-${Date.now()}`;
+  await j('/api/chat', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ message: '叶片检测要停机吗？', sessionId: fbSession }),
+  });
+  await j('/api/feedback', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ rating: 'up', sessionId: fbSession }),
+  });
+  const fstats2 = await j('/api/admin/feedback-stats');
+  const derived = (fstats2.body.recent || []).find((f) => f.sessionId === fbSession);
+  rec('feedback-derives-question', derived?.question === '叶片检测要停机吗？', `question=${derived?.question}`);
+
+  const health2 = await j('/api/health');
+  rec(
+    'health-reports-retrieval-truth',
+    typeof health2.body.retrieval?.semantic === 'boolean' &&
+      health2.body.retrieval?.thresholds?.minKeywordScore > 0 &&
+      typeof health2.body.minRelevanceScore === 'number',
+    `mode=${health2.body.retrieval?.mode} semantic=${health2.body.retrieval?.semantic} min=${health2.body.retrieval?.thresholds?.minKeywordScore}`,
+  );
+
+  const oa2 = await j('/api/openapi.json');
+  rec('openapi-has-schemas', !!oa2.body.components?.schemas?.ChatRequest, Object.keys(oa2.body.components?.schemas || {}).join(','));
 
   const fail = results.filter((r) => !r.ok);
   console.log('\nSUMMARY', `${results.length - fail.length}/${results.length} passed`);

@@ -7,8 +7,8 @@ interface Live2DStageProps {
 }
 
 /**
- * Live2D 占位舞台（初版几何头像）
- * 有 Cubism 模型时可替换为 pixi-live2d-display 渲染层
+ * 虚拟形象占位舞台（程序化绘制的几何讲解员）。
+ * 有授权模型时替换本组件即可；界面不显示技术提示与状态徽标。
  */
 export function Live2DStage({ mood }: Live2DStageProps) {
   const [mouth, setMouth] = useState(0);
@@ -33,10 +33,7 @@ export function Live2DStage({ mood }: Live2DStageProps) {
   const bounce = mood === 'speaking' ? 2 : mood === 'thinking' ? 1 : 0;
 
   return (
-    <div className="stage" data-mood={mood} aria-label="虚拟接待员形象">
-      <div className="stage-badge">
-        {mood === 'speaking' ? '正在朗读' : mood === 'thinking' ? '思考中' : '待机'}
-      </div>
+    <div className="stage" data-mood={mood} aria-label="AI 虚拟讲解员">
       <div className={`avatar bounce-${bounce}`}>
         <div className="avatar-glow" />
         <div className="avatar-head">
@@ -53,8 +50,6 @@ export function Live2DStage({ mood }: Live2DStageProps) {
           <div className="avatar-collar" />
         </div>
       </div>
-      <p className="stage-caption">AI 虚拟接待员 · Live2D 就绪</p>
-      <p className="stage-hint">可将 Cubism 模型放入 public/live2d 后替换此占位层</p>
     </div>
   );
 }

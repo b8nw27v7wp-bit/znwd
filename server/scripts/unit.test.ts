@@ -12,7 +12,11 @@ import { buildGroundedAnswer } from '../src/llm/grounded.ts';
 import { MockChatModel } from '../src/llm/mock.ts';
 import { HybridRetriever } from '../src/knowledge/hybridRetriever.ts';
 import { VectorStore } from '../src/knowledge/vectorStore.ts';
-import { runChat } from '../src/rag/runChat.ts';
+import { runChat, streamChat } from '../src/rag/runChat.ts';
+import { parseChatInput, normalizeSessionId, validationMessage } from '../src/http/request.ts';
+import { decideOrigin, resolveCorsOrigins, corsHeadersFor } from '../src/http/cors.ts';
+import { chunkText } from '../src/knowledge/loader.ts';
+import { Retriever } from '../src/knowledge/retriever.ts';
 import type { EmbeddingProvider } from '../src/embedding/types.ts';
 import type { KnowledgeChunk } from '../src/knowledge/loader.ts';
 import { Analytics } from '../src/analytics/stats.ts';
@@ -116,6 +120,7 @@ test('HybridRetriever generation increments on replace', async () => {
   const bag: EmbeddingProvider = {
     name: 'bag-test',
     dims: 8,
+    semantic: false,
     async embed(texts: string[]) {
       return texts.map((t) => {
         const v = new Array(8).fill(0);
@@ -157,6 +162,7 @@ test('runChat mock path returns answer and writes session', async () => {
   const bag: EmbeddingProvider = {
     name: 'bag-test',
     dims: 2,
+    semantic: false,
     async embed(texts: string[]) {
       return texts.map(() => [0, 0]);
     },
@@ -209,10 +215,11 @@ test('grounded mock uses knowledge lines', () => {
 test('grounded mock no-hit branch', () => {
   const ans = buildGroundedAnswer({
     question: 'xyz',
-    context: '【企业知识】\n（无命中片段）',
+    context: '【企业知识】\n（未检索到相关资料）',
     historyTurns: 0,
   });
-  assert.ok(ans.includes('未检索到') || ans.includes('未绑定'));
+  assert.ok(ans.includes('展厅资料中没有'));
+  assert.ok(ans.includes('未命中知识片段'));
 });
 
 test('MockChatModel stream yields pieces', async () => {
@@ -255,4 +262,252 @@ test('Analytics feedbackStats groups down by question', () => {
   const csv = a.feedbackCsv();
   assert.ok(csv.startsWith('at,sessionId,rating,question,comment'));
   assert.ok(csv.includes('叶片检测要停机吗？'));
+});
+
+test('parseChatInput 拒绝非字符串与非对象入参（不再 500）', () => {
+  assert.equal(parseChatInput({ message: 12345 }).ok, false);
+  assert.deepEqual(parseChatInput({ message: 12345 }), { ok: false, reason: 'message_not_string' });
+  assert.equal(parseChatInput(null).ok, false);
+  assert.equal(parseChatInput([1, 2]).ok, false);
+  assert.equal(parseChatInput({}).ok, false);
+  assert.equal(parseChatInput({ message: '   ' }).ok, false);
+  assert.equal(validationMessage('message_not_string'), 'message must be a string');
+});
+
+test('parseChatInput 截断超长 message 并记录 truncated', () => {
+  const long = '光'.repeat(3000);
+  const r = parseChatInput(long === '' ? {} : { message: long });
+  assert.ok(r.ok);
+  if (r.ok) {
+    assert.equal(r.value.message.length, 2000);
+    assert.equal(r.value.truncated, true);
+  }
+  const short = parseChatInput({ message: ' 你好 ' });
+  assert.ok(short.ok);
+  if (short.ok) {
+    assert.equal(short.value.message, '你好');
+    assert.equal(short.value.truncated, false);
+  }
+});
+
+test('normalizeSessionId 剔除控制字符与路径片段', () => {
+  assert.equal(normalizeSessionId('s-1_ok.9'), 's-1_ok.9');
+  assert.equal(normalizeSessionId('../etc/passwd\u0000<script>'), '..etcpasswdscript');
+  assert.equal(normalizeSessionId('x'.repeat(100))!.length, 64);
+  assert.equal(normalizeSessionId(42), undefined);
+  assert.equal(normalizeSessionId('   '), undefined);
+  assert.equal(normalizeSessionId('!!!'), undefined);
+  // sessionId 只作内存键，不含 '/' 与 '\\' 即不可能被当成路径片段
+  assert.ok(!normalizeSessionId('a/b\\c')!.includes('/'));
+});
+
+test('CORS：白名单外 Origin 不放行，本地开发源放行', () => {
+  assert.equal(decideOrigin('https://evil.example', []).allowed, false);
+  assert.equal(decideOrigin('http://localhost:5173', []).allowed, true);
+  assert.equal(decideOrigin('http://127.0.0.1:5173', []).allowed, true);
+  assert.equal(decideOrigin(undefined, []).allowed, true);
+
+  const allow = resolveCorsOrigins({ CORS_ORIGINS: 'https://a.example, https://b.example/' } as NodeJS.ProcessEnv);
+  assert.deepEqual(allow, ['https://a.example', 'https://b.example']);
+  assert.equal(decideOrigin('https://a.example', allow).allowed, true);
+  assert.equal(decideOrigin('http://localhost:5173', allow).allowed, false, '配置白名单后本地默认源不再放行');
+  assert.equal(decideOrigin('https://evil.example', resolveCorsOrigins({ CORS_ORIGINS: '*' } as NodeJS.ProcessEnv)).allowed, true);
+  assert.equal(corsHeadersFor('https://evil.example', []).vary, 'Origin');
+});
+
+test('chunkText 标题感知分块且单块有上限', () => {
+  const doc = [
+    '# 产品概述',
+    '光伏组件表面清洁说明。'.repeat(12),
+    '',
+    '## 适用场景',
+    '陆上及海上风电场巡检。'.repeat(12),
+    '',
+    '## 作业流程',
+    '航线规划后自动作业。'.repeat(12),
+  ].join('\n');
+  const chunks = chunkText(doc, 200, 40);
+  assert.ok(chunks.length >= 3, `chunks=${chunks.length}`);
+  assert.ok(chunks[0]!.startsWith('产品概述'));
+  assert.ok(chunks.some((c) => c.includes('适用场景')));
+  for (const c of chunks) assert.ok(c.length <= 200 * 1.5 + 40, `too long: ${c.length}`);
+});
+
+test('chunkText 超长段落滑窗切分并带重叠', () => {
+  const one = '长段落内容。'.repeat(120); // 720 字，单段
+  const chunks = chunkText(one, 200, 50);
+  assert.ok(chunks.length >= 4, `chunks=${chunks.length}`);
+  for (const c of chunks) assert.ok(c.length <= 200);
+  // 相邻块共享重叠区：前一块尾部应出现在后一块开头
+  const tail = chunks[0]!.slice(-50);
+  assert.ok(chunks[1]!.startsWith(tail));
+});
+
+test('Retriever：单字命中不再给分，域外问题无候选', () => {
+  const r = new Retriever();
+  r.replace([
+    { id: 'a', title: '光伏清洁', sourcePath: 'a.md', text: '光伏组件表面清洁作业', zone: 'z', zoneTitle: 'Z', tags: [] },
+    { id: 'b', title: '风场检测', sourcePath: 'b.md', text: '风机叶片裂纹与雷击痕迹检测', zone: 'y', zoneTitle: 'Y', tags: [] },
+  ]);
+  assert.equal(r.retrieve('天').length, 0, '单字查询无 bigram，不应命中');
+  assert.ok(r.retrieve('叶片裂纹怎么发现').length > 0);
+  assert.equal(r.retrieve('今天上海天气怎么样').length, 0);
+  const hit = r.retrieve('叶片裂纹怎么发现')[0]!;
+  assert.ok(hit.matchedTokens >= 1);
+  assert.ok(hit.matched.includes('叶片'));
+});
+
+test('HybridRetriever：bag 非语义时闸门拦截域外问题且 mode 如实上报', async () => {
+  const bag: EmbeddingProvider = {
+    name: 'bag-test',
+    dims: 4,
+    semantic: false,
+    async embed(texts: string[]) {
+      return texts.map(() => [1, 0, 0, 0]);
+    },
+  };
+  const dir = await mkdtemp(path.join(tmpdir(), 'znwd-gate-'));
+  const store = new VectorStore(bag, path.join(dir, 'v.json'));
+  // 阈值标定依赖真实知识库规模（23 chunks ≈ 3.5）；小样本语料用低阈值只验证闸门逻辑
+  const r = new HybridRetriever(store, { minKeywordScore: 1 });
+  const mk = (id: string, text: string): KnowledgeChunk => ({
+    id,
+    title: id,
+    sourcePath: id + '.md',
+    text,
+    zone: 'z',
+    zoneTitle: 'Z',
+    tags: [],
+  });
+  await r.replace([
+    mk('pv', '光伏组件表面清洁 航线自动作业 积灰 鸟粪 清洗'),
+    mk('wind', '风机叶片裂纹 雷击痕迹 涂层脱落 检测 停机'),
+  ]);
+
+  const inDomain = await r.retrieveWithDiagnostics('叶片裂纹怎么发现？');
+  assert.ok(inDomain.hits.length > 0);
+  assert.equal(inDomain.diagnostics.gated, false);
+  assert.equal(inDomain.diagnostics.reason, 'keyword_hit');
+  assert.equal(inDomain.diagnostics.mode, 'keyword');
+
+  const ood = await r.retrieveWithDiagnostics('今天上海天气怎么样？');
+  assert.equal(ood.hits.length, 0);
+  assert.equal(ood.diagnostics.gated, true);
+  assert.ok(
+    ['below_threshold', 'no_candidates'].includes(ood.diagnostics.reason),
+    `reason=${ood.diagnostics.reason}`,
+  );
+
+  const raw = await r.retrieve('今天上海天气怎么样？');
+  assert.ok(raw.length > 0, '未加闸门的原始检索仍可看到向量路噪声命中（供排查）');
+  assert.equal(r.stats().mode, 'keyword');
+  assert.equal(r.stats().semantic, false);
+  assert.ok(r.stats().degradedReason);
+});
+
+test('HybridRetriever：语义向量可用时向量路可兜底并上报 hybrid', async () => {
+  const semanticEmbed: EmbeddingProvider = {
+    name: 'semantic-test',
+    dims: 3,
+    semantic: true,
+    async embed(texts: string[]) {
+      return texts.map(() => [0.6, 0.8, 0]);
+    },
+  };
+  const dir = await mkdtemp(path.join(tmpdir(), 'znwd-sem-'));
+  const store = new VectorStore(semanticEmbed, path.join(dir, 'v.json'));
+  const r = new HybridRetriever(store, { minKeywordScore: 1, minVectorScore: 0.35 });
+  await r.replace([
+    { id: 'a', title: '光伏清洁', sourcePath: 'a.md', text: '光伏组件清洁', zone: 'z', zoneTitle: 'Z', tags: [] },
+  ]);
+  const out = await r.retrieveWithDiagnostics('完全不相干的提问');
+  assert.equal(out.hits.length, 1, '余弦 1.0 ≥ 阈值时向量路兜底');
+  assert.equal(out.diagnostics.reason, 'vector_hit');
+  assert.equal(out.diagnostics.mode, 'hybrid');
+  assert.equal(r.stats().mode, 'hybrid');
+});
+
+test('RateLimiter：活跃键不被淘汰（LRU）', () => {
+  const r = new RateLimiter(5, 60_000);
+  for (let i = 0; i < 1100; i++) r.allow(`ip-${i}`);
+  assert.equal(r.allow('ip-1099'), null, '最近访问的键应仍在窗口内');
+});
+
+test('Analytics 统计 noHit（知识库未覆盖）次数', () => {
+  const a = new Analytics();
+  a.logChat({ at: 1, sessionId: 's', mode: 'llm_only', provider: 'mock', messagePreview: 'p', answerPreview: '', latencyMs: 1, noHit: true });
+  a.logChat({ at: 2, sessionId: 's', mode: 'rag', provider: 'mock', messagePreview: 'p', answerPreview: '', latencyMs: 1, noHit: false });
+  const s = a.stats(1);
+  assert.equal(s.chatTotal, 2);
+  assert.equal(s.ragHits, 1);
+  assert.equal(s.noHit, 1);
+  assert.equal(s.recent[0]!.noHit, false);
+  assert.equal(s.recent[1]!.noHit, true);
+});
+
+test('runChat：域外问题 noHit=true 且计入统计', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'znwd-nohit-'));
+  const bag: EmbeddingProvider = {
+    name: 'bag-test',
+    dims: 2,
+    semantic: false,
+    async embed(texts: string[]) {
+      return texts.map(() => [1, 1]);
+    },
+  };
+  const store = new VectorStore(bag, path.join(dir, 'v.json'));
+  const retriever = new HybridRetriever(store, { minKeywordScore: 1 });
+  await retriever.replace([
+    { id: 'a', title: '光伏清洁', sourcePath: 'a.md', text: '光伏组件清洁作业', zone: 'z', zoneTitle: 'Z', tags: [] },
+  ]);
+  const analytics = new Analytics();
+  const deps = {
+    retriever,
+    model: new MockChatModel(),
+    sessions: new SessionStore(),
+    analytics,
+    answerCache: new LruCache(10),
+    logStore: new JsonlStore(dir, 'events', { messageMode: 'hash' }),
+  };
+  const res = await runChat(deps, { message: '今天上海天气怎么样？', sessionId: 's1' });
+  assert.equal(res.noHit, true);
+  assert.equal(res.mode, 'llm_only');
+  assert.equal(res.retrieval, 'keyword');
+  assert.equal(res.sources.length, 0);
+  assert.ok(res.answer.includes('展厅资料中没有'));
+  assert.equal(analytics.stats(1).noHit, 1);
+});
+
+test('streamChat：与非流式共用答案缓存', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'znwd-ssecache-'));
+  const bag: EmbeddingProvider = {
+    name: 'bag-test',
+    dims: 2,
+    semantic: false,
+    async embed(texts: string[]) {
+      return texts.map(() => [1, 1]);
+    },
+  };
+  const store = new VectorStore(bag, path.join(dir, 'v.json'));
+  const retriever = new HybridRetriever(store, { minKeywordScore: 1 });
+  await retriever.replace([
+    { id: 'a', title: '光伏清洁', sourcePath: 'a.md', text: '光伏组件清洁作业 航线自动', zone: 'z', zoneTitle: 'Z', tags: [] },
+  ]);
+  const deps = {
+    retriever,
+    model: new MockChatModel(),
+    sessions: new SessionStore(),
+    analytics: new Analytics(),
+    answerCache: new LruCache(10),
+    logStore: new JsonlStore(dir, 'events', { messageMode: 'hash' }),
+  };
+  let sseText = '';
+  for await (const ev of streamChat(deps, { message: '光伏组件清洁作业', sessionId: 'sse' })) {
+    if (ev.type === 'delta') sseText += ev.text;
+  }
+  assert.ok(sseText.length > 0);
+  const second = await runChat(deps, { message: '光伏组件清洁作业', sessionId: 'other' });
+  assert.equal(second.cached, true, 'SSE 写过的答案，非流式请求应命中缓存');
+  const third = await streamChat(deps, { message: '光伏组件清洁作业', sessionId: 'third' }).next();
+  assert.equal(third.done, false);
 });

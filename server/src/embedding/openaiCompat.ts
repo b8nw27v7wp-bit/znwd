@@ -11,6 +11,7 @@ export interface OpenAIEmbedConfig {
 /** OpenAI 兼容 /embeddings，可接内网网关与 bge 等模型 */
 export class OpenAICompatEmbeddingProvider implements EmbeddingProvider {
   readonly name = 'openai_compat';
+  readonly semantic = true;
   readonly dims: number;
 
   constructor(private readonly config: OpenAIEmbedConfig) {

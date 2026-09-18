@@ -7,6 +7,7 @@ interface ChatPanelProps {
   suggestions: string[];
   showSuggestions: boolean;
   onSuggest: (q: string) => void;
+  onFeedback: (messageId: string, rating: 'up' | 'down') => void;
 }
 
 export function ChatPanel({
@@ -15,8 +16,10 @@ export function ChatPanel({
   suggestions,
   showSuggestions,
   onSuggest,
+  onFeedback,
 }: ChatPanelProps) {
   const endRef = useRef<HTMLDivElement>(null);
+  const lastAssistantId = [...messages].reverse().find((m) => m.role === 'assistant' && !m.streaming && !m.error)?.id;
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -30,7 +33,12 @@ export function ChatPanel({
       </div>
       <div className="message-list">
         {messages.map((m) => (
-          <MessageBubble key={m.id} message={m} />
+          <MessageBubble
+            key={m.id}
+            message={m}
+            canFeedback={m.id === lastAssistantId}
+            onFeedback={(rating) => onFeedback(m.id, rating)}
+          />
         ))}
         {busy && !messages.some((m) => m.streaming) && (
           <div className="bubble-row from-assistant">
