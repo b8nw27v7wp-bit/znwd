@@ -48,7 +48,9 @@
 | `src/routes/chat.ts` | `POST /api/chat` 入参校验与错误码 |
 | `src/knowledge/loader.ts` | 扫描 `.md`/`.txt`，分块 |
 | `src/knowledge/retriever.ts` | 中英文分词式关键词检索，top-k |
-| `src/rag/pipeline.ts` | 组 prompt、调 ChatModel、组装 sources |
+| `src/rag/pipeline.ts` | 组 prompt（含会话历史）、调 ChatModel、组装 sources |
+| `src/session/store.ts` | 内存多轮会话（6 轮 / TTL 10 分钟） |
+| `src/knowledge/suggestions.ts` | 展厅推荐问题 |
 | `src/llm/*` | `mock` / `openai_compat` 实现 |
 
 ### web/
@@ -63,13 +65,17 @@
 
 ## 数据流（一次问答）
 
-1. 用户在右侧输入 → `client.sendChat`  
+1. 用户在右侧输入（或点推荐 chips）→ `client.sendChat` + `sessionId`  
 2. Vite 将 `/api` 转发到 `http://127.0.0.1:8787`  
-3. 服务端检索 `knowledge/` → 命中片段写入 system  
-4. `ChatModel.complete` 返回文案（mock 或内网 LLM）  
-5. 响应 `{ answer, sources, mode, provider }` 渲染气泡  
-6. `speechSynthesis` 朗读；左侧 mood 切 `speaking` 并驱动口型  
-7. 新提问时先 `cancel` 旧语音再重新 speak  
+3. `SessionStore` 取该会话最近历史（≤6 轮）  
+4. 服务端检索 `knowledge/` → 命中片段写入 system，历史插在 system 与当前 user 之间  
+5. `ChatModel.complete` 返回文案（mock 或内网 LLM）  
+6. 写入 SessionStore；响应 `{ answer, sources, mode, provider }` 渲染气泡  
+7. `speechSynthesis` 朗读；左侧 mood 切 `speaking` 并驱动口型  
+8. 新提问时先 `cancel` 旧语音再重新 speak  
+9. 闲置 120s：换新 `sessionId`、欢迎语复位  
+
+另：`GET /api/suggestions` 提供推荐问题；前端每 15s `GET /api/health` 更新连接状态。
 
 ## 关键契约
 

@@ -12,7 +12,8 @@
 | [development.md](./development.md) | 本地开发、目录规范、提交约定 |
 | [knowledge.md](./knowledge.md) | 企业知识库维护与热更新 |
 | [deployment.md](./deployment.md) | 展厅/一体机部署与运行注意 |
-| [compose/spec/virtual-receptionist.md](./compose/spec/virtual-receptionist.md) | 功能 Spec（设计与交付记录） |
+| [compose/spec/virtual-receptionist.md](./compose/spec/virtual-receptionist.md) | 功能 Spec：框架 v0.1 |
+| [compose/spec/reception-ux.md](./compose/spec/reception-ux.md) | 功能 Spec：接待体验 v0.2 |
 | [../CHANGELOG.md](../CHANGELOG.md) | 版本变更记录 |
 
 ## 阅读路径

@@ -55,7 +55,8 @@ znwd/
 | [docs/development.md](docs/development.md) | 开发与目录规范 |
 | [docs/knowledge.md](docs/knowledge.md) | 知识库维护 |
 | [docs/deployment.md](docs/deployment.md) | 展厅部署 |
-| [docs/compose/spec/virtual-receptionist.md](docs/compose/spec/virtual-receptionist.md) | 功能 Spec / 交付记录 |
+| [docs/compose/spec/virtual-receptionist.md](docs/compose/spec/virtual-receptionist.md) | 功能 Spec v0.1 框架 |
+| [docs/compose/spec/reception-ux.md](docs/compose/spec/reception-ux.md) | 功能 Spec v0.2 接待体验 |
 
 ## 常用 API
 

@@ -3,7 +3,7 @@ feature: reception-ux
 status: delivered
 updated: 2026-09-17
 branch: feature/virtual-receptionist
-commits: 
+commits: b558d5ee91b7f6b1cea3838a5d211c2c676b2726..HEAD
 ---
 
 # 接待体验增强（v0.2）
