@@ -36,7 +36,7 @@ export default function App() {
   );
   const lastActiveRef = useRef(Date.now());
   const busyRef = useRef(false);
-  const { state: speechState, speak, stop } = useSpeech();
+  const { state: speechState, speak, stop, muted, toggleMute } = useSpeech();
 
   busyRef.current = busy;
 
@@ -160,6 +160,11 @@ export default function App() {
             suggestions={suggestions}
             showSuggestions={showSuggestions}
             onSuggest={handleSend}
+            muted={muted}
+            speaking={speechState === 'speaking'}
+            onToggleMute={toggleMute}
+            onStopSpeak={stop}
+            onReset={resetConversation}
           />
           <Composer onSend={handleSend} busy={busy} onTouch={touch} />
         </div>
