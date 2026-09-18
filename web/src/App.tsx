@@ -178,38 +178,41 @@ export default function App() {
 
   return (
     <div className="app">
-      <aside className="left">
-        <Live2DStage mood={mood} />
-        <div className="voice-controls">
-          <button type="button" onClick={toggleMute} className="ghost">
-            {muted ? '开启朗读' : '静音'}
-          </button>
-          <button
-            type="button"
-            onClick={stop}
-            className="ghost"
-            disabled={speechState !== 'speaking'}
-          >
-            停止朗读
-          </button>
-          <button type="button" onClick={resetConversation} className="ghost">
-            重新开始
-          </button>
-          {!voiceReady && <span className="warn">当前浏览器不支持语音合成</span>}
+      <section className="rail">
+        <div className="rail-top">
+          <Live2DStage mood={mood} />
+          <div className="voice-controls">
+            <button type="button" onClick={toggleMute} className="ghost">
+              {muted ? '开启朗读' : '静音'}
+            </button>
+            <button
+              type="button"
+              onClick={stop}
+              className="ghost"
+              disabled={speechState !== 'speaking'}
+            >
+              停止朗读
+            </button>
+            <button type="button" onClick={resetConversation} className="ghost">
+              重新开始
+            </button>
+            {!voiceReady && <span className="warn">当前浏览器不支持语音合成</span>}
+          </div>
         </div>
-      </aside>
-      <main className="right">
-        <ChatPanel
-          messages={messages}
-          busy={busy}
-          disabled={!voiceReady}
-          suggestions={suggestions}
-          showSuggestions={showSuggestions}
-          onSuggest={handleSend}
-          online={online}
-        />
-        <Composer onSend={handleSend} busy={busy} onTouch={touch} />
-      </main>
+        <div className="rail-bottom">
+          <ChatPanel
+            messages={messages}
+            busy={busy}
+            disabled={!voiceReady}
+            suggestions={suggestions}
+            showSuggestions={showSuggestions}
+            onSuggest={handleSend}
+            online={online}
+          />
+          <Composer onSend={handleSend} busy={busy} onTouch={touch} />
+        </div>
+      </section>
+      <div className="blank" aria-hidden="true" />
     </div>
   );
 }

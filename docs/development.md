@@ -23,7 +23,7 @@ npm run start            # 以 server/dist 启动（需先 build）
 ## 本地验证清单
 
 1. `GET http://localhost:5173/api/health` → `ok: true`  
-2. 页面左右分栏；提问 Enter 发送  
+2. 页面仅左侧约 1/3 有 UI（上形象、下聊天）；提问 Enter 发送  
 3. 右侧出现回答与「资料来源」；左侧进入朗读/口型  
 4. 无命中问题 → 提示「未命中内部资料」且 mock 文案为「暂未检索到」  
 
