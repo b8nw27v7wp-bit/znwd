@@ -256,15 +256,15 @@ node server/scripts/api-audit.mjs
 
 ### Phase A
 
-- [ ] S1 默认监听 127.0.0.1 + 文档  
-- [ ] S2 非开发强制 ADMIN_TOKEN  
-- [ ] S3 错误响应脱敏 + requestId  
-- [ ] E1 抽 runChat（chat + stream 共用）  
-- [ ] E4 SIGTERM 优雅退出  
-- [ ] E2 retriever generation/原子 replace  
-- [ ] E3 日志脱敏 + 轮转  
-- [ ] P1 前端 SSE 流式  
-- [ ] 全量回归测试  
+- [x] S1 默认监听 127.0.0.1 + 文档  
+- [x] S2 非开发强制 ADMIN_TOKEN  
+- [x] S3 错误响应脱敏 + requestId  
+- [x] E1 抽 runChat（chat + stream 共用）  
+- [x] E4 SIGTERM 优雅退出  
+- [x] E2 retriever generation/原子 replace  
+- [x] E3 日志脱敏 + 轮转  
+- [x] P1 前端 SSE 流式  
+- [x] 全量回归测试  
 
 ### Phase B
 

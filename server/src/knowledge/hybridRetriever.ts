@@ -13,6 +13,7 @@ export interface HybridStats {
   keywordChunks: number;
   vector: ReturnType<VectorStore['stats']>;
   indexReady: boolean;
+  generation: number;
 }
 
 /** RRF 融合关键词与向量两路排序 */
@@ -82,40 +83,67 @@ function rrfFuse(
   return out;
 }
 
+interface Snapshot {
+  gen: number;
+  keyword: Retriever;
+  ready: boolean;
+}
+
 export class HybridRetriever {
-  private keyword = new Retriever();
-  private indexReady = false;
+  private snapshot: Snapshot = { gen: 0, keyword: new Retriever(), ready: false };
+  private replaceChain: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly vectors: VectorStore) {}
 
-  async replace(chunks: KnowledgeChunk[]): Promise<void> {
-    this.keyword.replace(chunks);
-    const loaded = await this.vectors.tryLoad(chunks);
-    if (!loaded) {
-      await this.vectors.build(chunks);
-      this.indexReady = true;
-    } else {
-      this.indexReady = true;
-    }
+  generation(): number {
+    return this.snapshot.gen;
   }
 
-  /** 兼容旧调用：同步关键词检索 */
+  /** 串行 replace；完成后原子切换 keyword 快照并递增 generation */
+  async replace(chunks: KnowledgeChunk[]): Promise<void> {
+    const run = async () => {
+      const nextKeyword = new Retriever();
+      nextKeyword.replace(chunks);
+      const loaded = await this.vectors.tryLoad(chunks);
+      if (!loaded) {
+        await this.vectors.build(chunks);
+      }
+      const prev = this.snapshot.gen;
+      this.snapshot = {
+        gen: prev + 1,
+        keyword: nextKeyword,
+        ready: true,
+      };
+    };
+    const p = this.replaceChain.then(run, run);
+    this.replaceChain = p;
+    await p;
+  }
+
   list(): KnowledgeChunk[] {
-    return this.keyword.list();
+    return this.snapshot.keyword.list();
   }
 
   retrieveKeyword(query: string, topK = 8): RetrievedChunk[] {
-    return this.keyword.retrieve(query, topK);
+    return this.snapshot.keyword.retrieve(query, topK);
   }
 
   async retrieve(query: string, topK = 4): Promise<HybridHit[]> {
-    const kw = this.keyword.retrieve(query, Math.max(topK * 2, 8));
-    let vec: Array<{ id: string; score: number; chunk: KnowledgeChunk }> = [];
+    const snap = this.snapshot;
+    const kw = snap.keyword.retrieve(query, Math.max(topK * 2, 8));
+    // 固定向量 data 引用；命中 chunk 对齐到 keyword 快照，避免 reload 中混代
+    const vecData = this.vectors.snapshot();
+    let vecRaw: Array<{ id: string; score: number; chunk: KnowledgeChunk }> = [];
     try {
-      vec = await this.vectors.search(query, Math.max(topK * 2, 8));
+      vecRaw = await this.vectors.searchOn(vecData, query, Math.max(topK * 2, 8));
     } catch {
-      vec = [];
+      vecRaw = [];
     }
+    const chunkById = new Map(snap.keyword.list().map((c) => [c.id, c] as const));
+    const vec = vecRaw.flatMap((v) => {
+      const chunk = chunkById.get(v.id);
+      return chunk ? [{ id: v.id, score: v.score, chunk }] : [];
+    });
     const fused = rrfFuse(kw, vec);
     return fused.slice(0, topK);
   }
@@ -123,9 +151,10 @@ export class HybridRetriever {
   stats(): HybridStats {
     return {
       mode: 'hybrid',
-      keywordChunks: this.keyword.list().length,
+      keywordChunks: this.snapshot.keyword.list().length,
       vector: this.vectors.stats(),
-      indexReady: this.indexReady,
+      indexReady: this.snapshot.ready,
+      generation: this.snapshot.gen,
     };
   }
 }

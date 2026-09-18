@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { fetchSuggestions, sendChat } from './api/client';
+import { fetchSuggestions, sendChat, sendChatStream } from './api/client';
 import { ChatPanel } from './components/ChatPanel';
 import { Composer } from './components/Composer';
 import { Live2DStage } from './components/Live2DStage';
@@ -33,6 +33,7 @@ export default function App() {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const lastActiveRef = useRef(Date.now());
   const busyRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
   const { state: speechState, speak, stop, muted, toggleMute } = useSpeech();
 
   busyRef.current = busy;
@@ -51,6 +52,8 @@ export default function App() {
     messages.length <= 1 && messages[0]?.id === 'welcome' && !busy;
 
   const resetConversation = useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
     stop();
     setBusy(false);
     setMessages(welcomeMessages());
@@ -107,31 +110,81 @@ export default function App() {
       if (busy) return;
       touch();
       stop();
+      abortRef.current?.abort();
+      const ac = new AbortController();
+      abortRef.current = ac;
       setBusy(true);
 
       const userMsg: UiMessage = { id: uid(), role: 'user', text };
-      setMessages((prev) => [...prev, userMsg]);
+      const botId = uid();
+      const botMsg: UiMessage = {
+        id: botId,
+        role: 'assistant',
+        text: '',
+        streaming: true,
+      };
+      setMessages((prev) => [...prev, userMsg, botMsg]);
+
+      const patchBot = (patch: Partial<UiMessage>) => {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === botId ? { ...m, ...patch } : m)),
+        );
+      };
+
+      const finishWithData = (data: Awaited<ReturnType<typeof sendChat>>) => {
+        patchBot({
+          text: data.answer,
+          mode: data.mode as 'rag' | 'llm_only',
+          sources: data.sources?.map((s) => ({ title: s.title, snippet: s.snippet })),
+          streaming: false,
+          error: false,
+        });
+        speak(data.answer);
+      };
+
+      const failWith = (message: string) => {
+        patchBot({
+          text: message,
+          error: true,
+          streaming: false,
+        });
+      };
 
       try {
-        const data = await sendChat(text, sessionId);
-        const botMsg: UiMessage = {
-          id: uid(),
-          role: 'assistant',
-          text: data.answer,
-          mode: data.mode,
-          sources: data.sources?.map((s) => ({ title: s.title, snippet: s.snippet })),
-        };
-        setMessages((prev) => [...prev, botMsg]);
-        speak(data.answer);
-      } catch (err) {
-        const fail: UiMessage = {
-          id: uid(),
-          role: 'assistant',
-          text: err instanceof Error ? err.message : '服务暂时不可用，请稍后再试。',
-          error: true,
-        };
-        setMessages((prev) => [...prev, fail]);
+        try {
+          const data = await sendChatStream(text, sessionId, {
+            signal: ac.signal,
+            onDelta: (delta) => {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === botId
+                    ? { ...m, text: (m.text || '') + delta, streaming: true }
+                    : m,
+                ),
+              );
+            },
+          });
+          if (ac.signal.aborted) return;
+          finishWithData(data);
+        } catch (streamErr) {
+          if (ac.signal.aborted) return;
+          // 回退非流式 POST /api/chat
+          try {
+            const data = await sendChat(text, sessionId);
+            if (ac.signal.aborted) return;
+            finishWithData(data);
+          } catch (err) {
+            failWith(
+              err instanceof Error
+                ? err.message
+                : streamErr instanceof Error
+                  ? streamErr.message
+                  : '服务暂时不可用，请稍后再试。',
+            );
+          }
+        }
       } finally {
+        if (abortRef.current === ac) abortRef.current = null;
         setBusy(false);
         touch();
       }

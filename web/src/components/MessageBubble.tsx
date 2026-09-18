@@ -5,6 +5,7 @@ export interface UiMessage {
   mode?: 'rag' | 'llm_only';
   sources?: Array<{ title: string; snippet: string }>;
   error?: boolean;
+  streaming?: boolean;
 }
 
 interface MessageBubbleProps {
@@ -16,7 +17,9 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   return (
     <div className={`bubble-row ${isUser ? 'from-user' : 'from-assistant'}`}>
       <div className={`bubble ${isUser ? 'bubble-user' : 'bubble-bot'} ${message.error ? 'bubble-error' : ''}`}>
-        <div className="bubble-text">{message.text}</div>
+        <div className="bubble-text">
+          {message.text || (message.streaming ? '正在生成回答…' : '')}
+        </div>
         {!isUser && message.mode === 'llm_only' && (
           <div className="bubble-note">未命中内部资料，以下为通用回答</div>
         )}

@@ -1,5 +1,12 @@
 # 代码审计与功能测试报告
 
+> 最近更新：2026-09-17（Phase A 合入后补记）  
+> 范围：当前仓库静态排查 + 本地 API 冒烟。实现细节以代码为准。
+
+**Phase A 之后的基线**：`npm test -w server` **17/17**；`node server/scripts/api-audit.mjs` **20/20**；前端已接 **SSE**（失败回退 POST）；`HOST` 默认 `127.0.0.1`；生产强制 `ADMIN_TOKEN`；错误信封脱敏；chat/SSE 共用 `runChat`/`streamChat`。
+
+（以下为 Phase A 之前的历史审计正文，部分结论已过时，保留作对照。）
+
 日期：2026-09-17  
 范围：`server/`（Hybrid RAG、会话、缓存、流式、管理接口）+ `web/` 关键路径  
 方法：静态阅读 + `npm test -w server` + `server/scripts/api-audit.mjs` 功能套件

@@ -32,7 +32,7 @@ export function ChatPanel({
         {messages.map((m) => (
           <MessageBubble key={m.id} message={m} />
         ))}
-        {busy && (
+        {busy && !messages.some((m) => m.streaming) && (
           <div className="bubble-row from-assistant">
             <div className="bubble bubble-bot bubble-busy">正在生成回答…</div>
           </div>

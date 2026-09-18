@@ -1,16 +1,17 @@
-import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { answerQuestion, streamAnswer } from '../rag/pipeline.js';
-import type { ChatModel } from '../llm/types.js';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { runChat, streamChat, type RunChatDeps } from '../rag/runChat.js';
 import type { HybridRetriever } from '../knowledge/hybridRetriever.js';
-import type { SessionStore } from '../session/store.js';
-import type { Analytics } from '../analytics/stats.js';
-import type { RateLimiter } from '../http/rateLimit.js';
 import { suggestionsForZone } from '../knowledge/suggestions.js';
 import { loadZonesMeta } from '../knowledge/loader.js';
 import type { ZonesMeta } from '../knowledge/loader.js';
-import { LruCache, JsonlStore, adminOk, answerCacheKey, type CachedAnswer } from '../http/cache.js';
+import { adminOk, type CachedAnswer, type LruCache, type JsonlStore } from '../http/cache.js';
+import { errorPayload, messageLogFields } from '../http/errors.js';
+import type { ChatModel } from '../llm/types.js';
+import type { SessionStore } from '../session/store.js';
+import type { Analytics } from '../analytics/stats.js';
+import type { RateLimiter } from '../http/rateLimit.js';
 
-interface RouteDeps {
+interface RouteDeps extends RunChatDeps {
   retriever: HybridRetriever;
   model: ChatModel;
   sessions: SessionStore;
@@ -18,6 +19,7 @@ interface RouteDeps {
   chatLimiter: RateLimiter;
   knowledgeDir: string;
   adminToken?: string;
+  adminTokenRequired: boolean;
   answerCache: LruCache<CachedAnswer>;
   logStore: JsonlStore;
 }
@@ -31,8 +33,23 @@ function sanitizeSessionId(raw: unknown): string | undefined {
   return undefined;
 }
 
+function requestId(req: FastifyRequest): string {
+  return String(req.id ?? '');
+}
+
+function denyAdmin(req: FastifyRequest, reply: FastifyReply, required: boolean) {
+  req.log.error(
+    { requestId: requestId(req), adminTokenRequired: required },
+    'admin route rejected: token missing or invalid',
+  );
+  return reply
+    .code(401)
+    .send(errorPayload('unauthorized', 'unauthorized', requestId(req)));
+}
+
 export function registerChatRoutes(app: FastifyInstance, deps: RouteDeps): void {
   const readZones = async (): Promise<ZonesMeta> => loadZonesMeta(deps.knowledgeDir);
+  const adminOpts = { requireToken: deps.adminTokenRequired };
 
   app.get<{ Querystring: { zone?: string } }>('/api/suggestions', async (req) => {
     const meta = await readZones();
@@ -43,15 +60,27 @@ export function registerChatRoutes(app: FastifyInstance, deps: RouteDeps): void 
 
   app.get<{ Params: { sessionId: string } }>('/api/sessions/:sessionId', async (req, reply) => {
     const id = sanitizeSessionId(req.params.sessionId);
-    if (!id) return reply.code(400).send({ error: 'sessionId is required' });
+    if (!id) {
+      return reply
+        .code(400)
+        .send(errorPayload('validation_error', 'sessionId is required', requestId(req)));
+    }
     const data = deps.sessions.peek(id);
-    if (!data) return reply.code(404).send({ error: 'session not found or expired' });
+    if (!data) {
+      return reply
+        .code(404)
+        .send(errorPayload('not_found', 'session not found or expired', requestId(req)));
+    }
     return { sessionId: id, messages: data.messages, lastActive: data.lastActive };
   });
 
   app.delete<{ Params: { sessionId: string } }>('/api/sessions/:sessionId', async (req, reply) => {
     const id = sanitizeSessionId(req.params.sessionId);
-    if (!id) return reply.code(400).send({ error: 'sessionId is required' });
+    if (!id) {
+      return reply
+        .code(400)
+        .send(errorPayload('validation_error', 'sessionId is required', requestId(req)));
+    }
     return { ok: deps.sessions.reset(id), sessionId: id };
   });
 
@@ -60,7 +89,9 @@ export function registerChatRoutes(app: FastifyInstance, deps: RouteDeps): void 
     async (req, reply) => {
       const rating = req.body?.rating;
       if (rating !== 'up' && rating !== 'down') {
-        return reply.code(400).send({ error: "rating must be 'up' or 'down'" });
+        return reply
+          .code(400)
+          .send(errorPayload('validation_error', "rating must be 'up' or 'down'", requestId(req)));
       }
       const sessionId = sanitizeSessionId(req.body?.sessionId);
       const comment =
@@ -78,15 +109,15 @@ export function registerChatRoutes(app: FastifyInstance, deps: RouteDeps): void 
   );
 
   app.get('/api/stats', async (req, reply) => {
-    if (!adminOk(req.headers.authorization, deps.adminToken)) {
-      return reply.code(401).send({ error: 'unauthorized' });
+    if (!adminOk(req.headers.authorization, deps.adminToken, adminOpts)) {
+      return denyAdmin(req, reply, deps.adminTokenRequired);
     }
     return deps.analytics.stats(deps.sessions.count());
   });
 
   app.get('/api/openapi.json', async () => ({
     openapi: '3.0.0',
-    info: { title: 'Virtual Hostess API', version: '0.6.0' },
+    info: { title: 'Virtual Hostess API', version: '0.7.0' },
     servers: [{ url: '/' }],
     paths: {
       '/api/health': { get: { summary: 'Health' } },
@@ -99,16 +130,21 @@ export function registerChatRoutes(app: FastifyInstance, deps: RouteDeps): void 
     },
   }));
 
-  /** SSE 流式问答 */
+  /** SSE 流式问答（业务与 POST /api/chat 共用 streamChat/runChat） */
   app.post<{ Body: { message?: string; sessionId?: string } }>(
     '/api/chat/stream',
     async (req, reply) => {
+      const rid = requestId(req);
       const wait = deps.chatLimiter.allow(clientIp(req));
       if (wait !== null) {
-        return reply.code(429).send({ error: 'too many requests', retryAfterSec: wait });
+        return reply
+          .code(429)
+          .send(errorPayload('rate_limited', 'too many requests', rid, { retryAfterSec: wait }));
       }
       const message = (req.body?.message ?? '').trim().slice(0, 2000);
-      if (!message) return reply.code(400).send({ error: 'message is required' });
+      if (!message) {
+        return reply.code(400).send(errorPayload('validation_error', 'message is required', rid));
+      }
       const sessionId = sanitizeSessionId(req.body?.sessionId);
       const started = Date.now();
 
@@ -117,52 +153,38 @@ export function registerChatRoutes(app: FastifyInstance, deps: RouteDeps): void 
         'cache-control': 'no-cache',
         connection: 'keep-alive',
         'access-control-allow-origin': '*',
+        'x-request-id': rid,
       });
       const send = (event: string, data: unknown) => {
-        reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+        reply.raw.write('event: ' + event + '\ndata: ' + JSON.stringify(data) + '\n\n');
       };
 
       try {
-        const history = deps.sessions.history(sessionId);
-        let full = '';
-        let mode: 'rag' | 'llm_only' = 'llm_only';
-        let sources: unknown[] = [];
-
-        for await (const ev of streamAnswer(deps.retriever, deps.model, message, { history })) {
+        for await (const ev of streamChat(deps, { message, sessionId, started })) {
           if (ev.type === 'meta') {
-            mode = ev.mode;
-            sources = ev.sources;
-            send('meta', { mode: ev.mode, sources: ev.sources, provider: ev.provider, sessionId });
+            send('meta', {
+              mode: ev.mode,
+              sources: ev.sources,
+              provider: ev.provider,
+              sessionId,
+            });
           } else if (ev.type === 'delta') {
             send('delta', { text: ev.text });
           } else if (ev.type === 'done') {
-            full = ev.full;
+            send('done', {
+              latencyMs: ev.latencyMs,
+              answer: ev.full,
+              sources: ev.sources,
+              mode: ev.mode,
+            });
           }
         }
-
-        deps.sessions.append(sessionId, message, full);
-        const latencyMs = Date.now() - started;
-        deps.analytics.logChat({
-          at: started,
-          sessionId: sessionId ?? null,
-          mode,
-          provider: deps.model.name,
-          messagePreview: message.slice(0, 80),
-          answerPreview: full.slice(0, 80),
-          latencyMs,
-        });
-        deps.logStore.append({
-          type: 'chat',
-          mode,
-          provider: deps.model.name,
-          sessionId,
-          message,
-          answerPreview: full.slice(0, 200),
-          latencyMs,
-        });
-        send('done', { latencyMs, answer: full, sources, mode });
       } catch (err) {
-        send('error', { error: err instanceof Error ? err.message : 'stream failed' });
+        req.log.error({ requestId: rid, err }, 'sse chat failed');
+        send(
+          'error',
+          errorPayload('internal_error', '服务内部错误', rid),
+        );
       }
       reply.raw.end();
       return reply;
@@ -170,92 +192,40 @@ export function registerChatRoutes(app: FastifyInstance, deps: RouteDeps): void 
   );
 
   app.post<{ Body: { message?: string; sessionId?: string } }>('/api/chat', async (req, reply) => {
+    const rid = requestId(req);
     const wait = deps.chatLimiter.allow(clientIp(req));
     if (wait !== null) {
-      return reply.code(429).send({ error: 'too many requests', retryAfterSec: wait });
+      return reply
+        .code(429)
+        .send(errorPayload('rate_limited', 'too many requests', rid, { retryAfterSec: wait }));
     }
 
     const message = (req.body?.message ?? '').trim().slice(0, 2000);
-    if (!message) return reply.code(400).send({ error: 'message is required' });
+    if (!message) {
+      return reply.code(400).send(errorPayload('validation_error', 'message is required', rid));
+    }
     const sessionId = sanitizeSessionId(req.body?.sessionId);
     const started = Date.now();
-    const key = answerCacheKey(message, deps.model.name);
 
     try {
-      const history = deps.sessions.history(sessionId);
-      const hit = deps.answerCache.get(key);
-      // 有多轮历史时跳过缓存，保证上下文；命中时仍写入会话，否则后续追问丢上下文
-      if (hit && history.length === 0) {
-        deps.sessions.append(sessionId, message, hit.answer);
-        deps.analytics.logChat({
-          at: started,
-          sessionId: sessionId ?? null,
-          mode: hit.mode as 'rag' | 'llm_only',
-          provider: hit.provider,
-          messagePreview: message.slice(0, 80),
-          answerPreview: hit.answer.slice(0, 80),
-          latencyMs: 0,
-        });
-        return { ...hit, cached: true, sessionId: sessionId ?? null, latencyMs: 0 };
-      }
-
-      const result = await answerQuestion(deps.retriever, deps.model, message, { history });
-      deps.sessions.append(sessionId, message, result.answer);
-
-      const payload: CachedAnswer = {
-        answer: result.answer,
-        sources: result.sources,
-        mode: result.mode,
-        provider: result.provider,
-        retrieval: result.retrieval,
-        cached: false,
-      };
-      if (history.length === 0) deps.answerCache.set(key, payload);
-
-      const latencyMs = Date.now() - started;
-      deps.analytics.logChat({
-        at: started,
-        sessionId: sessionId ?? null,
-        mode: result.mode,
-        provider: result.provider,
-        messagePreview: message.slice(0, 80),
-        answerPreview: result.answer.slice(0, 80),
-        latencyMs,
-      });
-      deps.logStore.append({
-        type: 'chat',
-        mode: result.mode,
-        provider: result.provider,
-        sessionId,
-        message,
-        answerPreview: result.answer.slice(0, 200),
-        sources: result.sources?.length ?? 0,
-        latencyMs,
-      });
-
-      return {
-        answer: result.answer,
-        sources: result.sources,
-        mode: result.mode,
-        provider: result.provider,
-        retrieval: result.retrieval,
-        sessionId: sessionId ?? null,
-        latencyMs,
-        cached: false,
-      };
+      const result = await runChat(deps, { message, sessionId, started });
+      return result;
     } catch (err) {
-      req.log.error(err);
+      req.log.error({ requestId: rid, err }, 'chat failed');
+      const preview = messageLogFields(message, deps.logStore.messageMode);
       deps.analytics.logChat({
         at: started,
         sessionId: sessionId ?? null,
         mode: 'llm_only',
         provider: deps.model.name,
-        messagePreview: message.slice(0, 80),
+        messagePreview: preview.messagePreview ?? message.slice(0, 80),
         answerPreview: '',
         latencyMs: Date.now() - started,
-        error: err instanceof Error ? err.message : 'chat failed',
+        error: 'internal_error',
       });
-      return reply.code(500).send({ error: err instanceof Error ? err.message : 'chat failed' });
+      return reply
+        .code(500)
+        .send(errorPayload('internal_error', '服务内部错误', rid));
     }
   });
 }

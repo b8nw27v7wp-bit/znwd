@@ -46,12 +46,27 @@ npm run start
 | 启动脚本 | 服务开机自启（计划任务/服务化可后续加） |
 | 恢复 | server 挂掉时 health 失败 → 告警/自动拉起 |
 
-## 安全注意（内网）
+## 安全注意（Phase A）
 
-- `.env` 含 `LLM_API_KEY`，勿提交、勿拷到公开目录。  
-- `HOST` 对仅本机前端可用 `127.0.0.1`；若跨机访问再放宽。  
-- `/api/knowledge/reload` 无鉴权，**不要**暴露到办公网外。  
-- 局域网演示请确认防火墙仅放行所需端口（默认 8787、5173）。  
+- `.env` 含 `LLM_API_KEY`，勿提交、勿拷到公开目录。
+- **`HOST` 默认 `127.0.0.1`**。跨机访问请：显式设 `HOST=0.0.0.0` 或保持本机监听 + Caddy/nginx 反代，并限制防火墙仅放行展厅 VLAN。
+- **生产必须设置 `ADMIN_TOKEN`**，并设 `NODE_ENV=production`（或 `REQUIRE_ADMIN_TOKEN=true`）。未设置时 `/api/stats`、`/api/knowledge/reload` 返回 **401**（开发环境未设 token 仍开放，仅限本机联调）。
+- 错误响应脱敏：5xx 仅 `{ error, message: "服务内部错误", requestId }`，堆栈只进服务端日志。
+- `KNOWLEDGE_WATCH` 为 experimental（Windows `fs.watch recursive` 不稳定）；生产知识更新用手动 `POST /api/knowledge/reload`（需 Bearer token）。
+- JSONL 日志默认 hash 预览 + `LOG_MAX_BYTES` 轮转；勿将 `server/data/` 拷贝到公开位置。
+- 局域网演示请确认防火墙仅放行所需端口（默认 8787、5173）。
+- 建议部署层：内网 HTTPS（Caddy/nginx）、展厅 VLAN、管理端口不对办公网开放。
+
+### 生产 `.env` 最小安全集
+
+```bash
+HOST=127.0.0.1
+NODE_ENV=production
+ADMIN_TOKEN=<强随机串>
+REQUIRE_ADMIN_TOKEN=true
+LOG_MESSAGE_MODE=hash
+LOG_MAX_BYTES=5000000
+```
 
 ## Live2D 正式形象
 

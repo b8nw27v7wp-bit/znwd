@@ -105,13 +105,20 @@ Base URL：开发态经 Vite 代理为 `http://localhost:5173`；直连后端为
 | `provider` | 实际使用的 LLM 实现名 |
 | `retrieval` | 当前为 `hybrid` |
 
-**错误**
+**错误信封（Phase A）**
 
-| 状态码 | 条件 | 响应体 |
-|--------|------|--------|
-| 400 | 缺省或空白 `message` | `{ "error": "message is required" }` |
-| 500 | LLM/内部异常 | `{ "error": "<message>" }` |
-| 429 | 超过 `CHAT_RATE_PER_MIN` | `{ "error": "too many requests", "retryAfterSec": n }` |
+统一字段：
+
+```json
+{ "error": "validation_error", "message": "消息说明", "requestId": "req-id" }
+```
+
+| 状态码 | 条件 | `error` 码 |
+|--------|------|------------|
+| 400 | 缺省或空白 `message` / 参数非法 | `validation_error` |
+| 401 | 管理接口未授权（生产强制 `ADMIN_TOKEN`） | `unauthorized` |
+| 429 | 超过 `CHAT_RATE_PER_MIN`（附 `retryAfterSec`） | `rate_limited` |
+| 500 | LLM/内部异常 | `internal_error`（`message` 固定为「服务内部错误」，细节只进服务端日志） |
 
 成功响应额外字段：`latencyMs`（服务端耗时毫秒）。
 
@@ -229,7 +236,9 @@ SSE 流式问答。请求体同 `/api/chat`。
 - `event: meta` → `{ mode, sources, provider, sessionId }`
 - `event: delta` → `{ text }`
 - `event: done` → `{ latencyMs, answer, sources, mode }`
-- `event: error` → `{ error }`
+- `event: error` → `{ error, message, requestId }`（不泄露堆栈）
+
+前端 `web/src/api/client.ts` 优先 SSE；失败自动回退 `POST /api/chat`。
 
 ---
 
@@ -237,11 +246,11 @@ SSE 流式问答。请求体同 `/api/chat`。
 
 | 接口 | 说明 |
 |------|------|
-| `GET /api/stats` | 若配置 `ADMIN_TOKEN`，需 `Authorization: Bearer <token>` |
-| `POST /api/knowledge/reload` | 同上（可选） |
+| `GET /api/stats` | 配置了 `ADMIN_TOKEN` 时需 `Authorization: Bearer <token>`；`NODE_ENV=production|prod|staging` 或 `REQUIRE_ADMIN_TOKEN=true` 时**未配置 token 即 401** |
+| `POST /api/knowledge/reload` | 同上；响应含 `generation`（索引代数） |
 | `GET /api/openapi.json` | 简易 API 清单 |
 
-环境变量补充：`ADMIN_TOKEN`、`ANSWER_CACHE_SIZE`、`DATA_DIR`、`KNOWLEDGE_WATCH`。
+环境变量补充：`HOST`、`ADMIN_TOKEN`、`REQUIRE_ADMIN_TOKEN`、`ANSWER_CACHE_SIZE`、`DATA_DIR`、`KNOWLEDGE_WATCH`、`LOG_MAX_BYTES`、`LOG_MESSAGE_MODE`。
 
 ---
 
@@ -257,12 +266,17 @@ SSE 流式问答。请求体同 `/api/chat`。
 | `LLM_MODEL` | 空 | 模型名 |
 | `KNOWLEDGE_DIR` | `./knowledge` | 相对仓库根 |
 | `PORT` | `8787` | 监听端口 |
-| `HOST` | `0.0.0.0` | 监听地址；展厅本机可用 `127.0.0.1` |
+| `HOST` | `127.0.0.1` | **Phase A 默认仅本机**；跨机需显式配置并限制防火墙/反代 |
+| `ADMIN_TOKEN` | 空 | 管理接口 Bearer；生产必须设置 |
+| `REQUIRE_ADMIN_TOKEN` | 空 | `true` 时无 token 管理接口 401 |
+| `NODE_ENV` | 空 | `production`/`prod`/`staging` 时强制管理口令 |
 | `CHAT_RATE_PER_MIN` | `30` | 每 IP 每分钟 chat 上限 |
 | `EMBED_PROVIDER` | `bag` | `bag` \| `openai_compat` |
 | `EMBED_BASE_URL` | 可回落 `LLM_BASE_URL` | embeddings 接口 |
 | `EMBED_MODEL` | 空 | 向量模型名（openai_compat 必填） |
 | `INDEX_DIR` | `./server/indexes` | 向量索引目录 |
+| `LOG_MAX_BYTES` | `5000000` | events.jsonl 轮转阈值 |
+| `LOG_MESSAGE_MODE` | `hash` | `hash` \| `preview`；JSONL 不再落盘完整 question |
 
 ---
 

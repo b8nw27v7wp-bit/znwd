@@ -2,6 +2,29 @@
 
 本项目版本与变更记录。日期：YYYY-MM-DD。
 
+## [0.7.0] — 2026-09-17
+
+Phase A 可上线加固（`plan.md` S1–S3 / E1–E4 / P1）。
+
+### Security
+
+- `HOST` 默认改为 `127.0.0.1`；`.env.example` / `deployment.md` 写明生产监听与反代建议  
+- `NODE_ENV=production|prod|staging` 或 `REQUIRE_ADMIN_TOKEN=true` 时，未配置 `ADMIN_TOKEN` 的 `/api/stats`、`/api/knowledge/reload` 返回 401  
+- 统一错误信封 `{ error, message, requestId }`；500/流式 error 不泄露堆栈与内部路径  
+
+### Changed
+
+- 抽取 `runChat` / `streamChat`（`server/src/rag/runChat.ts`），`/api/chat` 与 `/api/chat/stream` 共用检索、会话、缓存与日志  
+- `HybridRetriever` 引入 **generation** 与串行原子 `replace`；`VectorStore` 临时 Map 构建 + 索引文件 tmp→rename  
+- `JsonlStore`：默认 message **hash** 预览（`LOG_MESSAGE_MODE`）、按 `LOG_MAX_BYTES` 日切轮转、`flush()`  
+- `SIGTERM`/`SIGINT` 优雅退出：`app.close` + 日志 flush + 8s 超时保护  
+- 前端 `sendChatStream` SSE 流式渲染；失败自动回退 `POST /api/chat`；TTS 使用完整答案  
+
+### Test
+
+- unit 17/17（新增 adminOk/requireToken、errorPayload、日志脱敏/轮转、retriever generation、runChat）  
+- api-audit 20/20  
+
 ## [0.6.0] — 2026-09-17
 
 ### Added

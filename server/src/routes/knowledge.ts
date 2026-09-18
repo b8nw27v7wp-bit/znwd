@@ -3,6 +3,7 @@ import path from 'node:path';
 import { loadKnowledge, loadZonesMeta } from '../knowledge/loader.js';
 import type { HybridRetriever } from '../knowledge/hybridRetriever.js';
 import { adminOk } from '../http/cache.js';
+import { errorPayload } from '../http/errors.js';
 
 export function registerKnowledgeRoutes(
   app: FastifyInstance,
@@ -10,10 +11,12 @@ export function registerKnowledgeRoutes(
     retriever: HybridRetriever;
     knowledgeDir: string;
     adminToken?: string;
+    adminTokenRequired: boolean;
     onReloaded?: () => void;
   },
 ): void {
-  const { knowledgeDir, retriever, adminToken } = deps;
+  const { knowledgeDir, retriever, adminToken, adminTokenRequired } = deps;
+  const adminOpts = { requireToken: adminTokenRequired };
 
   app.get('/api/knowledge/list', async () => {
     const root = path.resolve(knowledgeDir);
@@ -47,22 +50,30 @@ export function registerKnowledgeRoutes(
   });
 
   app.post('/api/knowledge/reload', async (req: FastifyRequest, reply) => {
-    if (!adminOk(req.headers.authorization, adminToken)) {
-      return reply.code(401).send({ error: 'unauthorized' });
+    const rid = String(req.id ?? '');
+    if (!adminOk(req.headers.authorization, adminToken, adminOpts)) {
+      req.log.error({ requestId: rid, adminTokenRequired }, 'reload rejected');
+      return reply.code(401).send(errorPayload('unauthorized', 'unauthorized', rid));
     }
-    const chunks = await loadKnowledge(knowledgeDir);
-    await retriever.replace(chunks);
-    deps.onReloaded?.();
-    const byFile = new Map<string, number>();
-    for (const c of chunks) byFile.set(c.sourcePath, (byFile.get(c.sourcePath) || 0) + 1);
-    return {
-      ok: true,
-      knowledgeChunks: chunks.length,
-      retrieval: retriever.stats(),
-      files: [...byFile.entries()].map(([sourcePath, chunkCount]) => ({
-        sourcePath,
-        chunks: chunkCount,
-      })),
-    };
+    try {
+      const chunks = await loadKnowledge(knowledgeDir);
+      await retriever.replace(chunks);
+      deps.onReloaded?.();
+      const byFile = new Map<string, number>();
+      for (const c of chunks) byFile.set(c.sourcePath, (byFile.get(c.sourcePath) || 0) + 1);
+      return {
+        ok: true,
+        knowledgeChunks: chunks.length,
+        generation: retriever.generation(),
+        retrieval: retriever.stats(),
+        files: [...byFile.entries()].map(([sourcePath, chunkCount]) => ({
+          sourcePath,
+          chunks: chunkCount,
+        })),
+      };
+    } catch (err) {
+      req.log.error({ requestId: rid, err }, 'knowledge reload failed');
+      return reply.code(500).send(errorPayload('internal_error', '服务内部错误', rid));
+    }
   });
 }

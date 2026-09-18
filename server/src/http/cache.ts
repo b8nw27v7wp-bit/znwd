@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { messageLogFields, type LogMessageMode } from './errors.js';
 
 export class LruCache<V> {
   private map = new Map<string, V>();
@@ -33,7 +34,7 @@ export class LruCache<V> {
 }
 
 export function answerCacheKey(message: string, model: string): string {
-  return `${model}::${message.trim().toLowerCase().slice(0, 300)}`;
+  return model + '::' + message.trim().toLowerCase().slice(0, 300);
 }
 
 export interface CachedAnswer {
@@ -45,26 +46,81 @@ export interface CachedAnswer {
   cached: boolean;
 }
 
+export interface JsonlStoreOptions {
+  maxBytes?: number;
+  messageMode?: LogMessageMode;
+}
+
+async function pathExists(p: string): Promise<boolean> {
+  try {
+    await fs.access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export class JsonlStore {
   private chain: Promise<void> = Promise.resolve();
   private readonly file: string;
+  private readonly baseName: string;
+  private readonly maxBytes: number;
+  readonly messageMode: LogMessageMode;
 
-  constructor(dir: string, name: string) {
-    this.file = path.join(dir, `${name}.jsonl`);
+  constructor(dir: string, name: string, opts: JsonlStoreOptions = {}) {
+    this.baseName = name;
+    this.file = path.join(dir, name + '.jsonl');
+    this.maxBytes = opts.maxBytes ?? 5_000_000;
+    this.messageMode = opts.messageMode ?? 'hash';
   }
 
   private async ensureDir(): Promise<void> {
     await fs.mkdir(path.dirname(this.file), { recursive: true });
   }
 
+  private async rotateIfNeeded(): Promise<void> {
+    try {
+      const st = await fs.stat(this.file);
+      if (st.size < this.maxBytes) return;
+      const day = new Date().toISOString().slice(0, 10);
+      const dir = path.dirname(this.file);
+      let target = path.join(dir, this.baseName + '.' + day + '.jsonl');
+      let n = 0;
+      while (await pathExists(target)) {
+        n += 1;
+        target = path.join(dir, this.baseName + '.' + day + '.' + n + '.jsonl');
+      }
+      await fs.rename(this.file, target);
+    } catch {
+      // file may not exist yet
+    }
+  }
+
+  /** 写入前脱敏：默认 hash，不落盘完整 message */
+  prepare(obj: Record<string, unknown>): Record<string, unknown> {
+    const rest = { ...obj };
+    const message = rest.message;
+    delete rest.message;
+    if (typeof message === 'string' && !rest.messagePreview) {
+      Object.assign(rest, messageLogFields(message, this.messageMode));
+    }
+    return rest;
+  }
+
   append(obj: Record<string, unknown>): void {
-    const line = JSON.stringify({ ...obj, at: obj.at ?? Date.now() }) + '\n';
+    const payload = this.prepare(obj);
+    const line = JSON.stringify({ ...payload, at: payload.at ?? Date.now() }) + '\n';
     this.chain = this.chain
       .then(async () => {
         await this.ensureDir();
+        await this.rotateIfNeeded();
         await fs.appendFile(this.file, line, 'utf8');
       })
       .catch(() => {});
+  }
+
+  async flush(): Promise<void> {
+    await this.chain;
   }
 
   get path() {
@@ -88,8 +144,17 @@ export class JsonlStore {
   }
 }
 
-export function adminOk(header: string | string[] | undefined, token: string | undefined): boolean {
-  if (!token) return true;
+export interface AdminOkOptions {
+  /** true 时未配置 token 直接拒绝（生产） */
+  requireToken?: boolean;
+}
+
+export function adminOk(
+  header: string | string[] | undefined,
+  token: string | undefined,
+  opts: AdminOkOptions = {},
+): boolean {
+  if (!token) return !opts.requireToken;
   const h = Array.isArray(header) ? header[0] : header;
   const raw = (h || '').replace(/^Bearer\s+/i, '');
   return raw === token;

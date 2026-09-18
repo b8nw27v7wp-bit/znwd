@@ -38,28 +38,48 @@ function hashStr(s: string): string {
   return `${(h1 >>> 0).toString(16)}-${(h2 >>> 0).toString(16)}`;
 }
 
-/** 本地 JSON 向量库：中小知识库够用，零外部服务 */
+export interface VecData {
+  vectors: Map<string, number[]>;
+  byId: Map<string, KnowledgeChunk>;
+  providerName: string;
+  dims: number;
+  fingerprint: string;
+}
+
+function emptyVecData(): VecData {
+  return {
+    vectors: new Map(),
+    byId: new Map(),
+    providerName: '',
+    dims: 0,
+    fingerprint: '',
+  };
+}
+
+/** 本地 JSON 向量库：构建/加载写入临时 Map，成功后整包原子替换 data。 */
 export class VectorStore {
-  private vectors = new Map<string, number[]>();
-  private byId = new Map<string, KnowledgeChunk>();
-  private providerName = '';
-  private dims = 0;
-  private fingerprint = '';
+  private data: VecData = emptyVecData();
 
   constructor(
     private readonly embedder: EmbeddingProvider,
     private readonly indexFile: string,
   ) {}
 
+  /** 供检索端固定引用，避免 search 过程中混用新旧代 */
+  snapshot(): Readonly<VecData> {
+    return this.data;
+  }
+
   private embedText(chunk: KnowledgeChunk): string {
     return `${chunk.title}\n${chunk.zoneTitle || ''}\n${chunk.tags?.join(' ') || ''}\n${chunk.text}`;
   }
 
   async build(chunks: KnowledgeChunk[]): Promise<void> {
-    this.byId.clear();
-    this.vectors.clear();
-    this.providerName = this.embedder.name;
-    this.fingerprint = fingerprintChunks(chunks);
+    const nextById = new Map<string, KnowledgeChunk>();
+    const nextVectors = new Map<string, number[]>();
+    const providerName = this.embedder.name;
+    const fingerprint = fingerprintChunks(chunks);
+    let dims = 0;
 
     const BATCH = 32;
     for (let i = 0; i < chunks.length; i += BATCH) {
@@ -67,33 +87,46 @@ export class VectorStore {
       const vecs = await this.embedder.embed(batch.map((c) => this.embedText(c)));
       batch.forEach((c, j) => {
         const v = vecs[j] || [];
-        this.byId.set(c.id, c);
-        this.vectors.set(c.id, v);
-        if (v.length) this.dims = v.length;
+        nextById.set(c.id, c);
+        nextVectors.set(c.id, v);
+        if (v.length) dims = v.length;
       });
     }
 
-    await this.persist(chunks);
+    await this.persist(nextVectors, providerName, dims, fingerprint, chunks);
+
+    this.data = {
+      vectors: nextVectors,
+      byId: nextById,
+      providerName,
+      dims,
+      fingerprint,
+    };
   }
 
-  private async persist(chunks: KnowledgeChunk[]): Promise<void> {
+  private async persist(
+    vectors: Map<string, number[]>,
+    provider: string,
+    dims: number,
+    fingerprint: string,
+    chunks: KnowledgeChunk[],
+  ): Promise<void> {
     const payload: IndexFile = {
       version: INDEX_VERSION,
-      provider: this.providerName,
-      dims: this.dims,
-      fingerprint: this.fingerprint,
+      provider,
+      dims,
+      fingerprint,
       updatedAt: new Date().toISOString(),
-      items: chunks.map((c) => ({ id: c.id, vector: this.vectors.get(c.id) || [] })),
+      items: chunks.map((c) => ({ id: c.id, vector: vectors.get(c.id) || [] })),
     };
     await fs.mkdir(path.dirname(this.indexFile), { recursive: true });
-    await fs.writeFile(this.indexFile, JSON.stringify(payload), 'utf8');
+    const tmp = this.indexFile + '.' + process.pid + '.tmp';
+    await fs.writeFile(tmp, JSON.stringify(payload), 'utf8');
+    await fs.rename(tmp, this.indexFile);
   }
 
-  /** 指纹/provider/条数一致才复用索引，避免知识正文变更后仍用旧向量 */
+  /** 指纹/provider/条数一致才复用；失败时不改动现有索引 */
   async tryLoad(chunks: KnowledgeChunk[]): Promise<boolean> {
-    this.byId.clear();
-    for (const c of chunks) this.byId.set(c.id, c);
-
     const fp = fingerprintChunks(chunks);
     try {
       const raw = await fs.readFile(this.indexFile, 'utf8');
@@ -106,18 +139,26 @@ export class VectorStore {
       ) {
         return false;
       }
-      this.vectors.clear();
+      const nextById = new Map<string, KnowledgeChunk>();
+      for (const c of chunks) nextById.set(c.id, c);
+      const nextVectors = new Map<string, number[]>();
+      let dims = 0;
       let ok = 0;
       for (const item of data.items) {
-        if (this.byId.has(item.id) && Array.isArray(item.vector) && item.vector.length) {
-          this.vectors.set(item.id, item.vector);
-          this.dims = item.vector.length;
+        if (nextById.has(item.id) && Array.isArray(item.vector) && item.vector.length) {
+          nextVectors.set(item.id, item.vector);
+          dims = item.vector.length;
           ok++;
         }
       }
       if (ok > 0 && ok === chunks.length) {
-        this.providerName = this.embedder.name;
-        this.fingerprint = fp;
+        this.data = {
+          vectors: nextVectors,
+          byId: nextById,
+          providerName: this.embedder.name,
+          dims,
+          fingerprint: fp,
+        };
         return true;
       }
       return false;
@@ -127,13 +168,18 @@ export class VectorStore {
   }
 
   async search(query: string, topK = 8): Promise<VectorHit[]> {
-    if (this.vectors.size === 0) return [];
+    return this.searchOn(this.data, query, topK);
+  }
+
+  /** 在固定 data 引用上检索（generation 安全） */
+  async searchOn(data: Readonly<VecData>, query: string, topK = 8): Promise<VectorHit[]> {
+    if (data.vectors.size === 0) return [];
     const [q] = await this.embedder.embed([query]);
     if (!q || !q.length) return [];
 
     const hits: VectorHit[] = [];
-    for (const [id, vec] of this.vectors) {
-      const chunk = this.byId.get(id);
+    for (const [id, vec] of data.vectors) {
+      const chunk = data.byId.get(id);
       if (!chunk) continue;
       const score = cosine(q, vec);
       hits.push({ id, score, chunk });
@@ -143,11 +189,12 @@ export class VectorStore {
   }
 
   stats() {
+    const d = this.data;
     return {
-      provider: this.providerName || this.embedder.name,
-      dims: this.dims,
-      vectors: this.vectors.size,
-      fingerprint: this.fingerprint,
+      provider: d.providerName || this.embedder.name,
+      dims: d.dims,
+      vectors: d.vectors.size,
+      fingerprint: d.fingerprint,
       indexFile: this.indexFile,
     };
   }
