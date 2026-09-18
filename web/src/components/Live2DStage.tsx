@@ -6,7 +6,7 @@ interface Live2DStageProps {
   mood: AvatarMood;
 }
 
-/** 成熟职业女讲解员（扁平 SVG），可后续替换正式 Live2D */
+/** 职业女讲解员（扁平 SVG），在左栏约 1/3 屏内大尺寸展示 */
 export function Live2DStage({ mood }: Live2DStageProps) {
   const [mouth, setMouth] = useState(0);
   const [blink, setBlink] = useState(false);
@@ -19,8 +19,8 @@ export function Live2DStage({ mood }: Live2DStageProps) {
     }
     const t0 = performance.now();
     const tick = (t: number) => {
-      const phase = (t - t0) / 110;
-      setMouth(0.15 + 0.85 * Math.abs(Math.sin(phase)));
+      const phase = (t - t0) / 120;
+      setMouth(0.2 + 0.8 * Math.abs(Math.sin(phase)));
       rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);
@@ -31,126 +31,106 @@ export function Live2DStage({ mood }: Live2DStageProps) {
     let timer: number;
     const loop = () => {
       setBlink(true);
-      window.setTimeout(() => setBlink(false), 130);
-      timer = window.setTimeout(loop, 3600 + Math.random() * 2200);
+      window.setTimeout(() => setBlink(false), 120);
+      timer = window.setTimeout(loop, 4000 + Math.random() * 2000);
     };
-    timer = window.setTimeout(loop, 2200);
+    timer = window.setTimeout(loop, 2500);
     return () => window.clearTimeout(timer);
   }, []);
 
-  const mouthOpen = mouth;
-  const mouthRy = 2.2 + mouthOpen * 9;
-  const mouthRx = 7 + mouthOpen * 3;
+  const open = mouth;
+  const lipRy = 2 + open * 10;
+  const lipRx = 9 + open * 3;
 
   return (
     <div className="stage" data-mood={mood} aria-label="AI 虚拟讲解员">
-      <div className={`mascot mascot--${mood}`}>
-        <svg className="mascot-svg" viewBox="0 0 280 420" role="img" aria-hidden="true">
-          <ellipse cx="140" cy="404" rx="70" ry="10" fill="#e8e8ed" opacity="0.65" />
-
-          {/* 长发（后层） */}
+      <div className={`hostess hostess--${mood}`}>
+        <svg
+          className="hostess-svg"
+          viewBox="0 0 320 480"
+          preserveAspectRatio="xMidYMax meet"
+          role="img"
+          aria-hidden="true"
+        >
+          {/* 身体 / 西装 */}
           <path
-            d="M70 160c0-70 30-120 70-120s70 50 70 120c8 40 18 90 22 140 2 28-8 48-22 48-10 0-14-16-12-36 6-40 4-70-2-92-4-12-14-20-28-22h-56c-14 2-24 10-28 22-6 22-8 52-2 92 2 20-2 36-12 36-14 0-24-20-22-48 4-50 14-100 22-140z"
-            fill="#2c2c30"
-          />
-
-          {/* 脖子 */}
-          <ellipse cx="140" cy="210" rx="16" ry="22" fill="#e8c4b0" />
-
-          {/* 职业着装：深色西装 + 绿色丝巾 */}
-          <path
-            d="M78 230c-18 8-34 28-38 70-4 36 0 70 4 94h192c4-24 8-58 4-94-4-42-20-62-38-70-20-8-42-12-62-12s-42 4-62 12z"
+            d="M96 300c-28 16-44 48-48 96-2 28 2 56 8 72h208c6-16 10-44 8-72-4-48-20-80-48-96-22-12-48-18-64-18s-42 6-64 18z"
             fill="#2b2b2e"
           />
+          {/* 白衬衫领口 */}
           <path
-            d="M110 228c10 28 20 40 30 40s20-12 30-40c-8-4-18-6-30-6s-22 2-30 6z"
-            fill="#f5f5f7"
+            d="M138 292c8 24 14 36 22 36s14-12 22-36c-6-4-14-6-22-6s-16 2-22 6z"
+            fill="#f7f7f8"
           />
-          <path
-            d="M140 268c-6 10-8 22-6 36 12-4 20-16 24-30-6 0-12-2-18-6z"
-            fill="#3db882"
-          />
-          <path
-            d="M140 268c6 10 8 22 6 36-12-4-20-16-24-30 6 0 12-2 18-6z"
-            fill="#5ecf9a"
-          />
+          {/* 绿丝巾 */}
+          <path d="M160 328c-4 14-4 28 0 40 10-4 16-16 18-28-6-2-12-6-18-12z" fill="#3db882" />
+          <path d="M160 328c4 14 4 28 0 40-10-4-16-16-18-28 6-2 12-6 18-12z" fill="#5ecf9a" />
 
           {/* 手臂 */}
+          <path d="M96 310c-24 18-40 48-42 84 0 6 8 10 14 6 10-6 16-34 24-54 4-10 8-20 10-28z" fill="#2b2b2e" />
+          <path d="M224 310c24 18 40 48 42 84 0 6-8 10-14 6-10-6-16-34-24-54-4-10-8-20-10-28z" fill="#2b2b2e" />
+          <ellipse cx="70" cy="408" rx="11" ry="15" fill="#e8c4b0" />
+          <ellipse cx="250" cy="408" rx="11" ry="15" fill="#e8c4b0" />
+
+          {/* 后发 */}
           <path
-            d="M72 240c-20 14-34 40-36 72 0 8 8 12 14 8 8-4 14-28 22-48 4-10 8-20 12-28z"
-            fill="#2b2b2e"
+            d="M92 200c-4-72 28-140 68-140s72 68 68 140c6 36 14 78 16 110 2 20-8 34-20 32-10-2-12-18-10-34 4-32 2-60-4-82-4-14-16-24-34-28h-40c-18 4-30 14-34 28-6 22-8 50-4 82 2 16 0 32-10 34-12 2-22-12-20-32 2-32 10-74 16-110z"
+            fill="#242428"
           />
-          <path
-            d="M208 240c20 14 34 40 36 72 0 8-8 12-14 8-8-4-14-28-22-48-4-10-8-20-12-28z"
-            fill="#2b2b2e"
-          />
-          <ellipse cx="48" cy="322" rx="10" ry="14" fill="#e8c4b0" />
-          <ellipse cx="232" cy="322" rx="10" ry="14" fill="#e8c4b0" />
+
+          {/* 颈 */}
+          <ellipse cx="160" cy="268" rx="18" ry="24" fill="#e8c4b0" />
 
           {/* 脸 */}
-          <ellipse cx="140" cy="148" rx="52" ry="62" fill="#f3d4c0" />
+          <ellipse cx="160" cy="188" rx="58" ry="68" fill="#f3d4c0" />
 
           {/* 刘海 */}
           <path
-            d="M88 140c2-48 24-78 52-78 28 0 50 30 52 78-8-22-20-34-36-38-6 14-18 24-34 28-16 4-28 8-34 10z"
-            fill="#2c2c30"
+            d="M108 180c4-54 28-88 52-88s48 34 52 88c-8-24-22-38-38-42-4 16-14 28-28 32-14 4-28 10-38 10z"
+            fill="#242428"
           />
-          <path
-            d="M96 128c10-8 28-20 44-18 16 2 32 12 42 28-12-6-26-8-42-6-16 2-30 6-44 12z"
-            fill="#3a3a40"
-          />
+          <path d="M118 166c12-10 28-20 42-18 14 2 28 12 38 28-12-6-24-8-38-6-14 2-28 6-42 10z" fill="#333338" />
 
-          {/* 鬓发 */}
-          <path d="M90 150c-4 20-4 40 0 56 2 8-4 14-12 10-14-8-20-30-18-52 2-14 8-22 18-22 6 0 10 4 12 8z" fill="#2c2c30" />
-          <path d="M190 150c4 20 4 40 0 56-2 8 4 14 12 10 14-8 20-30 18-52-2-14-8-22-18-22-6 0-10 4-12 8z" fill="#2c2c30" />
+          {/* 侧发 */}
+          <path d="M104 190c-2 24 0 48 4 66 2 8-4 12-12 8-16-10-22-34-18-58 2-14 8-20 16-20 4 0 8 2 10 4z" fill="#242428" />
+          <path d="M216 190c2 24 0 48-4 66-2 8 4 12 12 8 16-10 22-34 18-58-2-14-8-20-16-20-4 0-8 2-10 4z" fill="#242428" />
 
-          {/* 眉毛 */}
-          <path d="M108 132c8-6 18-8 26-4" stroke="#2c2c30" strokeWidth="2.2" fill="none" strokeLinecap="round" />
-          <path d="M146 128c8-4 18-2 26 4" stroke="#2c2c30" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+          {/* 眉 / 眼 / 唇 */}
+          <path d="M128 168c8-6 18-8 26-4" stroke="#242428" strokeWidth="2.4" fill="none" strokeLinecap="round" />
+          <path d="M166 164c8-4 18-2 26 4" stroke="#242428" strokeWidth="2.4" fill="none" strokeLinecap="round" />
 
-          {/* 眼睛 */}
-          <g className={`mascot-eyes ${blink ? 'is-blink' : ''}`}>
+          <g className={`hostess-eyes ${blink ? 'is-blink' : ''}`}>
             {mood === 'thinking' ? (
               <>
-                <path d="M108 154c6-7 16-7 22-1" stroke="#2b2b2e" strokeWidth="2.4" fill="none" strokeLinecap="round" />
-                <path d="M150 153c6-6 16-6 22 1" stroke="#2b2b2e" strokeWidth="2.4" fill="none" strokeLinecap="round" />
+                <path d="M128 194c7-7 17-7 24-1" stroke="#2b2b2e" strokeWidth="2.6" fill="none" strokeLinecap="round" />
+                <path d="M172 193c7-6 17-6 24 1" stroke="#2b2b2e" strokeWidth="2.6" fill="none" strokeLinecap="round" />
               </>
             ) : (
               <>
-                <ellipse cx="118" cy="156" rx="8" ry="9" fill="#2b2b2e" />
-                <ellipse cx="162" cy="156" rx="8" ry="9" fill="#2b2b2e" />
-                <circle cx="121" cy="153" r="2.4" fill="#ffffff" />
-                <circle cx="165" cy="153" r="2.4" fill="#ffffff" />
+                <ellipse cx="140" cy="196" rx="9" ry="10.5" fill="#2b2b2e" />
+                <ellipse cx="184" cy="196" rx="9" ry="10.5" fill="#2b2b2e" />
+                <circle cx="143.5" cy="192.5" r="2.6" fill="#fff" />
+                <circle cx="187.5" cy="192.5" r="2.6" fill="#fff" />
               </>
             )}
           </g>
 
-          {/* 鼻影 */}
-          <path d="M140 168c2 6 2 10 0 12" stroke="#d9b49a" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+          <ellipse cx="128" cy="214" rx="9" ry="5" fill="#e8a090" opacity="0.4" />
+          <ellipse cx="192" cy="214" rx="9" ry="5" fill="#e8a090" opacity="0.4" />
 
-          {/* 口红 / 口型 */}
           {mood === 'speaking' ? (
-            <ellipse cx="140" cy="186" rx={mouthRx} ry={mouthRy} fill="#c45c5c" />
+            <ellipse cx="160" cy="228" rx={lipRx} ry={lipRy} fill="#c45c5c" />
           ) : mood === 'thinking' ? (
-            <path d="M130 188c4 4 16 4 20 0" stroke="#c45c5c" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+            <path d="M148 230c4 3 14 3 18 0" stroke="#c45c5c" strokeWidth="2.2" fill="none" strokeLinecap="round" />
           ) : (
-            <path d="M126 186c6 7 22 7 28 0" stroke="#c45c5c" strokeWidth="2.4" fill="none" strokeLinecap="round" />
+            <path d="M144 226c7 8 25 8 32 0" stroke="#c45c5c" strokeWidth="2.6" fill="none" strokeLinecap="round" />
           )}
 
-          {/* 淡妆腮红 */}
-          <ellipse cx="108" cy="172" rx="8" ry="4.5" fill="#e8a090" opacity="0.45" />
-          <ellipse cx="172" cy="172" rx="8" ry="4.5" fill="#e8a090" opacity="0.45" />
-
-          {/* 耳环 */}
-          <circle cx="88" cy="168" r="3" fill="#5ecf9a" />
-          <circle cx="192" cy="168" r="3" fill="#5ecf9a" />
-
-          {/* 思考点 */}
           {mood === 'thinking' && (
             <g fill="#3db882">
-              <circle cx="230" cy="120" r="3.5" className="dot d1" />
-              <circle cx="244" cy="106" r="4.5" className="dot d2" />
-              <circle cx="258" cy="92" r="5.5" className="dot d3" />
+              <circle cx="250" cy="150" r="4" className="dot d1" />
+              <circle cx="266" cy="134" r="5" className="dot d2" />
+              <circle cx="282" cy="118" r="6" className="dot d3" />
             </g>
           )}
         </svg>
