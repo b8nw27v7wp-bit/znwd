@@ -47,11 +47,15 @@ znwd/
 - `GET /api/suggestions`（`?zone=pv-clean` / `wind-inspect` / `exhibit-*`）
 - `GET /api/zones`
 - `POST /api/chat` — `{ "message", "sessionId" }`
+- `POST /api/chat/stream` — SSE
+- `GET /api/openapi.json`
 - `GET|DELETE /api/sessions/:sessionId`
 - `POST /api/feedback`
-- `GET /api/stats`
+- `GET /api/stats`（可选 `ADMIN_TOKEN`）
 - `GET /api/knowledge/list`
-- `POST /api/knowledge/reload`
+- `POST /api/knowledge/reload`（可选 `ADMIN_TOKEN`）
+
+测试：`npm test -w server`；API 审计：`node server/scripts/api-audit.mjs`。审计报告：[docs/code-audit.md](docs/code-audit.md)。
 
 ## 配置
 
@@ -62,6 +66,8 @@ LLM_PROVIDER=mock | openai_compat
 LLM_BASE_URL=...
 EMBED_PROVIDER=bag | openai_compat
 EMBED_MODEL=...
+# ADMIN_TOKEN=secret
+# KNOWLEDGE_WATCH=true
 ```
 
 知识正文替换与检索说明：[docs/knowledge.md](docs/knowledge.md)。  
