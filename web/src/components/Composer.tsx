@@ -22,8 +22,8 @@ export function Composer({ onSend, busy, onTouch }: ComposerProps) {
     submit();
   };
 
-  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+  const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
       e.preventDefault();
       submit();
     }
@@ -31,8 +31,8 @@ export function Composer({ onSend, busy, onTouch }: ComposerProps) {
 
   return (
     <form className="composer" onSubmit={onSubmit}>
-      <textarea
-        rows={2}
+      <input
+        type="text"
         value={value}
         placeholder="请输入问题，Enter 发送"
         onChange={(e) => {
@@ -41,6 +41,7 @@ export function Composer({ onSend, busy, onTouch }: ComposerProps) {
         }}
         onKeyDown={onKeyDown}
         disabled={busy}
+        autoComplete="off"
       />
       <button type="submit" disabled={busy || !value.trim()}>
         发送
