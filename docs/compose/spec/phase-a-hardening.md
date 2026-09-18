@@ -3,7 +3,7 @@ feature: phase-a-hardening
 status: delivered
 updated: 2026-09-17
 branch: feature/virtual-receptionist
-commits: 57bb6dd4e7c2e0a20976566d5966e806e0d0b280..HEAD
+commits: 57bb6dd4e7c2e0a20976566d5966e806e0d0b280..566e507
 ---
 
 # Phase A 可上线加固
