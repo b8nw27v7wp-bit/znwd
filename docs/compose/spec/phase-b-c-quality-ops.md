@@ -3,7 +3,7 @@ feature: phase-b-c-quality-ops
 status: delivered
 updated: 2026-09-18
 branch: feature/virtual-receptionist
-commits: e900c6f..HEAD
+commits: e900c6f..2026e19
 ---
 
 # Phase B/C 回答质量与展览运营
