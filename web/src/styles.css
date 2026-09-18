@@ -41,162 +41,114 @@
   min-width: 0;
 }
 
-/* —— Live2D 占位 —— */
+/* —— 豆包风格二维形象 —— */
 .stage {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0;
   position: relative;
   min-height: 100%;
   height: 100%;
-  padding: 16px 12px;
+  padding: 12px 12px 8px;
 }
 
-.avatar {
-  position: relative;
-  width: 160px;
-  height: 200px;
+.mascot {
+  width: min(200px, 70%);
+  max-height: 100%;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: center;
   transform-origin: center bottom;
 }
 
-.avatar.bounce-1 {
-  animation: floaty 1.6s ease-in-out infinite;
+.mascot-svg {
+  width: 100%;
+  height: auto;
+  max-height: min(280px, 42vh);
+  display: block;
+  overflow: visible;
 }
 
-.avatar.bounce-2 {
-  animation: floaty 0.55s ease-in-out infinite;
+.mascot--idle .mascot-svg {
+  animation: mascot-breath 3.6s ease-in-out infinite;
 }
 
-@keyframes floaty {
+.mascot--thinking .mascot-svg {
+  animation: mascot-think 1.4s ease-in-out infinite;
+}
+
+.mascot--speaking .mascot-svg {
+  animation: mascot-talk 0.9s ease-in-out infinite;
+}
+
+.mascot-head {
+  transform-origin: 120px 120px;
+}
+
+.mascot-eyes.is-blink ellipse {
+  ry: 2px;
+}
+
+.mascot-eyes ellipse {
+  transition: ry 80ms linear;
+}
+
+.mascot-dots .dot {
+  opacity: 0.35;
+}
+
+.mascot-dots .d1 {
+  animation: dot-pulse 1.2s ease-in-out infinite;
+}
+
+.mascot-dots .d2 {
+  animation: dot-pulse 1.2s ease-in-out 0.15s infinite;
+}
+
+.mascot-dots .d3 {
+  animation: dot-pulse 1.2s ease-in-out 0.3s infinite;
+}
+
+@keyframes mascot-breath {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-4px) scale(1.02);
+  }
+}
+
+@keyframes mascot-think {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-1deg);
+  }
+  50% {
+    transform: translateY(-3px) rotate(1.5deg);
+  }
+}
+
+@keyframes mascot-talk {
   0%,
   100% {
     transform: translateY(0);
   }
   50% {
-    transform: translateY(-6px);
+    transform: translateY(-2px);
   }
 }
 
-.avatar-glow {
-  position: absolute;
-  width: 150px;
-  height: 150px;
-  border-radius: 50%;
-  background: #f0f0f5;
-  top: 0;
-  z-index: 0;
-}
-
-.avatar-head {
-  position: relative;
-  z-index: 1;
-  width: 100px;
-  height: 100px;
-}
-
-.avatar-hair {
-  position: absolute;
-  inset: -6px -5px 24px;
-  background: #2c2c30;
-  border-radius: 50px 50px 34px 34px;
-  z-index: 0;
-}
-
-.avatar-face {
-  position: absolute;
-  inset: 10px 8px 14px;
-  background: #f3e6d8;
-  border-radius: 50%;
-  z-index: 1;
-  overflow: hidden;
-}
-
-.eye {
-  position: absolute;
-  top: 38%;
-  width: 12px;
-  height: 14px;
-  background: #1d1d1f;
-  border-radius: 50%;
-  animation: blink 5s infinite;
-}
-
-.eye.left {
-  left: 28%;
-}
-
-.eye.right {
-  right: 28%;
-}
-
-@keyframes blink {
+@keyframes dot-pulse {
   0%,
-  46%,
-  50%,
   100% {
-    transform: scaleY(1);
+    opacity: 0.25;
   }
-  48% {
-    transform: scaleY(0.1);
+  50% {
+    opacity: 1;
   }
-}
-
-.blush {
-  position: absolute;
-  top: 55%;
-  width: 14px;
-  height: 8px;
-  background: rgba(255, 140, 140, 0.35);
-  border-radius: 50%;
-}
-
-.blush.left {
-  left: 16%;
-}
-
-.blush.right {
-  right: 16%;
-}
-
-.mouth {
-  position: absolute;
-  left: 50%;
-  bottom: 22%;
-  width: 16px;
-  transform: translateX(-50%);
-  background: #c45c5c;
-  border-radius: 0 0 10px 10px;
-  min-height: 6px;
-  transition: height 80ms linear;
-}
-
-.avatar-body {
-  position: relative;
-  z-index: 1;
-  margin-top: -6px;
-  width: 90px;
-  height: 72px;
-  background: #ffffff;
-  border: 1px solid #e8e8ed;
-  border-radius: 32px 32px 20px 20px;
-  display: flex;
-  justify-content: center;
-  padding-top: 10px;
-}
-
-.avatar-collar {
-  width: 36px;
-  height: 18px;
-  border: 1px solid #d2d2d7;
-  border-radius: 0 0 12px 12px;
-  background: #f5f5f7;
 }
 
 /* —— 对话区 —— */
