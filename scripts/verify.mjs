@@ -81,7 +81,7 @@ async function main() {
 
   // 3) 检索评测（不写基线，避免污染仓库）
   if (!quick) {
-    const ev = await run(`${NPM} run eval:retrieval -- --no-write`);
+    const ev = await run(`${NPM} run eval:retrieval -w server -- --no-write`);
     const m = ev.out.match(/"top1Rate": ([\d.]+)/);
     const blocked = ev.out.match(/"gateBlockedCount": (\d+)/);
     record(
