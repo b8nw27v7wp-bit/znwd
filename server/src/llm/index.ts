@@ -10,6 +10,9 @@ export function createChatModel(env: NodeJS.ProcessEnv = process.env): ChatModel
       baseUrl: env.LLM_BASE_URL || '',
       apiKey: env.LLM_API_KEY || '',
       model: env.LLM_MODEL || '',
+      timeoutMs: env.LLM_TIMEOUT_MS ? Number(env.LLM_TIMEOUT_MS) : undefined,
+      maxRetries: env.LLM_MAX_RETRIES !== undefined ? Number(env.LLM_MAX_RETRIES) : undefined,
+      retryBaseMs: env.LLM_RETRY_BASE_MS ? Number(env.LLM_RETRY_BASE_MS) : undefined,
     });
   }
 

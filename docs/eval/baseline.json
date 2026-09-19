@@ -1,9 +1,9 @@
 {
   "summary": {
-    "at": "2026-09-19T02:27:09.954Z",
+    "at": "2026-09-19T02:59:10.813Z",
     "embedProvider": "bag",
     "semantic": false,
-    "llmProvider": "mock",
+    "llmProvider": "openai_compat",
     "knowledgeChunks": 23,
     "generation": 1,
     "cases": 30,

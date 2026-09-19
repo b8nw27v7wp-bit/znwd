@@ -19,6 +19,7 @@ import { chunkText } from '../src/knowledge/loader.ts';
 import { Retriever } from '../src/knowledge/retriever.ts';
 import { rewriteForRetrieval } from '../src/rag/rewrite.ts';
 import { readState, writeState } from '../src/state/persist.ts';
+import { isRetryableFailure, LlmHttpError } from '../src/llm/openaiCompat.ts';
 import type { EmbeddingProvider } from '../src/embedding/types.ts';
 import type { KnowledgeChunk } from '../src/knowledge/loader.ts';
 import { Analytics } from '../src/analytics/stats.ts';
@@ -634,6 +635,21 @@ test('持久化：会话/统计/反馈 落盘后可恢复（PERSIST_STATE 路径
   // 损坏文件不应炸：读到 null，按空状态启动
   await writeFile(path.join(dir, 'state.json'), '{ 坏掉的 json', 'utf8');
   assert.equal(await readState(dir), null);
+});
+
+test('LLM 重试判定：过载/限流可重试，参数错不重试', () => {
+  assert.equal(isRetryableFailure(429, '{"error":{"code":"1305","message":"该模型当前访问量过大，请您稍后再试"}}'), true);
+  assert.equal(isRetryableFailure(200, '{"error":{"code":"1305","message":"该模型当前访问量过大"}}'), true);
+  assert.equal(isRetryableFailure(500, 'internal'), true);
+  assert.equal(isRetryableFailure(503, 'unavailable'), true);
+  assert.equal(isRetryableFailure(408, 'timeout'), true);
+  assert.equal(isRetryableFailure(400, '{"error":{"code":"1210","message":"参数错误"}}'), false);
+  assert.equal(isRetryableFailure(401, '{"error":{"message":"invalid api key"}}'), false);
+  // 每日额度用尽不该反复重试（重试也没用）
+  assert.equal(isRetryableFailure(429, '{"error":{"code":"1303","message":"已达今日调用上限"}}'), false);
+  const err = new LlmHttpError(429, 'body', 'msg', '2');
+  assert.equal(err.retryAfter, '2');
+  assert.equal(err.name, 'LlmHttpError');
 });
 
 test('streamChat：与非流式共用答案缓存', async () => {
