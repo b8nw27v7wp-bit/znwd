@@ -84,11 +84,15 @@ async function main() {
     const ev = await run(`${NPM} run eval:retrieval -w server -- --no-write`);
     const m = ev.out.match(/"top1Rate": ([\d.]+)/);
     const blocked = ev.out.match(/"gateBlockedCount": (\d+)/);
-    record(
-      'eval:retrieval',
-      ev.code === 0 && !!m && Number(m[1]) >= 0.9 && blocked?.[1] === '0',
-      m ? `top1=${m[1]} gateBlocked=${blocked?.[1]}` : ev.out.slice(-300),
-    );
+    // 期望 top1 下限：显式可配，避免写死一个魔数后没人知道它是怎么来的
+    const minTop1 = Number(process.env.EVAL_MIN_TOP1 || 0.9);
+    const top1 = m ? Number(m[1]) : NaN;
+    const ok = ev.code === 0 && !!m && top1 >= minTop1 && blocked?.[1] === '0';
+    let detail = m ? `top1=${m[1]} gateBlocked=${blocked?.[1]} 期望≥${minTop1}` : ev.out.slice(-300);
+    if (!ok && m && top1 < minTop1) {
+      detail += ' —— 低于期望：若刚入库演示资料（knowledge/*/demo-*.md），评测用例是针对真实知识写的，会互相抢 top1；真实正文到位后重跑 calibrate + eval 重新基线，或临时用 EVAL_MIN_TOP1 下调期望';
+    }
+    record('eval:retrieval', ok, detail);
   }
 
   // 4) 起服务（构建产物）+ api-audit

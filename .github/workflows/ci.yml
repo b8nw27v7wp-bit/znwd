@@ -9,6 +9,10 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      # CI 里没有 server/.env，若不显式给阈值，评测/标定会退回代码默认值 3.8，
+      # 于是「CI 通过」验的不是线上实际用的阈值。改 .env 时这里必须一起改。
+      MIN_RELEVANCE_SCORE: '6.3'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

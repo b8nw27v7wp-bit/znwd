@@ -7,9 +7,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadKnowledge } from '../src/knowledge/loader.ts';
 import { VectorStore } from '../src/knowledge/vectorStore.ts';
-import { HybridRetriever } from '../src/knowledge/hybridRetriever.ts';
+import { HybridRetriever, resolveThresholds } from '../src/knowledge/hybridRetriever.ts';
 import { createEmbeddingProvider } from '../src/embedding/index.ts';
 import { rewriteForRetrieval } from '../src/rag/rewrite.ts';
+import { loadDotEnv } from '../src/config/dotenv.ts';
 
 interface EvalCase {
   id: string;
@@ -37,21 +38,8 @@ async function main() {
   const cases = raw.cases ?? [];
   if (cases.length === 0) throw new Error('no eval cases');
 
-  // load .env like server
-  try {
-    const envRaw = await readFile(path.join(serverRoot, '.env'), 'utf8');
-    for (const line of envRaw.split(/\r?\n/)) {
-      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/i);
-      if (!m) continue;
-      let val = m[2];
-      if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
-        val = val.slice(1, -1);
-      }
-      if (process.env[m[1]] === undefined) process.env[m[1]] = val;
-    }
-  } catch {
-    /* optional */
-  }
+  // .env 由共享实现加载（此前这里内联了第三份重复逻辑）
+  await loadDotEnv();
 
   const knowledgeDir = path.resolve(repoRoot, process.env.KNOWLEDGE_DIR || './knowledge');
   const indexDir = path.resolve(
@@ -61,7 +49,7 @@ async function main() {
   );
   const embedder = createEmbeddingProvider(process.env);
   const vectorStore = new VectorStore(embedder, path.join(indexDir, `vectors.${embedder.name}.json`));
-  const retriever = new HybridRetriever(vectorStore);
+  const retriever = new HybridRetriever(vectorStore, resolveThresholds());
   const chunks = await loadKnowledge(knowledgeDir);
   await retriever.replace(chunks);
 

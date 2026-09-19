@@ -131,6 +131,26 @@ interface Snapshot {
 export const DEFAULT_MIN_KEYWORD_SCORE = 3.8;
 export const DEFAULT_MIN_VECTOR_SCORE = 0.35;
 
+/**
+ * 从环境变量解析闸门阈值（单一来源）。
+ * 入口（服务、评测、标定）都必须走这里，否则会出现「评测验的是代码默认值、
+ * 线上跑的是 .env 值」这种 verify 通过但配置不同步的坑。
+ */
+export function resolveThresholds(env: NodeJS.ProcessEnv = process.env): {
+  minKeywordScore: number;
+  minVectorScore: number;
+} {
+  const num = (raw: string | undefined, fallback: number): number => {
+    if (raw === undefined || raw.trim() === '') return fallback;
+    const v = Number(raw);
+    return Number.isFinite(v) && v > 0 ? v : fallback;
+  };
+  return {
+    minKeywordScore: num(env.MIN_RELEVANCE_SCORE, DEFAULT_MIN_KEYWORD_SCORE),
+    minVectorScore: num(env.MIN_VECTOR_SCORE, DEFAULT_MIN_VECTOR_SCORE),
+  };
+}
+
 export class HybridRetriever {
   private snapshot: Snapshot = { gen: 0, keyword: new Retriever(), ready: false };
   private replaceChain: Promise<unknown> = Promise.resolve();

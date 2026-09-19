@@ -21,6 +21,9 @@ npm run eval:retrieval
 KNOWLEDGE_DIR=/path/to/other/knowledge npm run eval:retrieval -- --no-write
 ```
 
+`npm run verify` 里对 top1 的期望下限是显式可配的（默认 0.9）：`EVAL_MIN_TOP1=0.85 npm run verify`。
+写死一个魔数会导致没人知道它从哪来；调低期望时请一并说明原因（例如当前是演示语料）。
+
 ## 三个指标要分开看
 
 | 指标 | 含义 | 看什么 |
@@ -39,6 +42,25 @@ npm run calibrate -w server
 在现有知识库上打印在域用例与 10 条域外闲聊（天气、写诗、会议室…）的关键词分分布，
 并给出 `MIN_RELEVANCE_SCORE` 建议值（取两侧区间中点）。**知识库或同义词变更后必须重跑**：
 阈值是相对量，chunk 数量一变（分块、增删资料）IDF 就变，分数整体平移。
+
+## 演示语料下的实测（2026-09-19，临时）
+
+真实知识正文尚未提供，先用 8 篇公开资料（`knowledge/*/demo-*.md`，来源见 `knowledge/_meta/demo-docs.md`）
+把链路跑通。语料 8 篇 → 16 篇、chunk 23 → **134**，IDF 变了，阈值必须重标：
+
+| 项 | 真实语料（参考 baseline） | 演示语料（临时） |
+|----|----|----|
+| knowledgeChunks | 23 | 134 |
+| minKeywordScore | 3.8 | **6.3**（域外最高 3.654 / 在域最低 8.883，取中点） |
+| top1Rate | 0.9667 | **0.8667** |
+| top3Rate | 1.00 | **0.9333** |
+| gateBlockedCount | 0 | 0 |
+
+**top1 下降不是代码回归**：30 条评测用例是针对真实知识写的（展厅参观须知、服务培训…），
+演示资料讲的是「作业流程」，关键词与这些用例重叠，于是抢走了 top1（例如
+「可以摸无人机吗？」「拍照能开闪光灯吗？」被演示文档挤到第 3 位）。
+真实正文入库后必须重跑 `calibrate` + `eval:retrieval` 重新基线，演示资料同时删除。
+`docs/eval/baseline.json` 保留真实语料口径，未被演示语料覆盖。
 
 ## Baseline（bag / offline，2026-09-18 第二轮加固后）
 

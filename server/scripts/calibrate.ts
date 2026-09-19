@@ -9,9 +9,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadKnowledge } from '../src/knowledge/loader.ts';
 import { Retriever } from '../src/knowledge/retriever.ts';
-import { DEFAULT_MIN_KEYWORD_SCORE } from '../src/knowledge/hybridRetriever.ts';
+import { DEFAULT_MIN_KEYWORD_SCORE, resolveThresholds } from '../src/knowledge/hybridRetriever.ts';
 import { VectorStore } from '../src/knowledge/vectorStore.ts';
 import { createEmbeddingProvider } from '../src/embedding/index.ts';
+import { loadDotEnv } from '../src/config/dotenv.ts';
 
 /** 域外样本：展厅里访客会问、但知识库不该硬答的问题 */
 const OUT_OF_DOMAIN = [
@@ -28,6 +29,7 @@ const OUT_OF_DOMAIN = [
 ];
 
 async function main(): Promise<void> {
+  await loadDotEnv();
   const here = path.dirname(fileURLToPath(import.meta.url));
   const serverRoot = path.resolve(here, '..');
   const repoRoot = path.resolve(serverRoot, '..');
@@ -90,9 +92,17 @@ async function main(): Promise<void> {
   console.log(`命中词条数：在域最低=${minCovIn}  域外最高=${maxCovOod}`);
   if (minIn > maxOod) {
     const suggested = Number(((maxOod + minIn) / 2).toFixed(1));
+    const effective = resolveThresholds().minKeywordScore;
     console.log(
-      `区间可用：建议 MIN_RELEVANCE_SCORE=${suggested}（当前生效 ${retriever.stats().thresholds.minKeywordScore}，代码默认 ${DEFAULT_MIN_KEYWORD_SCORE}）`,
+      `区间可用：建议 MIN_RELEVANCE_SCORE=${suggested}（当前生效 ${effective}，代码默认 ${DEFAULT_MIN_KEYWORD_SCORE}）`,
     );
+    console.log(`余量：域外最高 ${maxOod.toFixed(3)} / 阈值 ${effective} / 在域最低 ${minIn.toFixed(3)}`);
+    if (maxOod / effective > 0.9) {
+      console.log(
+        `警告：阈值距域外最高分仅 ${(100 - (maxOod / effective) * 100).toFixed(1)}% 余量，闸门偏松——建议上调到 ${suggested} 附近`,
+      );
+    }
+    console.log(`参考：命中词条数 在域最低=${minCovIn} 域外最高=${maxCovOod}（该维度不足以单独区分，仅作观察）`);
   } else {
     console.log('警告：分数区间不成立（域外最高分不低于在域最低分）：需要补同义词或换语义向量模型');
     process.exitCode = 2;

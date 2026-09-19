@@ -10,6 +10,11 @@ import { adminTokenRequired, errorPayload, messageLogFields, hashStr } from '../
 import { expandQueryText } from '../src/knowledge/synonyms.ts';
 import { buildGroundedAnswer } from '../src/llm/grounded.ts';
 import { MockChatModel } from '../src/llm/mock.ts';
+import {
+  DEFAULT_MIN_KEYWORD_SCORE,
+  DEFAULT_MIN_VECTOR_SCORE,
+  resolveThresholds,
+} from '../src/knowledge/hybridRetriever.ts';
 import { HybridRetriever } from '../src/knowledge/hybridRetriever.ts';
 import { VectorStore } from '../src/knowledge/vectorStore.ts';
 import { runChat, streamChat } from '../src/rag/runChat.ts';
@@ -684,4 +689,17 @@ test('streamChat：与非流式共用答案缓存', async () => {
   assert.equal(second.cached, true, 'SSE 写过的答案，非流式请求应命中缓存');
   const third = await streamChat(deps, { message: '光伏组件清洁作业', sessionId: 'third' }).next();
   assert.equal(third.done, false);
+});
+
+test('闸门阈值解析：env 覆盖默认值（服务/评测/标定必须同一来源）', () => {
+  assert.equal(resolveThresholds({}).minKeywordScore, DEFAULT_MIN_KEYWORD_SCORE);
+  assert.equal(resolveThresholds({}).minVectorScore, DEFAULT_MIN_VECTOR_SCORE);
+  assert.equal(resolveThresholds({ MIN_RELEVANCE_SCORE: '6.3' }).minKeywordScore, 6.3);
+  assert.equal(resolveThresholds({ MIN_VECTOR_SCORE: '0.5' }).minVectorScore, 0.5);
+});
+
+test('闸门阈值解析：空串/非法值退回默认值，不产生 NaN', () => {
+  assert.equal(resolveThresholds({ MIN_RELEVANCE_SCORE: '' }).minKeywordScore, DEFAULT_MIN_KEYWORD_SCORE);
+  assert.equal(resolveThresholds({ MIN_VECTOR_SCORE: 'abc' }).minVectorScore, DEFAULT_MIN_VECTOR_SCORE);
+  assert.ok(Number.isFinite(resolveThresholds({ MIN_RELEVANCE_SCORE: 'abc' }).minKeywordScore));
 });

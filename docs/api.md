@@ -342,7 +342,7 @@ SSE 流式问答。请求体同 `/api/chat`。
 | `PORT` | `8787` | 监听端口 |
 | `HOST` | `127.0.0.1` | **Phase A 默认仅本机**；跨机需显式配置并限制防火墙/反代 |
 | `CORS_ORIGINS` | 空 | 逗号分隔白名单；空 = 仅本地开发源。生产必填 |
-| `MIN_RELEVANCE_SCORE` | `3.8` | 关键词分闸门（`npm run calibrate -w server` 标定） |
+| `MIN_RELEVANCE_SCORE` | `3.8` | 关键词分闸门（`npm run calibrate -w server` 标定）。**相对量**：语料一变必须重标 |
 | `MIN_VECTOR_SCORE` | `0.35` | 语义向量兜底的最低余弦 |
 | `UNCOVERED_LOG_SIZE` | `50` | noHit 原始提问留存条数（0 = 关闭） |
 | `PERSIST_STATE` | `false` | 状态落盘 `DATA_DIR/state.json`，重启恢复会话/计数/反馈/未覆盖清单 |
@@ -362,6 +362,10 @@ SSE 流式问答。请求体同 `/api/chat`。
 | `LOG_MAX_BYTES` | `5000000` | events.jsonl 轮转阈值 |
 | `LOG_MESSAGE_MODE` | `hash` | `hash` \| `preview`；JSONL 不再落盘完整 question |
 | 答案缓存 key | — | 含 model + **retriever generation** + message（reload 后不串代） |
+
+> **单一来源约定**：闸门阈值只在 `resolveThresholds()`（`src/knowledge/hybridRetriever.ts`）一处解析，
+> 服务、评测（`eval-retrieval`）、标定（`calibrate`）三个入口共用；`.env` 加载只有 `src/config/dotenv.ts` 一份实现。
+> 若某个入口自己读 env 或直接用代码默认值，就会出现「评测通过、线上却是另一套阈值」——不要在入口里复制这段逻辑。
 
 ---
 

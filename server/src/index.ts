@@ -6,7 +6,7 @@ import { createChatModel } from './llm/index.js';
 import { createEmbeddingProvider } from './embedding/index.js';
 import { loadKnowledge } from './knowledge/loader.js';
 import { VectorStore } from './knowledge/vectorStore.js';
-import { HybridRetriever } from './knowledge/hybridRetriever.js';
+import { HybridRetriever, resolveThresholds } from './knowledge/hybridRetriever.js';
 import { registerChatRoutes } from './routes/chat.js';
 import { registerKnowledgeRoutes } from './routes/knowledge.js';
 import { SessionStore } from './session/store.js';
@@ -16,30 +16,7 @@ import { LruCache, JsonlStore, type CachedAnswer } from './http/cache.js';
 import { adminTokenRequired, errorPayload } from './http/errors.js';
 import { decideOrigin, resolveCorsOrigins } from './http/cors.js';
 import { readState, writeState } from './state/persist.js';
-
-async function loadDotEnv(): Promise<void> {
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  const envPath = path.resolve(here, '../.env');
-  try {
-    const { readFile } = await import('node:fs/promises');
-    const raw = await readFile(envPath, 'utf8');
-    for (const line of raw.split(/\r?\n/)) {
-      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/i);
-      if (!m) continue;
-      const key = m[1];
-      let val = m[2];
-      if (
-        (val.startsWith('"') && val.endsWith('"')) ||
-        (val.startsWith("'") && val.endsWith("'"))
-      ) {
-        val = val.slice(1, -1);
-      }
-      if (process.env[key] === undefined) process.env[key] = val;
-    }
-  } catch {
-    // optional
-  }
-}
+import { loadDotEnv } from './config/dotenv.js';
 
 async function main() {
   await loadDotEnv();
@@ -68,8 +45,7 @@ async function main() {
   const logMessageMode =
     (process.env.LOG_MESSAGE_MODE || 'hash').toLowerCase() === 'preview' ? 'preview' : 'hash';
   const corsOrigins = resolveCorsOrigins(process.env);
-  const minRelevance = Number(process.env.MIN_RELEVANCE_SCORE || 3.8);
-  const minVectorScore = Number(process.env.MIN_VECTOR_SCORE || 0.35);
+  const thresholds = resolveThresholds(process.env);
   const persistState = (process.env.PERSIST_STATE || 'false').toLowerCase() === 'true';
   const persistIntervalSec = Number(process.env.PERSIST_INTERVAL_SEC || 60);
 
@@ -88,10 +64,7 @@ async function main() {
     embedder,
     path.join(indexDir, `vectors.${embedder.name}.json`),
   );
-  const retriever = new HybridRetriever(vectorStore, {
-    minKeywordScore: minRelevance,
-    minVectorScore,
-  });
+  const retriever = new HybridRetriever(vectorStore, thresholds);
 
   const initial = await loadKnowledge(knowledgeDir);
   await retriever.replace(initial);
@@ -185,7 +158,7 @@ async function main() {
     watchKnowledge,
     adminTokenRequired: requireAdmin,
     corsOrigins,
-    minRelevanceScore: minRelevance,
+    minRelevanceScore: thresholds.minKeywordScore,
     persistState,
     host,
     uptimeSec: Math.floor(process.uptime()),
@@ -210,7 +183,7 @@ async function main() {
     answerCache,
     logStore,
     corsOrigins,
-    minRelevanceScore: minRelevance,
+    minRelevanceScore: thresholds.minKeywordScore,
   });
 
   if (watchKnowledge) {
