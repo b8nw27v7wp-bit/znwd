@@ -9,7 +9,8 @@
     "start": "node dist/index.js",
     "test": "tsx --test scripts/unit.test.ts",
     "eval:retrieval": "tsx scripts/eval-retrieval.ts",
-    "calibrate": "tsx scripts/calibrate.ts"
+    "calibrate": "tsx scripts/calibrate.ts",
+    "ingest": "tsx scripts/ingest-docs.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",

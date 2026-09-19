@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: 安装依赖
+        run: npm ci
+      - name: 构建（server + web）
+        run: npm run build
+      - name: 单元测试
+        run: npm test -w server
+      - name: 检索评测（含闸门漏答检查，不写基线）
+        run: npm run eval:retrieval -- --no-write
+      - name: 相关性阈值标定（区间必须成立）
+        run: npm run calibrate -w server
+      - name: 起服务并跑 API 审计
+        run: |
+          node server/dist/index.js &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8787/api/health >/dev/null && break
+            sleep 1
+          done
+          node server/scripts/api-audit.mjs
+        env:
+          HOST: 127.0.0.1
+          PORT: '8787'

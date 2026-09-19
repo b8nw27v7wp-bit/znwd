@@ -58,14 +58,16 @@ znwd/
 ## 校验命令
 
 ```bash
+npm run verify               # 一键：build + unit + 起服务 + api-audit + eval（独立端口 8791）
+npm run verify:quick         # 只验后端（跳过 web 构建与 eval）
+
 npm test -w server           # 单元测试
-npm run eval:retrieval       # 检索评测（top1/top3 + 闸门漏答清单）
+npm run eval:retrieval       # 检索评测（top1/top3 + 闸门漏答 + 追问改写对比）
 npm run calibrate -w server  # 相关性阈值标定（改知识后必跑）
-npm run dev:server           # 另开终端后：
-node server/scripts/api-audit.mjs
+npm run ingest -w server -- --src ./inbox --zone pv-clean   # PDF/Word/txt 入库
 ```
 
-审计报告：[docs/code-audit.md](docs/code-audit.md)。评测方法：[docs/eval.md](docs/eval.md)。
+审计报告：[docs/code-audit.md](docs/code-audit.md)。评测方法：[docs/eval.md](docs/eval.md)。CI：[.github/workflows/ci.yml](.github/workflows/ci.yml)。
 
 ## 配置
 
@@ -78,7 +80,9 @@ EMBED_PROVIDER=bag | openai_compat
 EMBED_MODEL=...
 # CORS_ORIGINS=https://exhibit.your-host
 # ADMIN_TOKEN=secret
-# MIN_RELEVANCE_SCORE=3.5   # 用 npm run calibrate -w server 标定
+# MIN_RELEVANCE_SCORE=3.8   # 用 npm run calibrate -w server 标定
+# PERSIST_STATE=true        # 重启保留计数/反馈/未覆盖清单/会话
+# UNCOVERED_LOG_SIZE=50     # noHit 原始提问留存条数（补资料靶子）
 # KNOWLEDGE_WATCH=true
 ```
 

@@ -34,5 +34,13 @@
     { "id": "mix-02", "question": "无人机巡检比人工爬塔更安全吗？", "zone": "wind-inspect", "sourcePathIncludes": "02_风场" },
     { "id": "mix-03", "question": "清洁和检测是不是同一套系统？", "zone": null, "sourcePathIncludes": null, "note": "开放问，不计入命中率" },
     { "id": "mix-04", "question": "研究院主要做哪些方向？", "zone": null, "sourcePathIncludes": null, "note": "开放问" }
+  ],
+  "followUps": [
+    { "id": "fu-01", "context": "光伏清洁无人机是做什么的？", "question": "那清洗哪些场景？", "zone": "pv-clean", "sourcePathIncludes": "01_光伏", "note": "省略式追问：改写应补上「光伏/清洁」主题词" },
+    { "id": "fu-02", "context": "叶片检测要停机吗？", "question": "那要多久？", "zone": "wind-inspect", "sourcePathIncludes": "02_风场", "note": "省略式追问：应继承风场检测主题" },
+    { "id": "fu-03", "context": "提供培训吗？", "question": "那怎么报名？", "zone": "service", "sourcePathIncludes": "服务", "note": "省略式追问：应继承服务合作主题" },
+    { "id": "fu-04", "context": "风场检测无人机是做什么的？", "question": "那海上能用吗？", "zone": "wind-inspect", "sourcePathIncludes": "02_风场", "note": "含实义词，改写可不动" },
+    { "id": "fu-05", "context": "展厅有哪些安全注意事项？", "question": "那能拍照吗？", "zone": "safety", "sourcePathIncludes": "参观须知", "note": "本轮自身可检索（拍照），不应依赖改写" },
+    { "id": "fu-06", "context": "光伏清洁无人机是做什么的？", "question": "它有几种型号？", "zone": "pv-clean", "sourcePathIncludes": "01_光伏", "note": "省略式追问，主题继承" }
   ]
 }

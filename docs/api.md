@@ -120,6 +120,7 @@ Base URL：开发态经 Vite 代理为 `http://localhost:5173`；直连后端为
 | `mode` | `rag` 有命中；`llm_only` 未命中 |
 | `retrieval` | `hybrid`（语义向量参与）或 `keyword`，**如实反映** |
 | `noHit` | `true` = 相关性闸门未通过（知识库未覆盖），本次回答没有任何知识片段支撑 |
+| `rewrite` | 多轮指代改写：`{ rewritten, reason, carriedTokens }`；`reason=none/no_history/prev_weak/ellipsis_merged`。检索用改写后的查询，回答仍按原问题 |
 | `cached` | 是否命中答案缓存（缓存 key 含 model + 索引 generation + message） |
 
 **相关性闸门**
@@ -242,6 +243,8 @@ Base URL：开发态经 Vite 代理为 `http://localhost:5173`；直连后端为
 | 字段 | 说明 |
 |------|------|
 | `noHit` | 知识库未覆盖（闸门拦截）次数——这类问题就是下一批要补的资料 |
+| `rewritten` | 多轮指代改写生效次数（追问场景占比） |
+| `uncoveredCount` | 已留存的未覆盖问题条数（明细见 `/api/admin/uncovered`） |
 
 ---
 
@@ -261,6 +264,16 @@ Base URL：开发态经 Vite 代理为 `http://localhost:5173`；直连后端为
   ]
 }
 ```
+
+---
+
+## GET /api/admin/uncovered
+
+知识库未覆盖的问题清单（`noHit` 的原始提问，明文、内存态、限量），供运营补资料。
+
+- 200：`{ "count": 2, "items": [ { "at": 0, "sessionId": "s-1", "question": "会议室在哪里" } ] }`（新→旧）
+- 鉴权同 `/api/stats`；留存条数由 `UNCOVERED_LOG_SIZE` 控制（0 = 关闭）
+- `PERSIST_STATE=true` 时随状态落盘，重启不丢
 
 ---
 
@@ -329,6 +342,9 @@ SSE 流式问答。请求体同 `/api/chat`。
 | `CORS_ORIGINS` | 空 | 逗号分隔白名单；空 = 仅本地开发源。生产必填 |
 | `MIN_RELEVANCE_SCORE` | `3.8` | 关键词分闸门（`npm run calibrate -w server` 标定） |
 | `MIN_VECTOR_SCORE` | `0.35` | 语义向量兜底的最低余弦 |
+| `UNCOVERED_LOG_SIZE` | `50` | noHit 原始提问留存条数（0 = 关闭） |
+| `PERSIST_STATE` | `false` | 状态落盘 `DATA_DIR/state.json`，重启恢复会话/计数/反馈/未覆盖清单 |
+| `PERSIST_INTERVAL_SEC` | `60` | 定时落盘间隔（下限 10s）；退出时也会落盘 |
 | `ADMIN_TOKEN` | 空 | 管理接口 Bearer；生产必须设置 |
 | `REQUIRE_ADMIN_TOKEN` | 空 | `true` 时无 token 管理接口 401 |
 | `NODE_ENV` | 空 | `production`/`prod`/`staging` 时强制管理口令 |

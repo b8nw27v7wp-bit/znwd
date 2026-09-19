@@ -32,6 +32,8 @@ export interface RunChatResponse {
   cached: boolean;
   /** 知识库未覆盖（相关性闸门拦截） */
   noHit: boolean;
+  /** 多轮指代改写（检索用查询与是否发生改写） */
+  rewrite?: { rewritten: boolean; reason: string; carriedTokens: string[] };
 }
 
 function logMode(deps: RunChatDeps): LogMessageMode {
@@ -50,6 +52,7 @@ function writeChatLog(
     latencyMs: number;
     noHit?: boolean;
     retrieval?: string;
+    rewritten?: boolean;
     error?: string;
   },
 ): void {
@@ -136,6 +139,8 @@ export async function runChat(deps: RunChatDeps, input: RunChatInput): Promise<R
     latencyMs,
     noHit: result.noHit,
     retrieval: result.retrieval,
+    rewritten: result.rewrite?.rewritten === true,
+    question: result.noHit ? message : undefined,
   });
   writeChatLog(deps, {
     mode: result.mode,
@@ -147,6 +152,7 @@ export async function runChat(deps: RunChatDeps, input: RunChatInput): Promise<R
     latencyMs,
     noHit: result.noHit,
     retrieval: result.retrieval,
+    rewritten: result.rewrite?.rewritten === true,
   });
 
   return {
@@ -159,6 +165,13 @@ export async function runChat(deps: RunChatDeps, input: RunChatInput): Promise<R
     latencyMs,
     cached: false,
     noHit: result.noHit,
+    rewrite: result.rewrite
+      ? {
+          rewritten: result.rewrite.rewritten,
+          reason: result.rewrite.reason,
+          carriedTokens: result.rewrite.carriedTokens,
+        }
+      : undefined,
   };
 }
 
@@ -170,6 +183,7 @@ export type StreamChatEvent =
       provider: string;
       noHit: boolean;
       retrieval: 'hybrid' | 'keyword';
+      rewrite: { rewritten: boolean; reason: string; carriedTokens: string[] };
     }
   | { type: 'delta'; text: string }
   | {
@@ -228,6 +242,7 @@ export async function* streamChat(deps: RunChatDeps, input: RunChatInput): Async
       provider: hit.provider,
       noHit: hit.noHit ?? hit.mode !== 'rag',
       retrieval,
+      rewrite: { rewritten: false, reason: 'none', carriedTokens: [] },
     };
     yield { type: 'delta', text: hit.answer };
     yield {
@@ -249,6 +264,7 @@ export async function* streamChat(deps: RunChatDeps, input: RunChatInput): Async
   let provider = deps.model.name;
   let noHit = true;
   let retrieval: 'hybrid' | 'keyword' = 'keyword';
+  let rewritten = false;
 
   for await (const ev of streamAnswer(deps.retriever, deps.model, message, { history })) {
     if (ev.type === 'meta') {
@@ -257,7 +273,16 @@ export async function* streamChat(deps: RunChatDeps, input: RunChatInput): Async
       provider = ev.provider;
       noHit = ev.noHit;
       retrieval = ev.diagnostics.mode;
-      yield { type: 'meta', sources: ev.sources, mode: ev.mode, provider: ev.provider, noHit, retrieval };
+      rewritten = ev.rewrite.rewritten;
+      yield {
+        type: 'meta',
+        sources: ev.sources,
+        mode: ev.mode,
+        provider: ev.provider,
+        noHit,
+        retrieval,
+        rewrite: ev.rewrite,
+      };
     } else if (ev.type === 'delta') {
       yield ev;
     } else if (ev.type === 'done') {
@@ -289,6 +314,8 @@ export async function* streamChat(deps: RunChatDeps, input: RunChatInput): Async
     latencyMs,
     noHit,
     retrieval,
+    rewritten,
+    question: noHit ? message : undefined,
   });
   writeChatLog(deps, {
     mode,
@@ -300,6 +327,7 @@ export async function* streamChat(deps: RunChatDeps, input: RunChatInput): Async
     latencyMs,
     noHit,
     retrieval,
+    rewritten,
   });
 
   yield { type: 'done', full, sources, mode, latencyMs, cached: false, noHit, retrieval };

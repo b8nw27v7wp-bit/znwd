@@ -54,7 +54,12 @@
 | `src/knowledge/hybridRetriever.ts` | RRF 融合 + **相关性闸门** + 如实上报检索模式 |
 | `src/embedding/*` | bag / openai_compat（`semantic` 标记决定 mode 能否为 hybrid） |
 | `src/rag/pipeline.ts` | Prompt + 调 LLM（无命中时改为「直说没有」指令） |
+| `src/rag/rewrite.ts` | 多轮指代改写：省略式追问继承上一轮主题词（仅检索用） |
 | `src/rag/runChat.ts` | 非流式/流式共用链路：会话、缓存、统计、日志 |
+| `src/state/persist.ts` | 可选状态持久化（`PERSIST_STATE`）：会话/计数/反馈/未覆盖清单，原子写 |
+| `scripts/calibrate.ts` | 相关性阈值标定（改知识后必跑） |
+| `scripts/ingest-docs.ts` | PDF/DOCX/txt 入库为 `knowledge/` markdown |
+| `scripts/eval-retrieval.ts` | 检索评测（召回 + 闸门漏答 + 追问改写对比） |
 | `src/routes/chat.ts` | chat / SSE / sessions / suggestions / zones / feedback / stats / openapi |
 | `src/routes/knowledge.ts` | list / reload |
 | `src/session|analytics|http/*` | 会话、统计（含 `noHit`）、限流、日志 |

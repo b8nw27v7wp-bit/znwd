@@ -124,6 +124,15 @@ export function registerChatRoutes(app: FastifyInstance, deps: RouteDeps): void 
     },
   );
 
+  /** 未覆盖问题清单：noHit 的原始提问（明文、内存、限量），供运营补资料 */
+  app.get('/api/admin/uncovered', async (req, reply) => {
+    if (!adminOk(req.headers.authorization, deps.adminToken, adminOpts)) {
+      return denyAdmin(req, reply, deps.adminTokenRequired);
+    }
+    const items = deps.analytics.uncoveredList();
+    return { count: items.length, items };
+  });
+
   /** P3：反馈统计；`?format=csv` 导出 */
   app.get<{ Querystring: { format?: string } }>('/api/admin/feedback-stats', async (req, reply) => {
     if (!adminOk(req.headers.authorization, deps.adminToken, adminOpts)) {
@@ -269,6 +278,13 @@ export function registerChatRoutes(app: FastifyInstance, deps: RouteDeps): void 
           responses: { '200': { description: '统计或 CSV' }, '401': { description: 'unauthorized' } },
         },
       },
+      '/api/admin/uncovered': {
+        get: {
+          summary: '未覆盖问题清单（noHit 原始提问，供补资料）',
+          security: [{ adminToken: [] }],
+          responses: { '200': { description: '{ count, items[] }' }, '401': { description: 'unauthorized' } },
+        },
+      },
       '/api/sessions/{sessionId}': {
         get: { summary: '查看会话', responses: { '200': { description: 'messages' }, '404': { description: '无会话' } } },
         delete: { summary: '重置会话', responses: { '200': { description: 'ok' } } },
@@ -332,6 +348,7 @@ export function registerChatRoutes(app: FastifyInstance, deps: RouteDeps): void 
               provider: ev.provider,
               noHit: ev.noHit,
               retrieval: ev.retrieval,
+              rewrite: ev.rewrite,
               sessionId,
             });
           } else if (ev.type === 'delta') {

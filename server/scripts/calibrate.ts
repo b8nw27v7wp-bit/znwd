@@ -9,6 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadKnowledge } from '../src/knowledge/loader.ts';
 import { Retriever } from '../src/knowledge/retriever.ts';
+import { DEFAULT_MIN_KEYWORD_SCORE } from '../src/knowledge/hybridRetriever.ts';
 import { VectorStore } from '../src/knowledge/vectorStore.ts';
 import { createEmbeddingProvider } from '../src/embedding/index.ts';
 
@@ -89,7 +90,9 @@ async function main(): Promise<void> {
   console.log(`命中词条数：在域最低=${minCovIn}  域外最高=${maxCovOod}`);
   if (minIn > maxOod) {
     const suggested = Number(((maxOod + minIn) / 2).toFixed(1));
-    console.log(`区间可用：建议 MIN_RELEVANCE_SCORE=${suggested}（当前 ${process.env.MIN_RELEVANCE_SCORE ?? '默认 3.5'}）`);
+    console.log(
+      `区间可用：建议 MIN_RELEVANCE_SCORE=${suggested}（当前生效 ${retriever.stats().thresholds.minKeywordScore}，代码默认 ${DEFAULT_MIN_KEYWORD_SCORE}）`,
+    );
   } else {
     console.log('警告：分数区间不成立（域外最高分不低于在域最低分）：需要补同义词或换语义向量模型');
     process.exitCode = 2;

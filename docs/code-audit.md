@@ -7,12 +7,15 @@
 
 | 项 | 结果 |
 |----|------|
-| 单元测试 `npm test -w server` | **32/32 PASS** |
-| API 审计 `node server/scripts/api-audit.mjs` | **34/34 PASS** |
-| 检索评测 `npm run eval:retrieval` | top1 **0.9667** / top3 **1.00**；闸门漏答 **0** |
+| 单元测试 `npm test -w server` | **35/35 PASS** |
+| API 审计 `node server/scripts/api-audit.mjs` | **36/36 PASS** |
+| 一键验收 `npm run verify` | **5/5 PASS**（build/unit/eval/server-start/api-audit，约 10s） |
+| 检索评测 `npm run eval:retrieval` | top1 **0.9667** / top3 **1.00**；闸门漏答 **0**；追问改写 top1 **1.00** |
 | 相关性标定 `npm run calibrate -w server` | 域外最高 2.64 < 阈值 3.8 < 在域最低 5.05 |
 | 构建 `npm run build` | server + web PASS |
 | 闸门实测（/api/chat 直连） | 域内 6/6 正常作答；域外 10/10 判为未覆盖 |
+| 持久化实测 | 硬杀进程后重启：计数/反馈/未覆盖清单/会话历史全部恢复 |
+| 入库实测 | ASCII PDF 与中文 DOCX（标题+表格）转换正确；扫描件按预期拒绝并提示 OCR |
 
 ### 实测发现与处置
 

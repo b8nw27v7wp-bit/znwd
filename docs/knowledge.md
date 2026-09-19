@@ -69,6 +69,37 @@ npm run eval:retrieval           # top1/top3 不退化、gateBlockedCount=0
 ```
 
 阈值是相对量：chunk 数变化会改变 IDF，分数整体平移，**不重标就可能把该答的问题拦掉**。
+实测：把 2 篇文档入库后 `knowledgeChunks` 23 → 28、top1 0.9667 → 0.9333（阈值区间未变）。
+
+## 资料入库（PDF / Word / txt）
+
+```bash
+# 把资料丢进 ./inbox（或任意目录），指定展区后入库
+npm run ingest -w server -- --src ./inbox --zone pv-clean
+npm run ingest -w server -- --src ./inbox --zone pv-clean --dry-run   # 只看会写哪些文件
+npm run ingest -w server -- --src ./inbox --zone pv-clean --force     # 覆盖同名目标
+```
+
+| 输入 | 转换方式 | 说明 |
+|------|----------|------|
+| `.pdf` | `pdftotext -layout` | 无文字层的扫描件会**明确报错**（提示走 OCR），不会写出空文件 |
+| `.docx` | python + python-docx | 保留标题层级、列表与表格（转 markdown 表） |
+| `.txt` / `.md` | 直读 | 统一做规范化（去页码/分隔线、合并 PDF 逐行断行、拉丁文补空格） |
+| `.doc` | 不支持 | 先用 Word 另存为 `.docx` 或 `.txt`（本机无 libreoffice） |
+
+输出写到 `knowledge/<展区目录>/<文件名>.md`，带 frontmatter：
+
+```markdown
+---
+title: 光伏清洁作业规范
+zone: pv-clean
+tags: pv-clean,ingest
+source: 光伏清洁作业规范.docx
+ingestedAt: 2026-09-19
+---
+```
+
+入库后按「改知识后必做」走一遍。**整理资料时用 `##` 分节**，分块与检索精度都会更好。
 
 内网真实向量：
 

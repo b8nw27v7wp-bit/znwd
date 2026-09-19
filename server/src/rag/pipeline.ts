@@ -1,6 +1,7 @@
 import type { ChatMessage, ChatModel } from '../llm/types.js';
 import type { HybridHit, HybridRetriever, RetrievalDiagnostics } from '../knowledge/hybridRetriever.js';
 import { expandQueryText } from '../knowledge/synonyms.js';
+import { rewriteForRetrieval, type RewriteResult } from './rewrite.js';
 
 export interface RagSource {
   title: string;
@@ -22,6 +23,8 @@ export interface RagAnswer {
   /** 知识库未覆盖（相关性闸门拦截）：前端据此提示，运营据此回流补资料 */
   noHit: boolean;
   diagnostics?: RetrievalDiagnostics;
+  /** 多轮指代改写信息（未改写时 reason='none'） */
+  rewrite?: RewriteResult;
   queryExpanded?: string;
 }
 
@@ -78,11 +81,18 @@ export async function retrieveForMessage(
   retriever: HybridRetriever,
   message: string,
   topK = 4,
-): Promise<{ hits: HybridHit[]; diagnostics: RetrievalDiagnostics; queryExpanded: string }> {
+  history: ChatMessage[] = [],
+): Promise<{
+  hits: HybridHit[];
+  diagnostics: RetrievalDiagnostics;
+  queryExpanded: string;
+  rewrite: RewriteResult;
+}> {
   const queryExpanded = expandQueryText(message);
-  // hybrid 内部也会扩展一次，这里用原文保证向量路用原问题、关键词路受益于扩展
-  const { hits, diagnostics } = await retriever.retrieveWithDiagnostics(message, { topK });
-  return { hits, diagnostics, queryExpanded };
+  // 多轮指代：本轮关键词检索拿不到达标候选时，用上一轮主题词补全查询（检索用，回答仍按原问题）
+  const rewrite = rewriteForRetrieval(retriever, message, history);
+  const { hits, diagnostics } = await retriever.retrieveWithDiagnostics(rewrite.query, { topK });
+  return { hits, diagnostics, queryExpanded, rewrite };
 }
 
 export async function answerQuestion(
@@ -93,7 +103,7 @@ export async function answerQuestion(
 ): Promise<RagAnswer> {
   const topK = options.topK ?? 4;
   const history = (options.history ?? []).slice(-12);
-  const { hits, diagnostics } = await retrieveForMessage(retriever, message, topK);
+  const { hits, diagnostics, rewrite } = await retrieveForMessage(retriever, message, topK, history);
   const messages = buildPrompt(hits, message, history);
   const result = await model.complete({ messages });
 
@@ -105,6 +115,7 @@ export async function answerQuestion(
     retrieval: diagnostics.mode,
     noHit: hits.length === 0,
     diagnostics,
+    rewrite,
   };
 }
 
@@ -121,13 +132,14 @@ export async function* streamAnswer(
       provider: string;
       noHit: boolean;
       diagnostics: RetrievalDiagnostics;
+      rewrite: RewriteResult;
     }
   | { type: 'delta'; text: string }
   | { type: 'done'; full: string }
 > {
   const topK = options.topK ?? 4;
   const history = (options.history ?? []).slice(-12);
-  const { hits, diagnostics } = await retrieveForMessage(retriever, message, topK);
+  const { hits, diagnostics, rewrite } = await retrieveForMessage(retriever, message, topK, history);
   const messages = buildPrompt(hits, message, history);
 
   yield {
@@ -137,6 +149,7 @@ export async function* streamAnswer(
     provider: model.name,
     noHit: hits.length === 0,
     diagnostics,
+    rewrite,
   };
 
   let full = '';

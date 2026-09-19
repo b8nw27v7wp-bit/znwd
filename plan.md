@@ -325,3 +325,26 @@ node server/scripts/api-audit.mjs
 6. **虚拟形象**：仍是程序化占位；用授权模型替换 `Live2DStage.tsx`。  
 7. **CI**：目前靠人工跑三条命令；建议加 GitHub Actions（build + unit + api-audit 起停）。  
 8. **右侧 2/3 展览播放**：仍为空区，只有 zone 联动接口预留。
+
+---
+
+## 12. 第三轮：补齐上表可本机完成项（2026-09-19，0.10.0）
+
+> 上表 3/4/5/7 已在本轮完成；1/2/6/8 需要外部输入（网关凭据、知识正文、授权形象模型、展项媒体）。
+
+| 项 | 现状 |
+|----|------|
+| 多轮指代 | `rag/rewrite.ts`：省略式追问继承上一轮主题词；追问 top1 0.6667 → 1.00 |
+| 资料入库 | `scripts/ingest-docs.ts`：PDF(pdftotext)/DOCX(python-docx)/txt/md → knowledge/；扫描件明确报错 |
+| 持久化 | `state/persist.ts` + `PERSIST_STATE=true`：会话/计数/反馈/未覆盖清单落盘，重启恢复（已实测硬杀重启） |
+| 补资料靶子 | `GET /api/admin/uncovered`（noHit 原始提问，限量明文）；`/api/stats` 增 `rewritten`/`uncoveredCount` |
+| 一键验收 | `npm run verify`（build→unit→起 dist 服务→api-audit→eval，端口 8791）；CI：`.github/workflows/ci.yml` |
+| 测试 | unit 35/35、api-audit 36/36、verify 5/5、eval top1 0.9667 / 闸门漏答 0 |
+
+仍未做：
+
+1. **接真实 LLM/Embedding**：需要内网网关地址与 key（代码已就绪）。  
+2. **知识正文**：只有你们能给；入库工具已就绪，`noHit` 清单指哪补哪。  
+3. **虚拟形象**：需要授权的 Live2D/VRM 模型。  
+4. **右侧 2/3 展览播放**：需要展项媒体清单（视频/图片 URL 或文件），且界面效果本机无法可视化验证（浏览器工具拒绝访问 localhost），需在现场或你们那边确认。  
+5. **`.doc` 旧格式 / 扫描件 OCR**：前者需另存 docx，后者需装 OCR（marker-pdf ~5GB）或人工转写。

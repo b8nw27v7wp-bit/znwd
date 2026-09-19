@@ -12,7 +12,14 @@ npm run eval:retrieval
 ```
 
 输出摘要：`top1Rate` / `top3Rate`（**未加闸门**的召回能力）、`gatedTop1Rate` / `gatedTop3Rate` /
-`gateBlockedCount`（**生产路径**含相关性闸门后的指标与漏答清单）、`minKeywordScore`。
+`gateBlockedCount`（**生产路径**含相关性闸门后的指标与漏答清单）、`minKeywordScore`、
+`followUp*`（追问场景下「不改写 vs 改写」的命中对比）。
+
+加 `--no-write` 只打印不落盘（换 `KNOWLEDGE_DIR` 做实验时用，避免覆盖仓库基线）：
+
+```bash
+KNOWLEDGE_DIR=/path/to/other/knowledge npm run eval:retrieval -- --no-write
+```
 
 ## 三个指标要分开看
 
@@ -21,6 +28,7 @@ npm run eval:retrieval
 | `top1Rate` / `top3Rate` | 原始融合检索的召回上限 | 换 embedding / 改同义词后的趋势 |
 | `gatedTop1Rate` / `gatedTop3Rate` | 叠加相关性闸门（生产实际走这条路） | 闸门是否把该答的问题也拦了 |
 | `gateBlockedCount` / `gateBlocked` | 被闸门拦下的**计分用例**（即漏答） | **必须为 0**；非 0 说明阈值过紧或知识缺口 |
+| `followUpRawTop1Rate` / `followUpRewrittenTop1Rate` | 追问用例：不改写 vs 多轮指代改写 | 改写是否真的救回省略式追问 |
 
 ## 相关性阈值标定
 
@@ -45,6 +53,7 @@ npm run calibrate -w server
 | gatedTop1Rate / gatedTop3Rate | **0.9667 / 1.00** |
 | gateBlockedCount | **0**（无漏答） |
 | minKeywordScore | 3.8 |
+| followUp（追问改写） | 不改写 top1 **0.6667** → 改写后 **1.00**（6 条追问，5 条触发改写） |
 
 对照：加固前（0.8.0，8 chunks、单字命中参与打分）top1 0.90 / top3 1.00。
 提升来自两处：中文分词改为 bigram-only + IDF 加权（单字噪声不再给分）、按 markdown 标题分块。

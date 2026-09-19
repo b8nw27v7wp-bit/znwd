@@ -34,16 +34,29 @@ npm run start
 
 开发态快捷方式仍是 `dev:server` + `dev:web`。
 
+## 验收与 CI
+
+```bash
+npm run verify          # build → unit → 起 dist 服务(8791) → api-audit → eval
+npm run verify:quick    # 只验后端
+```
+
+`.github/workflows/ci.yml` 在 push/PR 上跑同一套（build + unit + eval + calibrate + 起服务跑 api-audit）。
+本仓库当前无 remote，推上去即生效。
+
 ## 现场检查清单
 
 | 项 | 检查 |
 |----|------|
+| 一键验收 | `npm run verify` 全绿（build/unit/eval/api-audit） |
 | 电源/网络 | 内网可达 LLM 网关（若非 mock） |
 | 浏览器 | 全屏 F11；缩放 100%；系统合成音已启用 |
 | 权限 | 屏幕常亮、禁用系统休眠 |
 | 知识 | `health.knowledgeChunks` > 0 |
 | 麦克风/音箱 | 音量足够；TTS 有中文语音包 |
 | 启动脚本 | 服务开机自启（计划任务/服务化可后续加） |
+| 数据不丢 | `PERSIST_STATE=true`（否则每次重启反馈历史与问答计数清零） |
+| 补资料 | `GET /api/admin/uncovered` 看参观者问了什么没答上来 |
 | 恢复 | server 挂掉时 health 失败 → 告警/自动拉起 |
 
 ## 安全注意（Phase A + 第二轮加固）

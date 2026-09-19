@@ -1,6 +1,6 @@
 {
   "summary": {
-    "at": "2026-09-18T15:07:24.403Z",
+    "at": "2026-09-19T02:27:09.954Z",
     "embedProvider": "bag",
     "semantic": false,
     "llmProvider": "mock",
@@ -16,7 +16,13 @@
     "gatedTop3Rate": 1,
     "gateBlockedCount": 0,
     "gateBlocked": [],
-    "minKeywordScore": 3.8
+    "minKeywordScore": 3.8,
+    "followUpCases": 6,
+    "followUpRawTop1Rate": 0.6667,
+    "followUpRawTop3Rate": 1,
+    "followUpRewrittenTop1Rate": 1,
+    "followUpRewrittenTop3Rate": 1,
+    "followUpRewriteTriggered": 5
   },
   "rows": [
     {
@@ -348,6 +354,80 @@
       "hit3": true,
       "gated": false,
       "keywordBestScore": 10.3593
+    }
+  ],
+  "followUps": [
+    {
+      "id": "fu-01",
+      "context": "光伏清洁无人机是做什么的？",
+      "question": "那清洗哪些场景？",
+      "rewritten": false,
+      "reason": "none",
+      "rawTop1": "光伏清洁无人机产品概述",
+      "rwTop1": "光伏清洁无人机产品概述",
+      "rawHit1": true,
+      "rwHit1": true,
+      "rwHit3": true
+    },
+    {
+      "id": "fu-02",
+      "context": "叶片检测要停机吗？",
+      "question": "那要多久？",
+      "rewritten": true,
+      "reason": "ellipsis_merged",
+      "rawTop1": "清洁流程与作业说明",
+      "rwTop1": "叶片检测说明",
+      "rawHit1": false,
+      "rwHit1": true,
+      "rwHit3": true
+    },
+    {
+      "id": "fu-03",
+      "context": "提供培训吗？",
+      "question": "那怎么报名？",
+      "rewritten": true,
+      "reason": "ellipsis_merged",
+      "rawTop1": "叶片检测说明",
+      "rwTop1": "服务、培训与合作",
+      "rawHit1": false,
+      "rwHit1": true,
+      "rwHit3": true
+    },
+    {
+      "id": "fu-04",
+      "context": "风场检测无人机是做什么的？",
+      "question": "那海上能用吗？",
+      "rewritten": true,
+      "reason": "ellipsis_merged",
+      "rawTop1": "风场检测无人机产品概述",
+      "rwTop1": "风场检测无人机产品概述",
+      "rawHit1": true,
+      "rwHit1": true,
+      "rwHit3": true
+    },
+    {
+      "id": "fu-05",
+      "context": "展厅有哪些安全注意事项？",
+      "question": "那能拍照吗？",
+      "rewritten": true,
+      "reason": "ellipsis_merged",
+      "rawTop1": "展厅参观须知",
+      "rwTop1": "展厅参观须知",
+      "rawHit1": true,
+      "rwHit1": true,
+      "rwHit3": true
+    },
+    {
+      "id": "fu-06",
+      "context": "光伏清洁无人机是做什么的？",
+      "question": "它有几种型号？",
+      "rewritten": true,
+      "reason": "ellipsis_merged",
+      "rawTop1": "清洁流程与作业说明",
+      "rwTop1": "光伏清洁无人机产品概述",
+      "rawHit1": true,
+      "rwHit1": true,
+      "rwHit3": true
     }
   ]
 }

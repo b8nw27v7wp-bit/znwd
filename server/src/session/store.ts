@@ -88,4 +88,35 @@ export class SessionStore {
     }
     return n;
   }
+
+  /** 导出未过期会话（供持久化） */
+  exportState(): Array<{ id: string; messages: ChatMessage[]; lastActive: number; createdAt: number }> {
+    const now = Date.now();
+    const out: Array<{ id: string; messages: ChatMessage[]; lastActive: number; createdAt: number }> = [];
+    for (const [id, entry] of this.map) {
+      if (!isAlive(entry, now)) continue;
+      out.push({ id, messages: [...entry.messages], lastActive: entry.lastActive, createdAt: entry.createdAt });
+    }
+    return out;
+  }
+
+  /** 导入会话：过期条目直接丢弃，超出上限时按最后活跃时间保留最近的 */
+  importState(items: Array<{ id: string; messages: ChatMessage[]; lastActive: number; createdAt: number }>): number {
+    const now = Date.now();
+    let loaded = 0;
+    for (const item of items) {
+      if (!item?.id || !Array.isArray(item.messages)) continue;
+      const entry: SessionEntry = {
+        messages: item.messages.filter((m) => m && typeof m.content === 'string'),
+        lastActive: item.lastActive ?? now,
+        createdAt: item.createdAt ?? now,
+      };
+      if (!isAlive(entry, now)) continue;
+      trim(entry);
+      this.map.set(item.id, entry);
+      loaded++;
+    }
+    evictOldest(this.map);
+    return loaded;
+  }
 }

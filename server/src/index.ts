@@ -15,6 +15,7 @@ import { RateLimiter } from './http/rateLimit.js';
 import { LruCache, JsonlStore, type CachedAnswer } from './http/cache.js';
 import { adminTokenRequired, errorPayload } from './http/errors.js';
 import { decideOrigin, resolveCorsOrigins } from './http/cors.js';
+import { readState, writeState } from './state/persist.js';
 
 async function loadDotEnv(): Promise<void> {
   const here = path.dirname(fileURLToPath(import.meta.url));
@@ -69,6 +70,8 @@ async function main() {
   const corsOrigins = resolveCorsOrigins(process.env);
   const minRelevance = Number(process.env.MIN_RELEVANCE_SCORE || 3.8);
   const minVectorScore = Number(process.env.MIN_VECTOR_SCORE || 0.35);
+  const persistState = (process.env.PERSIST_STATE || 'false').toLowerCase() === 'true';
+  const persistIntervalSec = Number(process.env.PERSIST_INTERVAL_SEC || 60);
 
   if (requireAdmin && !adminToken) {
     console.error(
@@ -95,13 +98,46 @@ async function main() {
 
   const model = createChatModel(process.env);
   const sessions = new SessionStore();
-  const analytics = new Analytics();
+  const analytics = new Analytics(Number(process.env.UNCOVERED_LOG_SIZE ?? 50));
   const chatLimiter = new RateLimiter(chatPerMin, 60_000);
   const answerCache = new LruCache<CachedAnswer>(cacheSize);
   const logStore = new JsonlStore(dataDir, 'events', {
     maxBytes: logMaxBytes,
     messageMode: logMessageMode,
   });
+
+  const saveState = async (): Promise<void> => {
+    if (!persistState) return;
+    const s = analytics.exportState();
+    await writeState(dataDir, {
+      stats: {
+        startedAt: s.startedAt,
+        chatTotal: s.chatTotal,
+        ragHits: s.ragHits,
+        errors: s.errors,
+        noHits: s.noHits,
+        rewritten: s.rewritten,
+      },
+      feedback: s.feedback,
+      uncovered: s.uncovered,
+      sessions: sessions.exportState(),
+    });
+  };
+
+  if (persistState) {
+    const restored = await readState(dataDir);
+    if (restored) {
+      sessions.importState(restored.sessions);
+      analytics.importState({ ...restored.stats, feedback: restored.feedback, uncovered: restored.uncovered });
+      console.log(
+        `[state] restored ${restored.sessions.length} sessions, ${restored.feedback.length} feedback, chatTotal=${restored.stats.chatTotal ?? 0} (savedAt=${restored.savedAt})`,
+      );
+    } else {
+      console.log('[state] PERSIST_STATE=true 但未找到历史 state.json，按空状态启动');
+    }
+    const timer = setInterval(() => void saveState().catch(() => {}), Math.max(10, persistIntervalSec) * 1000);
+    timer.unref?.();
+  }
 
   const app = Fastify({ logger: true });
   await app.register(cors, {
@@ -149,6 +185,7 @@ async function main() {
     adminTokenRequired: requireAdmin,
     corsOrigins,
     minRelevanceScore: minRelevance,
+    persistState,
     host,
     uptimeSec: Math.floor(process.uptime()),
   }));
@@ -208,6 +245,7 @@ async function main() {
     try {
       await app.close();
       await logStore.flush();
+      await saveState();
       app.log.info('shutdown complete');
       process.exit(0);
     } catch (e) {

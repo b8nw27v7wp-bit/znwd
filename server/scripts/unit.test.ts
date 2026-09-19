@@ -17,6 +17,8 @@ import { parseChatInput, normalizeSessionId, validationMessage } from '../src/ht
 import { decideOrigin, resolveCorsOrigins, corsHeadersFor } from '../src/http/cors.ts';
 import { chunkText } from '../src/knowledge/loader.ts';
 import { Retriever } from '../src/knowledge/retriever.ts';
+import { rewriteForRetrieval } from '../src/rag/rewrite.ts';
+import { readState, writeState } from '../src/state/persist.ts';
 import type { EmbeddingProvider } from '../src/embedding/types.ts';
 import type { KnowledgeChunk } from '../src/knowledge/loader.ts';
 import { Analytics } from '../src/analytics/stats.ts';
@@ -476,6 +478,162 @@ test('runChat：域外问题 noHit=true 且计入统计', async () => {
   assert.equal(res.sources.length, 0);
   assert.ok(res.answer.includes('展厅资料中没有'));
   assert.equal(analytics.stats(1).noHit, 1);
+});
+
+test('rewriteForRetrieval：省略式追问继承上一轮主题词', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'znwd-rw-'));
+  const bag: EmbeddingProvider = {
+    name: 'bag-test',
+    dims: 3,
+    semantic: false,
+    async embed(texts: string[]) {
+      return texts.map(() => [1, 0, 0]);
+    },
+  };
+  const store = new VectorStore(bag, path.join(dir, 'v.json'));
+  const r = new HybridRetriever(store, { minKeywordScore: 1 });
+  await r.replace([
+    {
+      id: 'svc',
+      title: '服务、培训与合作',
+      sourcePath: 'svc.md',
+      text: '提供设备操作培训 与 区域运维伙伴合作 报名',
+      zone: 'service',
+      zoneTitle: '服务与合作',
+      tags: [],
+    },
+    {
+      id: 'pv',
+      title: '光伏清洁',
+      sourcePath: 'pv.md',
+      text: '光伏组件表面清洁作业',
+      zone: 'pv-clean',
+      zoneTitle: '光伏清洁无人机',
+      tags: [],
+    },
+  ]);
+
+  // 1) 本轮检索不到 → 继承上一轮主题
+  const rw = rewriteForRetrieval(r, '那怎么报名？', [
+    { role: 'user', content: '提供培训吗？' },
+    { role: 'assistant', content: '……' },
+  ]);
+  assert.equal(rw.rewritten, true);
+  assert.equal(rw.reason, 'ellipsis_merged');
+  assert.ok(rw.carriedTokens.length > 0);
+  assert.equal(rw.carriedTopic, '服务、培训与合作');
+  assert.ok(rw.query.includes('培训') || rw.query.includes('服务'));
+
+  // 2) 本轮自己能检索到 → 不动
+  const selfHit = rewriteForRetrieval(r, '光伏组件表面清洁怎么做？', [
+    { role: 'user', content: '提供培训吗？' },
+  ]);
+  assert.equal(selfHit.rewritten, false);
+  assert.equal(selfHit.reason, 'none');
+  assert.equal(selfHit.query, '光伏组件表面清洁怎么做？');
+
+  // 3) 无上文 → 不硬接
+  const noHistory = rewriteForRetrieval(r, '那怎么报名？', []);
+  assert.equal(noHistory.rewritten, false);
+  assert.equal(noHistory.reason, 'no_history');
+
+  // 4) 上一轮也是弱问题 → 不硬接
+  const prevWeak = rewriteForRetrieval(r, '那怎么报名？', [{ role: 'user', content: '今天天气如何？' }]);
+  assert.equal(prevWeak.rewritten, false);
+  assert.equal(prevWeak.reason, 'prev_weak');
+
+  // 5) 长问句不走省略式改写
+  const longAsk = rewriteForRetrieval(
+    r,
+    '那你们能不能告诉我到底应该怎么联系相关负责人和后续的流程安排呢？',
+    [{ role: 'user', content: '提供培训吗？' }],
+  );
+  assert.equal(longAsk.rewritten, false);
+});
+
+test('Analytics：未覆盖问题清单（明文留存、限量、可关闭）', () => {
+  const a = new Analytics(2);
+  const base = { sessionId: 's', mode: 'llm_only' as const, provider: 'mock', messagePreview: 'p', answerPreview: '', latencyMs: 1 };
+  a.logChat({ ...base, at: 1, noHit: true, question: '洗手间怎么走' });
+  a.logChat({ ...base, at: 2, noHit: true, question: '今天上海天气' });
+  a.logChat({ ...base, at: 3, noHit: true, question: '午饭吃什么' });
+  a.logChat({ ...base, at: 4, noHit: false, question: '不该留存的问题' });
+  const list = a.uncoveredList();
+  assert.equal(list.length, 2, '上限 2，只留最新两条');
+  assert.equal(list[0]!.question, '午饭吃什么');
+  assert.ok(!list.some((i) => i.question === '不该留存的问题'), '命中知识的问题不进清单');
+  assert.equal(a.stats(1).uncoveredCount, 2);
+
+  const off = new Analytics(0);
+  off.logChat({ ...base, at: 5, noHit: true, question: '关闭时不留存' });
+  assert.equal(off.uncoveredList().length, 0);
+  assert.equal(off.stats(1).uncoveredCount, 0);
+});
+
+test('持久化：会话/统计/反馈 落盘后可恢复（PERSIST_STATE 路径）', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'znwd-state-'));
+
+  const sessions = new SessionStore();
+  sessions.append('s1', '光伏清洁无人机是做什么的？', '它是……');
+  const analytics = new Analytics(5);
+  analytics.logChat({
+    at: Date.now(),
+    sessionId: 's1',
+    mode: 'rag',
+    provider: 'mock',
+    messagePreview: 'p',
+    answerPreview: 'a',
+    latencyMs: 3,
+  });
+  analytics.logFeedback({ at: Date.now(), sessionId: 's1', rating: 'down', question: '叶片检测要停机吗？' });
+  analytics.logChat({
+    at: Date.now(),
+    sessionId: 's1',
+    mode: 'llm_only',
+    provider: 'mock',
+    messagePreview: 'p',
+    answerPreview: '',
+    latencyMs: 1,
+    noHit: true,
+    question: '会议室在哪里',
+  });
+
+  const s = analytics.exportState();
+  await writeState(dir, {
+    stats: {
+      startedAt: s.startedAt,
+      chatTotal: s.chatTotal,
+      ragHits: s.ragHits,
+      errors: s.errors,
+      noHits: s.noHits,
+      rewritten: s.rewritten,
+    },
+    feedback: s.feedback,
+    uncovered: s.uncovered,
+    sessions: sessions.exportState(),
+  });
+
+  // 模拟重启：新实例从盘上恢复
+  const restored = await readState(dir);
+  assert.ok(restored, 'state.json 应能读回');
+  const s2 = new SessionStore();
+  const loadedSessions = s2.importState(restored!.sessions);
+  assert.equal(loadedSessions, 1);
+  assert.equal(s2.peek('s1')?.messages.length, 2);
+
+  const a2 = new Analytics(5);
+  a2.importState({ ...restored!.stats, feedback: restored!.feedback, uncovered: restored!.uncovered });
+  const stats = a2.stats(1);
+  assert.equal(stats.chatTotal, 2);
+  assert.equal(stats.ragHits, 1);
+  assert.equal(stats.noHit, 1);
+  assert.equal(stats.feedback.down, 1);
+  assert.equal(a2.feedbackStats().topDown[0]?.question, '叶片检测要停机吗？');
+  assert.equal(a2.uncoveredList()[0]?.question, '会议室在哪里');
+
+  // 损坏文件不应炸：读到 null，按空状态启动
+  await writeFile(path.join(dir, 'state.json'), '{ 坏掉的 json', 'utf8');
+  assert.equal(await readState(dir), null);
 });
 
 test('streamChat：与非流式共用答案缓存', async () => {

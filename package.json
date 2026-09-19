@@ -12,7 +12,11 @@
     "build": "npm run build -w server && npm run build -w web",
     "start": "npm run start -w server",
     "test": "npm test -w server",
-    "eval:retrieval": "npm run eval:retrieval -w server"
+    "eval:retrieval": "npm run eval:retrieval -w server",
+    "calibrate": "npm run calibrate -w server",
+    "ingest": "npm run ingest -w server --",
+    "verify": "node scripts/verify.mjs",
+    "verify:quick": "node scripts/verify.mjs --quick"
   },
   "allowScripts": {
     "esbuild@0.28.2": true,

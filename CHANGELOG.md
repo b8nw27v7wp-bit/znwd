@@ -2,6 +2,41 @@
 
 本项目版本与变更记录。日期：YYYY-MM-DD。
 
+## [0.10.0] — 2026-09-19
+
+补齐 0.9.0 评审报告里「仍未做」的可在本机完成项：多轮指代改写、资料入库、状态持久化、一键验收与 CI。
+
+### Added
+
+- **多轮指代改写**（`server/src/rag/rewrite.ts`）：本轮关键词检索拿不到达标候选、且提问是省略式追问（「那要多久？」）时，把上一轮命中的主题词补进检索查询。只在必要时触发，回答仍按原问题。
+  实测（`followUps` 用例）：不改写 top1 **0.6667** → 改写后 **1.00**（救回「那要多久？」→ 叶片检测说明、「那怎么报名？」→ 服务、培训与合作）。
+- **资料入库**（`server/scripts/ingest-docs.ts`，`npm run ingest -w server -- --src <目录> --zone <展区id>`）：PDF（pdftotext）/ DOCX（python-docx）/ txt / md → `knowledge/<展区>/<名>.md`，带 frontmatter（title/zone/tags/source）。
+  - 无文字层的扫描件会明确报错（提示走 OCR），不会写出空文件；
+  - 目标已存在需 `--force`，支持 `--dry-run`；
+  - 已验证：ASCII PDF 与中文 DOCX（含标题层级与表格）转换正确，扫描件按预期拒绝。
+- **状态持久化**（`server/src/state/persist.ts`，`PERSIST_STATE=true`）：会话、问答计数、反馈、未覆盖清单落盘 `DATA_DIR/state.json`（原子写），启动恢复、定时与退出时落盘。
+  实测：硬杀进程后重启，`chatTotal`/`noHit`/反馈统计/未覆盖清单/会话历史全部恢复。
+- **未覆盖问题清单**：`GET /api/admin/uncovered` 返回 noHit 的原始提问（内存、限量 `UNCOVERED_LOG_SIZE`，默认 50，0 关闭），`/api/stats` 增 `rewritten`/`uncoveredCount` 计数——补资料终于有靶子。
+- **一键验收**（`npm run verify`）：build → unit → 起 dist 服务 → api-audit → eval，独立端口 8791，不干扰开发中的 8787；`--quick` 跳过 web 构建与 eval。
+- **CI**：`.github/workflows/ci.yml`（build + unit + eval + calibrate + 起服务跑 api-audit）。
+- `npm run eval:retrieval -- --no-write`：只打印不写基线，便于实验（如换 KNOWLEDGE_DIR）时不污染仓库。
+
+### Changed
+
+- `calibrate` 输出当前生效阈值与代码默认值，不再写死文案。
+- api-audit 增 `admin-uncovered-list` 检查（**36/36**）。
+
+### Test
+
+- unit **35/35**（新增改写触发/不触发边界、未覆盖清单限量与关闭、持久化往返与损坏文件容错）
+- api-audit **36/36**；`npm run verify` **5/5 通过（约 10s）**
+- eval：top1 0.9667 / top3 1.00 / 闸门漏答 0 / 追问改写 top1 1.00
+
+### Notes
+
+- 入库文档会改变 IDF：实测把 2 篇测试文档入库后 `knowledgeChunks` 23 → 28、top1 0.9667 → 0.9333。
+  **入库后必须重跑 `calibrate` + `eval:retrieval`**（本次实测阈值区间未变，仍建议每次核对）。
+
 ## [0.9.0] — 2026-09-18
 
 第二轮加固：入参边界、CORS 白名单、统一 404 信封、相关性闸门、检索如实上报、分块器、反馈闭环、测试与文档对齐。

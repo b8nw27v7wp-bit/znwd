@@ -279,6 +279,15 @@ function rec(name, ok, detail) {
   const oa2 = await j('/api/openapi.json');
   rec('openapi-has-schemas', !!oa2.body.components?.schemas?.ChatRequest, Object.keys(oa2.body.components?.schemas || {}).join(','));
 
+  const unc = await j('/api/admin/uncovered');
+  rec(
+    'admin-uncovered-list',
+    unc.status === 200 && unc.body.count >= 1 && unc.body.items.some((i) => i.question === '今天上海天气怎么样？'),
+    `count=${unc.body.count} latest=${unc.body.items?.[0]?.question}`,
+  );
+  const uncCsv = await j('/api/admin/uncovered?format=json');
+  rec('admin-uncovered-ignores-format', uncCsv.status === 200, `status=${uncCsv.status}`);
+
   const fail = results.filter((r) => !r.ok);
   console.log('\nSUMMARY', `${results.length - fail.length}/${results.length} passed`);
   if (fail.length) {
