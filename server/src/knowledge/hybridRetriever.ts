@@ -252,7 +252,10 @@ export class HybridRetriever {
     }
 
     const useKeyword = gated ? [] : kw;
-    const useVector = gated ? [] : vec;
+    // 非语义向量（bag = 哈希兜底）不参与排序融合：它不是相似度，融合进来只会打乱
+    // 关键词路的排序，而 mode 却如实上报 'keyword' —— 上报与行为不一致最难排查。
+    // 闸门那侧本来就要求 semantic，这里与之一致。
+    const useVector = gated || !semantic ? [] : vec;
 
     // mode 如实上报：只有语义向量真的参与融合时才算 hybrid
     const mode: 'keyword' | 'hybrid' = semantic && useVector.length > 0 ? 'hybrid' : 'keyword';

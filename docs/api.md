@@ -121,7 +121,8 @@ Base URL：开发态经 Vite 代理为 `http://localhost:5173`；直连后端为
 | `retrieval` | `hybrid`（语义向量参与）或 `keyword`，**如实反映** |
 | `noHit` | `true` = 相关性闸门未通过（知识库未覆盖），本次回答没有任何知识片段支撑 |
 | `rewrite` | 多轮指代改写：`{ rewritten, reason, carriedTokens }`；`reason=none/no_history/prev_weak/ellipsis_merged`。检索用改写后的查询，回答仍按原问题 |
-| `usage` | 本次调用的 token 用量 `{ promptTokens, completionTokens, reasoningTokens, totalTokens }`；命中缓存时为 `undefined`（没花钱） |
+| `usage` | 本次调用的 token 用量 `{ promptTokens, completionTokens, reasoningTokens, totalTokens }`；命中缓存时为 `undefined`（没花钱）；`provider='gate'`（闸门拦截走固定回复）时也没有 |
+| `provider` | `mock` / `openai_compat` / **`gate`**（闸门拦截，未调用大模型） |
 | `cached` | 是否命中答案缓存（缓存 key 含 model + 索引 generation + message） |
 
 **相关性闸门**
@@ -345,6 +346,7 @@ SSE 流式问答。请求体同 `/api/chat`。
 | `MIN_RELEVANCE_SCORE` | `3.8` | 关键词分闸门（`npm run calibrate -w server` 标定）。**相对量**：语料一变必须重标 |
 | `MIN_VECTOR_SCORE` | `0.35` | 语义向量兜底的最低余弦 |
 | `UNCOVERED_LOG_SIZE` | `50` | noHit 原始提问留存条数（0 = 关闭） |
+| `NO_HIT_LLM` | `false` | 闸门未通过时是否仍让大模型生成拒答文案。默认 `false` = 返回固定回复（`provider='gate'`、无 token 消耗、响应即时）；`true` 才走模型 |
 | `PERSIST_STATE` | `false` | 状态落盘 `DATA_DIR/state.json`，重启恢复会话/计数/反馈/未覆盖清单 |
 | `PERSIST_INTERVAL_SEC` | `60` | 定时落盘间隔（下限 10s）；退出时也会落盘 |
 | `LLM_EXTRA_BODY` | 空 | JSON 合并进请求体；MiMo 必须 `{"thinking":{"type":"disabled"}}`（默认 enabled，开着又慢又贵） |

@@ -46,6 +46,8 @@ async function main() {
     (process.env.LOG_MESSAGE_MODE || 'hash').toLowerCase() === 'preview' ? 'preview' : 'hash';
   const corsOrigins = resolveCorsOrigins(process.env);
   const thresholds = resolveThresholds(process.env);
+  // 闸门未通过时是否仍让大模型生成拒答文案（默认否：固定回复，省一次调用）
+  const noHitLlm = (process.env.NO_HIT_LLM || 'false').toLowerCase() === 'true';
   const persistState = (process.env.PERSIST_STATE || 'false').toLowerCase() === 'true';
   const persistIntervalSec = Number(process.env.PERSIST_INTERVAL_SEC || 60);
 
@@ -159,6 +161,7 @@ async function main() {
     adminTokenRequired: requireAdmin,
     corsOrigins,
     minRelevanceScore: thresholds.minKeywordScore,
+    noHitLlm,
     persistState,
     host,
     uptimeSec: Math.floor(process.uptime()),
@@ -184,6 +187,7 @@ async function main() {
     logStore,
     corsOrigins,
     minRelevanceScore: thresholds.minKeywordScore,
+    noHitLlm,
   });
 
   if (watchKnowledge) {

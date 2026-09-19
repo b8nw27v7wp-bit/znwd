@@ -25,7 +25,12 @@ const SYN: Record<string, string[]> = {
   展品: ['展品', '触摸', '安全'],
 };
 
-export function expandQueryText(query: string): string {
+/**
+ * 拆出「原查询」与「扩展词」两部分，供检索器给扩展词降权。
+ * 扩展词是**提示**不是要求：它与原查询词同权时，会把「碰巧含这些泛词的无关文档」
+ * 抬到正确文档之上（实测：闪光灯→拍摄 把风机拍摄方案抬到展厅须知之上）。
+ */
+export function expandQueryParts(query: string): { original: string; extras: string[] } {
   const extras: string[] = [];
   for (const [key, alts] of Object.entries(SYN)) {
     if (query.includes(key)) {
@@ -34,5 +39,10 @@ export function expandQueryText(query: string): string {
       }
     }
   }
-  return extras.length ? `${query} ${extras.join(' ')}` : query;
+  return { original: query, extras };
+}
+
+export function expandQueryText(query: string): string {
+  const { original, extras } = expandQueryParts(query);
+  return extras.length ? `${original} ${extras.join(' ')}` : original;
 }

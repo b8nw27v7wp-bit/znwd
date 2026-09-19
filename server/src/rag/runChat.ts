@@ -13,6 +13,8 @@ export interface RunChatDeps {
   analytics: Analytics;
   answerCache: LruCache<CachedAnswer>;
   logStore: JsonlStore;
+  /** 闸门未通过时是否仍调用大模型生成拒答（默认 false：用固定回复，省一次调用） */
+  noHitLlm?: boolean;
 }
 
 export interface RunChatInput {
@@ -116,7 +118,10 @@ export async function runChat(deps: RunChatDeps, input: RunChatInput): Promise<R
     };
   }
 
-  const result = await answerQuestion(deps.retriever, deps.model, message, { history });
+  const result = await answerQuestion(deps.retriever, deps.model, message, {
+    history,
+    noHitLlm: deps.noHitLlm,
+  });
   deps.sessions.append(sessionId, message, result.answer);
 
   const payload: CachedAnswer = {
@@ -274,7 +279,10 @@ export async function* streamChat(deps: RunChatDeps, input: RunChatInput): Async
   let rewritten = false;
   let usage: LlmUsage | undefined;
 
-  for await (const ev of streamAnswer(deps.retriever, deps.model, message, { history })) {
+  for await (const ev of streamAnswer(deps.retriever, deps.model, message, {
+    history,
+    noHitLlm: deps.noHitLlm,
+  })) {
     if (ev.type === 'meta') {
       mode = ev.mode;
       sources = ev.sources;

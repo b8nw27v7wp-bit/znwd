@@ -37,6 +37,20 @@ const SYSTEM_BASE =
 const NO_HIT_HINT =
   '（本次未检索到相关资料。请直接说明资料中没有这部分内容，并建议参观者改问产品、作业流程、服务合作或展厅参观相关的问题；不要凭常识编造产品参数、价格或承诺。）';
 
+/**
+ * 闸门未通过时的固定回复（默认直接返回，不调用大模型）。
+ * 理由：拒答文案是固定的，让模型再生成一遍纯属花钱——实测一次约 780 tokens，
+ * 且展厅场景要的是稳定、即时，不是文采。需要模型措辞时设 NO_HIT_LLM=true。
+ */
+export const NO_HIT_REPLY =
+  '抱歉，这个问题不在我的讲解范围内，资料中也没有相关内容。\n\n' +
+  '我是光伏清洁无人机与风场检测无人机的虚拟讲解员，可以为您解答：\n' +
+  '1. 产品相关：光伏清洁无人机、风场检测无人机的功能与特点\n' +
+  '2. 作业流程：无人机巡检、清洁的具体操作方式\n' +
+  '3. 服务合作：业务合作模式与服务内容\n' +
+  '4. 展厅参观：展区分布与参观须知\n\n' +
+  '欢迎换个角度提问。';
+
 function toSources(hits: HybridHit[]): RagSource[] {
   return hits.map((h) => ({
     title: h.title,
@@ -101,11 +115,26 @@ export async function answerQuestion(
   retriever: HybridRetriever,
   model: ChatModel,
   message: string,
-  options: { topK?: number; history?: ChatMessage[] } = {},
+  options: { topK?: number; history?: ChatMessage[]; noHitLlm?: boolean } = {},
 ): Promise<RagAnswer> {
   const topK = options.topK ?? 4;
   const history = (options.history ?? []).slice(-12);
   const { hits, diagnostics, rewrite } = await retrieveForMessage(retriever, message, topK, history);
+
+  // 闸门未通过：直接给固定回复，不调用大模型（省一次调用，且响应即时、措辞稳定）
+  if (hits.length === 0 && !options.noHitLlm) {
+    return {
+      answer: NO_HIT_REPLY,
+      sources: [],
+      mode: 'llm_only',
+      provider: 'gate',
+      retrieval: diagnostics.mode,
+      noHit: true,
+      diagnostics,
+      rewrite,
+    };
+  }
+
   const messages = buildPrompt(hits, message, history);
   const result = await model.complete({ messages });
 
@@ -126,7 +155,7 @@ export async function* streamAnswer(
   retriever: HybridRetriever,
   model: ChatModel,
   message: string,
-  options: { topK?: number; history?: ChatMessage[] } = {},
+  options: { topK?: number; history?: ChatMessage[]; noHitLlm?: boolean } = {},
 ): AsyncGenerator<
   | {
       type: 'meta';
@@ -143,17 +172,25 @@ export async function* streamAnswer(
   const topK = options.topK ?? 4;
   const history = (options.history ?? []).slice(-12);
   const { hits, diagnostics, rewrite } = await retrieveForMessage(retriever, message, topK, history);
-  const messages = buildPrompt(hits, message, history);
 
   yield {
     type: 'meta',
     sources: toSources(hits),
     mode: hits.length > 0 ? 'rag' : 'llm_only',
-    provider: model.name,
+    provider: hits.length === 0 && !options.noHitLlm ? 'gate' : model.name,
     noHit: hits.length === 0,
     diagnostics,
     rewrite,
   };
+
+  // 闸门未通过：固定回复，不调用大模型
+  if (hits.length === 0 && !options.noHitLlm) {
+    yield { type: 'delta', text: NO_HIT_REPLY };
+    yield { type: 'done', full: NO_HIT_REPLY };
+    return;
+  }
+
+  const messages = buildPrompt(hits, message, history);
 
   let full = '';
   if (model.stream) {

@@ -7,7 +7,13 @@ import { SessionStore } from '../src/session/store.ts';
 import { RateLimiter } from '../src/http/rateLimit.ts';
 import { LruCache, answerCacheKey, adminOk, JsonlStore } from '../src/http/cache.ts';
 import { adminTokenRequired, errorPayload, messageLogFields, hashStr } from '../src/http/errors.ts';
-import { expandQueryText } from '../src/knowledge/synonyms.ts';
+import { expandQueryParts, expandQueryText } from '../src/knowledge/synonyms.ts';
+import { Retriever, EXPANSION_WEIGHT } from '../src/knowledge/retriever.ts';
+import { HybridRetriever } from '../src/knowledge/hybridRetriever.ts';
+import { VectorStore } from '../src/knowledge/vectorStore.ts';
+import { BagEmbeddingProvider } from '../src/embedding/bag.ts';
+import { answerQuestion, NO_HIT_REPLY } from '../src/rag/pipeline.ts';
+import type { ChatModel } from '../src/llm/types.ts';
 import { buildGroundedAnswer } from '../src/llm/grounded.ts';
 import { MockChatModel } from '../src/llm/mock.ts';
 import {
@@ -407,7 +413,11 @@ test('HybridRetriever：bag 非语义时闸门拦截域外问题且 mode 如实�
   );
 
   const raw = await r.retrieve('今天上海天气怎么样？');
-  assert.ok(raw.length > 0, '未加闸门的原始检索仍可看到向量路噪声命中（供排查）');
+  // 非语义向量（bag 哈希）不再参与融合：这条域外问题在关键词路没有候选，
+  // 于是未加闸门时也**没有**候选（此前是被哈希向量的噪声命中撑起来的）。
+  // 排查价值仍在诊断里：向量余弦照常上报，但不影响排序。
+  assert.equal(raw.length, 0);
+  assert.equal(typeof ood.diagnostics.vectorBestCosine, 'number');
   assert.equal(r.stats().mode, 'keyword');
   assert.equal(r.stats().semantic, false);
   assert.ok(r.stats().degradedReason);
@@ -482,7 +492,8 @@ test('runChat：域外问题 noHit=true 且计入统计', async () => {
   assert.equal(res.mode, 'llm_only');
   assert.equal(res.retrieval, 'keyword');
   assert.equal(res.sources.length, 0);
-  assert.ok(res.answer.includes('展厅资料中没有'));
+  assert.ok(res.answer.includes('不在我的讲解范围内'));
+  assert.equal(res.provider, 'gate', '闸门拦截走固定回复，不应调用大模型');
   assert.equal(analytics.stats(1).noHit, 1);
 });
 
@@ -702,4 +713,64 @@ test('闸门阈值解析：空串/非法值退回默认值，不产生 NaN', () 
   assert.equal(resolveThresholds({ MIN_RELEVANCE_SCORE: '' }).minKeywordScore, DEFAULT_MIN_KEYWORD_SCORE);
   assert.equal(resolveThresholds({ MIN_VECTOR_SCORE: 'abc' }).minVectorScore, DEFAULT_MIN_VECTOR_SCORE);
   assert.ok(Number.isFinite(resolveThresholds({ MIN_RELEVANCE_SCORE: 'abc' }).minKeywordScore));
+});
+
+test('同义词扩展拆分：扩展词不与原查询重叠（否则等于给原词加权）', () => {
+  const { original, extras } = expandQueryParts('拍照能开闪光灯吗？');
+  assert.equal(original, '拍照能开闪光灯吗？');
+  assert.ok(extras.includes('摄影') || extras.includes('拍摄'), '应扩展出拍摄/摄影');
+  assert.ok(!extras.includes('闪光灯'), '原查询已有的词不应出现在扩展里');
+});
+
+test('扩展词降权：原查询词权重 1，扩展词低于 1', () => {
+  assert.ok(EXPANSION_WEIGHT > 0 && EXPANSION_WEIGHT < 1);
+  const r = new Retriever();
+  r.replace([
+    {
+      id: 'a#0',
+      title: '甲文档',
+      sourcePath: 'a.md',
+      zone: 'x',
+      zoneTitle: 'X',
+      tags: [],
+      text: '这里只讲拍摄方案与航线规划。',
+    },
+    {
+      id: 'b#0',
+      title: '乙文档',
+      sourcePath: 'b.md',
+      zone: 'x',
+      zoneTitle: 'X',
+      tags: [],
+      text: '拍照请关闭闪光灯。',
+    },
+  ]);
+  // 「拍照能开闪光灯吗」的原查询词命中乙文档；扩展出的「拍摄」只命中甲文档，不应翻盘
+  const hits = r.retrieve('拍照能开闪光灯吗？', 2);
+  assert.equal(hits[0]?.sourcePath, 'b.md');
+});
+
+test('闸门拦截时不调用大模型：固定回复 + provider=gate', async () => {
+  let calls = 0;
+  const spyModel: ChatModel = {
+    name: 'spy',
+    complete: async () => {
+      calls++;
+      return { content: '不该被调用', provider: 'spy' };
+    },
+  };
+  const dir = await mkdtemp(path.join(tmpdir(), 'znwd-nohit-'));
+  const empty = new HybridRetriever(
+    new VectorStore(new BagEmbeddingProvider(), path.join(dir, 'vectors.json')),
+  );
+  await empty.replace([]);
+  const r = await answerQuestion(empty, spyModel, '今天上海天气怎么样？', {});
+  assert.equal(calls, 0, '闸门拦截时不应调用模型');
+  assert.equal(r.noHit, true);
+  assert.equal(r.provider, 'gate');
+  assert.equal(r.answer, NO_HIT_REPLY);
+  // 显式打开时才回落到模型
+  const r2 = await answerQuestion(empty, spyModel, '今天上海天气怎么样？', { noHitLlm: true });
+  assert.equal(calls, 1);
+  assert.equal(r2.provider, 'spy');
 });

@@ -10,6 +10,7 @@
     "test": "tsx --test scripts/unit.test.ts",
     "eval:retrieval": "tsx scripts/eval-retrieval.ts",
     "calibrate": "tsx scripts/calibrate.ts",
+    "tune:scoring": "tsx scripts/tune-scoring.mjs",
     "ingest": "tsx scripts/ingest-docs.ts"
   },
   "dependencies": {
