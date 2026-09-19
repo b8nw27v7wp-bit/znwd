@@ -2,6 +2,31 @@
 
 本项目版本与变更记录。日期：YYYY-MM-DD。
 
+## [0.11.0] — 2026-09-19
+
+接入小米 MiMo v2.5（关闭思考模式）跑通真实链路，并让 token 成本可见。
+
+### Added
+
+- **`LLM_EXTRA_BODY`**：JSON 合并进请求体。MiMo 的 `thinking` 默认 `enabled`（官方文档：默认开、且会消耗
+  `reasoning_tokens`），必须显式传 `{"thinking":{"type":"disabled"}}`；实测返回 `reasoningTokens: 0`，确认已关。
+- **`LLM_MAX_TOKENS`**：输出 token 上限（`max_completion_tokens`），成本闸门——展厅回答不需要长文。
+- **token 用量统计**：`/api/chat`、`/api/chat/stream` 的 `done` 事件返回 `usage`
+  （`promptTokens/completionTokens/reasoningTokens/totalTokens`）；`/api/stats` 累计
+  `tokens{prompt,completion,reasoning,total,calls}`，随 `PERSIST_STATE` 一起落盘。命中缓存不计数（没花钱）。
+  `reasoning > 0` 就是思考模式没关的信号。
+
+### Changed
+
+- `docs/api.md`：补 `usage`、`tokens` 字段与 `LLM_EXTRA_BODY`/`LLM_MAX_TOKENS`/`LLM_MAX_RETRIES`/`LLM_TIMEOUT_MS`。
+- `server/.env.example`：补 MiMo（`api.xiaomimimo.com/v1`、`mimo-v2.5`）与智谱 GLM 两套示例。
+
+### Verified
+
+- 真实链路（MiMo v2.5，thinking 关）：非流式 2.7~5.6s、流式首字 3.65s，`mode=rag`、4 条来源、答案基于片段；
+  单次用量 prompt 390 / completion 77 / reasoning 0。
+- `npm run verify`（用 `LLM_PROVIDER=mock` 跑，避免消耗付费额度）5/5 通过。
+
 ## [0.10.1] — 2026-09-19
 
 接入真实 LLM（智谱 GLM，OpenAI 兼容网关）时暴露的客户端健壮性问题修复。

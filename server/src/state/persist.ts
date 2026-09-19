@@ -32,6 +32,7 @@ export interface PersistedState {
     errors?: number;
     noHits?: number;
     rewritten?: number;
+    tokens?: { prompt?: number; completion?: number; reasoning?: number; total?: number; calls?: number };
   };
   feedback: FeedbackItem[];
   uncovered: UncoveredItem[];

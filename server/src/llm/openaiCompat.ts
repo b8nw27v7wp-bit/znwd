@@ -1,4 +1,4 @@
-import type { ChatCompletionInput, ChatCompletionResult, ChatModel } from './types.js';
+import type { ChatCompletionInput, ChatCompletionResult, ChatModel, LlmUsage } from './types.js';
 
 export interface OpenAICompatConfig {
   baseUrl: string;
@@ -9,6 +9,29 @@ export interface OpenAICompatConfig {
   maxRetries?: number;
   /** 退避基数，默认 1000ms */
   retryBaseMs?: number;
+  /** 输出 token 上限（成本闸门），对应 max_completion_tokens */
+  maxTokens?: number;
+  /** 额外请求体字段（如 MiMo 的 {"thinking":{"type":"disabled"}}），合并进请求 */
+  extraBody?: Record<string, unknown>;
+}
+
+export function pickUsage(raw: unknown): LlmUsage | undefined {
+  const u = raw as
+    | {
+        prompt_tokens?: number;
+        completion_tokens?: number;
+        total_tokens?: number;
+        completion_tokens_details?: { reasoning_tokens?: number };
+      }
+    | null
+    | undefined;
+  if (!u) return undefined;
+  return {
+    promptTokens: u.prompt_tokens,
+    completionTokens: u.completion_tokens,
+    totalTokens: u.total_tokens,
+    reasoningTokens: u.completion_tokens_details?.reasoning_tokens,
+  };
 }
 
 /** 智谱等网关的过载/限流业务码（HTTP 可能是 429，也可能是 200 带 error 体） */
@@ -48,6 +71,8 @@ export class LlmHttpError extends Error {
 
 export class OpenAICompatChatModel implements ChatModel {
   readonly name = 'openai_compat';
+  /** 最近一次调用的 token 用量（流式也记），供统计与成本观察 */
+  lastUsage?: LlmUsage;
 
   constructor(private readonly config: OpenAICompatConfig) {
     if (!config.baseUrl) throw new Error('LLM_BASE_URL is required for openai_compat');
@@ -63,6 +88,19 @@ export class OpenAICompatChatModel implements ChatModel {
 
   private url(): string {
     return this.config.baseUrl.replace(/\/$/, '') + '/chat/completions';
+  }
+
+  /** 请求体：额外字段先铺，显式字段后覆盖（避免 extraBody 改掉 model/messages/stream） */
+  private payload(messages: ChatCompletionInput['messages'], stream: boolean): Record<string, unknown> {
+    const base: Record<string, unknown> = {
+      ...(this.config.extraBody ?? {}),
+      model: this.config.model,
+      messages,
+      temperature: 0.3,
+      stream,
+    };
+    if (this.config.maxTokens) base.max_completion_tokens = this.config.maxTokens;
+    return base;
   }
 
   /** 单次 POST；非 2xx 抛 LlmHttpError（带 body 以便判断是否可重试） */
@@ -123,25 +161,20 @@ export class OpenAICompatChatModel implements ChatModel {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.config.timeoutMs ?? 90_000);
     try {
-      const res = await this.postWithRetry(
-        {
-          model: this.config.model,
-          messages: input.messages,
-          temperature: 0.3,
-          stream: false,
-        },
-        controller.signal,
-      );
+      const res = await this.postWithRetry(this.payload(input.messages, false), controller.signal);
       const data = (await res.json()) as {
         choices?: Array<{ message?: { content?: string; reasoning_content?: string } }>;
         error?: { code?: string; message?: string };
+        usage?: unknown;
       };
       if (data.error) {
         throw new LlmHttpError(200, JSON.stringify(data.error), `LLM error: ${data.error.message ?? ''}`);
       }
       const content = data.choices?.[0]?.message?.content?.trim();
       if (!content) throw new Error('LLM returned empty content');
-      return { content, provider: this.name };
+      const usage = pickUsage(data.usage);
+      if (usage) this.lastUsage = usage;
+      return { content, provider: this.name, usage };
     } finally {
       clearTimeout(timer);
     }
@@ -151,15 +184,7 @@ export class OpenAICompatChatModel implements ChatModel {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.config.timeoutMs ?? 180_000);
     try {
-      const res = await this.postWithRetry(
-        {
-          model: this.config.model,
-          messages: input.messages,
-          temperature: 0.3,
-          stream: true,
-        },
-        controller.signal,
-      );
+      const res = await this.postWithRetry(this.payload(input.messages, true), controller.signal);
       if (!res.body) {
         const r = await this.complete(input);
         yield r.content;
@@ -182,7 +207,10 @@ export class OpenAICompatChatModel implements ChatModel {
           try {
             const j = JSON.parse(payload) as {
               choices?: Array<{ delta?: { content?: string; reasoning_content?: string } }>;
+              usage?: unknown;
             };
+            const u = pickUsage(j.usage);
+            if (u) this.lastUsage = u;
             // 只取正文：推理模型的 reasoning_content 不进回答、不进 TTS
             const piece = j.choices?.[0]?.delta?.content;
             if (piece) yield piece;

@@ -1,3 +1,5 @@
+import type { LlmUsage } from '../llm/types.js';
+
 export interface ChatLogItem {
   at: number;
   sessionId: string | null;
@@ -13,6 +15,8 @@ export interface ChatLogItem {
   rewritten?: boolean;
   /** 知识库未覆盖时的原始提问（仅 noHit 且开启 UNCOVERED_LOG_SIZE 时留存，供补资料） */
   question?: string;
+  /** 本次调用的 token 用量（成本观察） */
+  usage?: LlmUsage;
   error?: string;
 }
 
@@ -44,6 +48,7 @@ export class Analytics {
   private errors = 0;
   private noHits = 0;
   private rewritten = 0;
+  private tokenTotals = { prompt: 0, completion: 0, reasoning: 0, total: 0, calls: 0 };
   /** 未覆盖问题（明文）：这是下一批要补的知识，0 表示关闭留存 */
   private uncovered: UncoveredItem[] = [];
   private readonly maxUncovered: number;
@@ -58,6 +63,14 @@ export class Analytics {
     if (item.noHit) this.noHits++;
     if (item.rewritten) this.rewritten++;
     if (item.error) this.errors++;
+    if (item.usage && (item.usage.totalTokens ?? item.usage.promptTokens ?? item.usage.completionTokens)) {
+      this.tokenTotals.calls++;
+      this.tokenTotals.prompt += item.usage.promptTokens ?? 0;
+      this.tokenTotals.completion += item.usage.completionTokens ?? 0;
+      this.tokenTotals.reasoning += item.usage.reasoningTokens ?? 0;
+      this.tokenTotals.total +=
+        item.usage.totalTokens ?? (item.usage.promptTokens ?? 0) + (item.usage.completionTokens ?? 0);
+    }
     if (item.noHit && item.question && this.maxUncovered > 0) {
       this.uncovered.unshift({ at: item.at, sessionId: item.sessionId, question: item.question });
       if (this.uncovered.length > this.maxUncovered) this.uncovered.length = this.maxUncovered;
@@ -99,6 +112,8 @@ export class Analytics {
       rewritten: this.rewritten,
       /** 已留存的未覆盖问题条数（明细见 /api/admin/uncovered） */
       uncoveredCount: this.uncovered.length,
+      /** 累计 token 用量（网关返回 usage 时统计，用于成本观察） */
+      tokens: { ...this.tokenTotals },
       errors: this.errors,
       activeSessions,
       feedback: { up, down },
@@ -168,6 +183,7 @@ export class Analytics {
     errors: number;
     noHits: number;
     rewritten: number;
+    tokens: { prompt: number; completion: number; reasoning: number; total: number; calls: number };
     feedback: FeedbackItem[];
     uncovered: UncoveredItem[];
   } {
@@ -178,6 +194,7 @@ export class Analytics {
       errors: this.errors,
       noHits: this.noHits,
       rewritten: this.rewritten,
+      tokens: { ...this.tokenTotals },
       feedback: [...this.feedback],
       uncovered: [...this.uncovered],
     };
@@ -191,6 +208,7 @@ export class Analytics {
     errors?: number;
     noHits?: number;
     rewritten?: number;
+    tokens?: { prompt?: number; completion?: number; reasoning?: number; total?: number; calls?: number };
     feedback?: FeedbackItem[];
     uncovered?: UncoveredItem[];
   }): void {
@@ -200,6 +218,13 @@ export class Analytics {
     this.errors = state.errors ?? 0;
     this.noHits = state.noHits ?? 0;
     this.rewritten = state.rewritten ?? 0;
+    this.tokenTotals = {
+      prompt: state.tokens?.prompt ?? 0,
+      completion: state.tokens?.completion ?? 0,
+      reasoning: state.tokens?.reasoning ?? 0,
+      total: state.tokens?.total ?? 0,
+      calls: state.tokens?.calls ?? 0,
+    };
     this.feedback = Array.isArray(state.feedback) ? state.feedback.slice(0, MAX_FEEDBACK) : [];
     this.uncovered = Array.isArray(state.uncovered)
       ? state.uncovered.slice(0, this.maxUncovered)

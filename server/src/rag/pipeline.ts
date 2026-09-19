@@ -1,4 +1,4 @@
-import type { ChatMessage, ChatModel } from '../llm/types.js';
+import type { ChatMessage, ChatModel, LlmUsage } from '../llm/types.js';
 import type { HybridHit, HybridRetriever, RetrievalDiagnostics } from '../knowledge/hybridRetriever.js';
 import { expandQueryText } from '../knowledge/synonyms.js';
 import { rewriteForRetrieval, type RewriteResult } from './rewrite.js';
@@ -25,6 +25,8 @@ export interface RagAnswer {
   diagnostics?: RetrievalDiagnostics;
   /** 多轮指代改写信息（未改写时 reason='none'） */
   rewrite?: RewriteResult;
+  /** 本次调用的 token 用量（网关返回时才有） */
+  usage?: LlmUsage;
   queryExpanded?: string;
 }
 
@@ -116,6 +118,7 @@ export async function answerQuestion(
     noHit: hits.length === 0,
     diagnostics,
     rewrite,
+    usage: result.usage,
   };
 }
 
@@ -135,7 +138,7 @@ export async function* streamAnswer(
       rewrite: RewriteResult;
     }
   | { type: 'delta'; text: string }
-  | { type: 'done'; full: string }
+  | { type: 'done'; full: string; usage?: LlmUsage }
 > {
   const topK = options.topK ?? 4;
   const history = (options.history ?? []).slice(-12);
@@ -163,5 +166,5 @@ export async function* streamAnswer(
     full = r.content;
     yield { type: 'delta', text: full };
   }
-  yield { type: 'done', full };
+  yield { type: 'done', full, usage: model.lastUsage };
 }

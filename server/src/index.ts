@@ -117,6 +117,7 @@ async function main() {
         errors: s.errors,
         noHits: s.noHits,
         rewritten: s.rewritten,
+        tokens: s.tokens,
       },
       feedback: s.feedback,
       uncovered: s.uncovered,

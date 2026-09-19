@@ -362,6 +362,7 @@ export function registerChatRoutes(app: FastifyInstance, deps: RouteDeps): void 
               noHit: ev.noHit,
               retrieval: ev.retrieval,
               cached: ev.cached,
+              usage: ev.usage,
             });
           }
         }

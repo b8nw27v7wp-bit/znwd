@@ -1,4 +1,4 @@
-import type { ChatModel } from '../llm/types.js';
+import type { ChatModel, LlmUsage } from '../llm/types.js';
 import type { HybridRetriever } from '../knowledge/hybridRetriever.js';
 import type { SessionStore } from '../session/store.js';
 import type { Analytics } from '../analytics/stats.js';
@@ -34,6 +34,8 @@ export interface RunChatResponse {
   noHit: boolean;
   /** 多轮指代改写（检索用查询与是否发生改写） */
   rewrite?: { rewritten: boolean; reason: string; carriedTokens: string[] };
+  /** 本次调用的 token 用量（命中缓存时为 undefined，因为没花钱） */
+  usage?: LlmUsage;
 }
 
 function logMode(deps: RunChatDeps): LogMessageMode {
@@ -53,6 +55,7 @@ function writeChatLog(
     noHit?: boolean;
     retrieval?: string;
     rewritten?: boolean;
+    usage?: LlmUsage;
     error?: string;
   },
 ): void {
@@ -141,6 +144,7 @@ export async function runChat(deps: RunChatDeps, input: RunChatInput): Promise<R
     retrieval: result.retrieval,
     rewritten: result.rewrite?.rewritten === true,
     question: result.noHit ? message : undefined,
+    usage: result.usage,
   });
   writeChatLog(deps, {
     mode: result.mode,
@@ -153,6 +157,7 @@ export async function runChat(deps: RunChatDeps, input: RunChatInput): Promise<R
     noHit: result.noHit,
     retrieval: result.retrieval,
     rewritten: result.rewrite?.rewritten === true,
+    usage: result.usage,
   });
 
   return {
@@ -172,6 +177,7 @@ export async function runChat(deps: RunChatDeps, input: RunChatInput): Promise<R
           carriedTokens: result.rewrite.carriedTokens,
         }
       : undefined,
+    usage: result.usage,
   };
 }
 
@@ -195,6 +201,7 @@ export type StreamChatEvent =
       cached: boolean;
       noHit: boolean;
       retrieval: 'hybrid' | 'keyword';
+      usage?: LlmUsage;
     };
 
 /**
@@ -265,6 +272,7 @@ export async function* streamChat(deps: RunChatDeps, input: RunChatInput): Async
   let noHit = true;
   let retrieval: 'hybrid' | 'keyword' = 'keyword';
   let rewritten = false;
+  let usage: LlmUsage | undefined;
 
   for await (const ev of streamAnswer(deps.retriever, deps.model, message, { history })) {
     if (ev.type === 'meta') {
@@ -287,6 +295,7 @@ export async function* streamChat(deps: RunChatDeps, input: RunChatInput): Async
       yield ev;
     } else if (ev.type === 'done') {
       full = ev.full;
+      usage = ev.usage;
     }
   }
 
@@ -316,6 +325,7 @@ export async function* streamChat(deps: RunChatDeps, input: RunChatInput): Async
     retrieval,
     rewritten,
     question: noHit ? message : undefined,
+    usage,
   });
   writeChatLog(deps, {
     mode,
@@ -328,7 +338,8 @@ export async function* streamChat(deps: RunChatDeps, input: RunChatInput): Async
     noHit,
     retrieval,
     rewritten,
+    usage,
   });
 
-  yield { type: 'done', full, sources, mode, latencyMs, cached: false, noHit, retrieval };
+  yield { type: 'done', full, sources, mode, latencyMs, cached: false, noHit, retrieval, usage };
 }

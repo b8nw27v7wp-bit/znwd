@@ -121,6 +121,7 @@ Base URL：开发态经 Vite 代理为 `http://localhost:5173`；直连后端为
 | `retrieval` | `hybrid`（语义向量参与）或 `keyword`，**如实反映** |
 | `noHit` | `true` = 相关性闸门未通过（知识库未覆盖），本次回答没有任何知识片段支撑 |
 | `rewrite` | 多轮指代改写：`{ rewritten, reason, carriedTokens }`；`reason=none/no_history/prev_weak/ellipsis_merged`。检索用改写后的查询，回答仍按原问题 |
+| `usage` | 本次调用的 token 用量 `{ promptTokens, completionTokens, reasoningTokens, totalTokens }`；命中缓存时为 `undefined`（没花钱） |
 | `cached` | 是否命中答案缓存（缓存 key 含 model + 索引 generation + message） |
 
 **相关性闸门**
@@ -245,6 +246,7 @@ Base URL：开发态经 Vite 代理为 `http://localhost:5173`；直连后端为
 | `noHit` | 知识库未覆盖（闸门拦截）次数——这类问题就是下一批要补的资料 |
 | `rewritten` | 多轮指代改写生效次数（追问场景占比） |
 | `uncoveredCount` | 已留存的未覆盖问题条数（明细见 `/api/admin/uncovered`） |
+| `tokens` | 累计 token 用量 `{ prompt, completion, reasoning, total, calls }`（网关返回 usage 时统计，用于成本观察；`reasoning>0` 说明思考模式没关） |
 
 ---
 
@@ -345,6 +347,10 @@ SSE 流式问答。请求体同 `/api/chat`。
 | `UNCOVERED_LOG_SIZE` | `50` | noHit 原始提问留存条数（0 = 关闭） |
 | `PERSIST_STATE` | `false` | 状态落盘 `DATA_DIR/state.json`，重启恢复会话/计数/反馈/未覆盖清单 |
 | `PERSIST_INTERVAL_SEC` | `60` | 定时落盘间隔（下限 10s）；退出时也会落盘 |
+| `LLM_EXTRA_BODY` | 空 | JSON 合并进请求体；MiMo 必须 `{"thinking":{"type":"disabled"}}`（默认 enabled，开着又慢又贵） |
+| `LLM_MAX_TOKENS` | 空 | 输出 token 上限（`max_completion_tokens`），成本闸门 |
+| `LLM_MAX_RETRIES` / `LLM_RETRY_BASE_MS` | `2` / `1000` | 过载重试次数与退避基数（429/5xx/1305 可重试，额度用尽不重试） |
+| `LLM_TIMEOUT_MS` | `90000`（流式 `180000`） | 单次调用总预算（含重试） |
 | `ADMIN_TOKEN` | 空 | 管理接口 Bearer；生产必须设置 |
 | `REQUIRE_ADMIN_TOKEN` | 空 | `true` 时无 token 管理接口 401 |
 | `NODE_ENV` | 空 | `production`/`prod`/`staging` 时强制管理口令 |
