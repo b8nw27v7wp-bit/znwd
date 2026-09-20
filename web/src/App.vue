@@ -99,6 +99,18 @@ const zoneOptions = computed(() =>
   chat.zones.value.map((z) => ({ id: z.id, label: z.title || z.id })),
 );
 
+const zoneOpen = ref(false);
+
+/** 触发按钮上的当前值：没选就是"全部展区" */
+const zoneLabel = computed(
+  () => zoneOptions.value.find((z) => z.id === chat.zone.value)?.label ?? '全部展区',
+);
+
+async function pickZone(id: string | null): Promise<void> {
+  zoneOpen.value = false;
+  await chat.setZone(id);
+}
+
 const placeholder = computed(() =>
   chat.streaming.value ? '正在回答…' : '输入问题，例如“叶片检测要停机吗？”',
 );
@@ -166,16 +178,52 @@ function assistantSourceLabel(mode?: string, provider?: string): string {
         </header>
 
         <div class="zone-row">
-          <label class="zone-label" for="zone-select">展区</label>
-          <select
-            id="zone-select"
-            class="zone-select"
-            :value="chat.zone.value ?? ''"
-            @change="chat.setZone(($event.target as HTMLSelectElement).value || null)"
-          >
-            <option value="">全部展区</option>
-            <option v-for="z in zoneOptions" :key="z.id" :value="z.id">{{ z.label }}</option>
-          </select>
+          <span id="zone-label" class="zone-label">展区</span>
+          <!-- 自绘下拉：原生 <select> 的展开列表由系统绘制，样式做不了 -->
+          <div class="zone-select" :class="{ open: zoneOpen }" @keydown.esc="zoneOpen = false">
+            <button
+              type="button"
+              class="zone-trigger"
+              aria-haspopup="listbox"
+              :aria-expanded="zoneOpen"
+              aria-labelledby="zone-label"
+              @click="zoneOpen = !zoneOpen"
+            >
+              <span class="zone-value">{{ zoneLabel }}</span>
+              <svg class="zone-caret" width="10" height="6" viewBox="0 0 10 6" aria-hidden="true">
+                <path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.4"
+                      stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
+            <div v-if="zoneOpen" class="zone-backdrop" @click="zoneOpen = false"></div>
+            <ul v-if="zoneOpen" class="zone-menu" role="listbox" aria-labelledby="zone-label">
+              <li class="zone-all">
+                <button
+                  type="button"
+                  role="option"
+                  class="zone-option"
+                  :class="{ on: chat.zone.value === null }"
+                  :aria-selected="chat.zone.value === null"
+                  @click="pickZone(null)"
+                >
+                  全部展区
+                </button>
+              </li>
+              <li v-if="!zoneOptions.length" class="zone-empty">展区列表未加载</li>
+              <li v-for="z in zoneOptions" :key="z.id">
+                <button
+                  type="button"
+                  role="option"
+                  class="zone-option"
+                  :class="{ on: chat.zone.value === z.id }"
+                  :aria-selected="chat.zone.value === z.id"
+                  @click="pickZone(z.id)"
+                >
+                  {{ z.label }}
+                </button>
+              </li>
+            </ul>
+          </div>
         </div>
 
         <main ref="scrollArea" class="main">

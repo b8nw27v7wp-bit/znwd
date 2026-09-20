@@ -73,7 +73,12 @@ function stubFetch(storageAvailable = true, streamFails = false) {
           { status: 200 },
         );
       }
-      if (url.includes('/api/zones')) return new Response(JSON.stringify({ zones: [] }), { status: 200 });
+      if (url.includes('/api/zones')) {
+        return new Response(
+          JSON.stringify({ zones: [{ id: 'wind-inspect', title: '风场检测' }, { id: 'pv-clean', title: '光伏清洁' }] }),
+          { status: 200 },
+        );
+      }
       if (url.includes('/api/suggestions')) return new Response(JSON.stringify({ items: ['叶片检测要停机吗？'] }), { status: 200 });
       if (url.includes('/api/chat/stream')) {
         if (streamFails) throw new Error('网络中断');
@@ -180,6 +185,40 @@ describe('展厅页面：界面入口与语音播报接线', () => {
     // 清空后列表消失
     await log.find('button').trigger('click');
     expect(wrapper.find('.tech-log').exists()).toBe(false);
+
+    wrapper.unmount();
+  });
+
+  it('展区下拉：展开、选中标记、选择后收起并带展区重取推荐问题', async () => {
+    installSpeech();
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const trigger = wrapper.find('.zone-trigger');
+    expect(trigger.text()).toBe('全部展区');
+    expect(wrapper.find('.zone-menu').exists()).toBe(false);
+
+    await trigger.trigger('click');
+    const options = wrapper.findAll('.zone-option');
+    expect(options.map((o) => o.text())).toEqual(['全部展区', '风场检测', '光伏清洁']);
+    expect(options[0]!.classes()).toContain('on'); // 默认选中"全部展区"
+
+    await options[1]!.trigger('click');
+    expect(wrapper.find('.zone-menu').exists()).toBe(false);
+    expect(wrapper.find('.zone-trigger').text()).toBe('风场检测');
+
+    const calls = (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls.map((c) => String(c[0]));
+    expect(calls.some((u) => u.includes('/api/suggestions?zone=wind-inspect'))).toBe(true);
+
+    // 再展开：选中项跟着走，Esc 与点空白都能关
+    await wrapper.find('.zone-trigger').trigger('click');
+    expect(wrapper.findAll('.zone-option')[1]!.classes()).toContain('on');
+    await wrapper.find('.zone-trigger').trigger('keydown', { key: 'Escape' });
+    expect(wrapper.find('.zone-menu').exists()).toBe(false);
+
+    await wrapper.find('.zone-trigger').trigger('click');
+    await wrapper.find('.zone-backdrop').trigger('click');
+    expect(wrapper.find('.zone-menu').exists()).toBe(false);
 
     wrapper.unmount();
   });
