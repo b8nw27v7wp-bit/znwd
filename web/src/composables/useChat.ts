@@ -12,6 +12,10 @@ import {
 
 const SESSION_KEY = 'znwd.sessionId';
 const ZONE_KEY = 'znwd.zone';
+/** 技术问题留存条数：只给运营视图看，页面上一律不显示 */
+const ERROR_LOG_SIZE = 20;
+
+export type TechError = { at: number; question: string; message: string };
 
 /**
  * 问答状态机。
@@ -31,6 +35,8 @@ export function useChat() {
   const sources = ref<Source[]>([]);
   const lastMeta = ref<ChatMeta | null>(null);
   const error = ref<string>('');
+  /** 最近的技术问题（回答失败的原因），只在运营视图里列出来 */
+  const errors = ref<TechError[]>([]);
   const feedback = ref<Record<string, 'up' | 'down'>>({});
 
   let controller: AbortController | null = null;
@@ -124,6 +130,8 @@ export function useChat() {
       if (!assistant.content) assistant.content = '这条问题暂时没能回答，请再试一次。';
       assistant.error = message;
       error.value = message;
+      errors.value.unshift({ at: Date.now(), question: text, message });
+      if (errors.value.length > ERROR_LOG_SIZE) errors.value.length = ERROR_LOG_SIZE;
     } finally {
       assistant.pending = false;
       if (!assistant.content) assistant.content = '（没有返回内容）';
@@ -135,6 +143,11 @@ export function useChat() {
 
   function cancel(): void {
     controller?.abort();
+  }
+
+  /** 运营处理完就清掉，避免越堆越多 */
+  function clearErrors(): void {
+    errors.value = [];
   }
 
   async function rate(message: Message, rating: 'up' | 'down'): Promise<void> {
@@ -168,11 +181,13 @@ export function useChat() {
     sources,
     lastMeta,
     error,
+    errors,
     feedback,
     bootstrap,
     setZone,
     ask,
     cancel,
+    clearErrors,
     rate,
     startOver,
   };

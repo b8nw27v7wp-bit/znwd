@@ -126,6 +126,11 @@ function onKeydown(event: KeyboardEvent): void {
   }
 }
 
+/** 技术问题列表里的时间戳（本机时区，运营对日志用） */
+function timeLabel(at: number): string {
+  return new Date(at).toLocaleTimeString('zh-CN', { hour12: false });
+}
+
 function assistantSourceLabel(mode?: string, provider?: string): string {
   if (mode === 'llm_only') return `通用模型回答（${provider ?? '-'}，未引用资料）`;
   return `基于知识库（${provider ?? '-'}）`;
@@ -207,7 +212,6 @@ function assistantSourceLabel(mode?: string, provider?: string): string {
                 </p>
                 <span v-if="message.pending && !(renderedAnswers[message.id]?.length)" class="caret"></span>
               </div>
-              <div v-if="message.error" class="msg-error">技术问题：{{ message.error }}</div>
               <div class="msg-foot">
                 <span v-if="message.meta?.cached">缓存命中</span>
                 <span v-if="message.meta?.noHit" class="nohit">资料中未覆盖，已按“直说没有”回答</span>
@@ -299,6 +303,15 @@ function assistantSourceLabel(mode?: string, provider?: string): string {
           <span>当前会话</span>
           <button class="linkish" @click="chat.startOver()">重新开始</button>
         </div>
+      </section>
+
+      <section v-if="chat.errors.value.length" class="tech-log">
+        <h2>最近的技术问题（{{ chat.errors.value.length }}）</h2>
+        <div v-for="item in chat.errors.value" :key="item.at" class="tech-item">
+          <div class="q">{{ item.question }}</div>
+          <div class="m">{{ item.message }} · {{ timeLabel(item.at) }}</div>
+        </div>
+        <button class="linkish" @click="chat.clearErrors()">清空</button>
       </section>
 
       <AdminPanel />

@@ -151,22 +151,35 @@ describe('展厅页面：界面入口与语音播报接线', () => {
     admin.unmount();
   });
 
-  it('回答失败时技术原因出现在聊天窗口里，不另起横幅', async () => {
+  it('回答失败时大屏只给友好提示，技术原因收在运营视图里', async () => {
     installSpeech();
     stubFetch(true, true);
-    const wrapper = mount(App);
-    await flushPromises();
 
+    const wrapper = mountWithAdmin();
+    await flushPromises();
     await wrapper.find('textarea').setValue('叶片检测要停机吗？');
     await wrapper.find('textarea').trigger('keydown', { key: 'Enter' });
     await flushPromises();
     await vi.waitFor(() => {
-      expect(wrapper.find('.msg-error').exists()).toBe(true);
+      expect(wrapper.find('.msg.assistant .answer').text()).toContain('这条问题暂时没能回答');
     });
+    await flushPromises();
 
-    expect(wrapper.find('.msg-error').text()).toContain('网络中断');
-    expect(wrapper.find('.msg.assistant').text()).toContain('这条问题暂时没能回答');
+    // 对话区只有一句人话：技术原因、错误横幅都不该出现在大屏上
+    expect(wrapper.find('.msg.assistant').text()).not.toContain('网络中断');
+    expect(wrapper.find('.msg-error').exists()).toBe(false);
     expect(wrapper.find('.banner').exists()).toBe(false);
+    expect(wrapper.find('.main').text()).not.toContain('技术问题');
+
+    // 运营视图里能看到这条故障（问题原文 + 原因 + 时间）
+    const log = wrapper.find('.tech-log');
+    expect(log.exists()).toBe(true);
+    expect(log.text()).toContain('叶片检测要停机吗？');
+    expect(log.text()).toContain('网络中断');
+
+    // 清空后列表消失
+    await log.find('button').trigger('click');
+    expect(wrapper.find('.tech-log').exists()).toBe(false);
 
     wrapper.unmount();
   });

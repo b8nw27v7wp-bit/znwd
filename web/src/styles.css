@@ -282,16 +282,6 @@ select {
   }
 }
 
-/* 回答出错时把技术原因写在同一条回答下面，不另起横幅 */
-.msg-error {
-  margin-top: 8px;
-  padding-left: 10px;
-  border-left: 2px solid var(--warn);
-  color: var(--warn);
-  font-size: 12px;
-  line-height: 1.55;
-}
-
 .msg-foot {
   display: flex;
   flex-wrap: wrap;
@@ -456,6 +446,36 @@ select {
 
 .local-set .muted {
   color: var(--text-faint);
+}
+
+/* 最近的技术问题：只给运营看，页面上一律不显示 */
+.tech-log {
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12.5px;
+}
+
+.tech-log h2 {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-faint);
+  letter-spacing: 0.04em;
+  margin: 0 0 8px;
+  text-transform: uppercase;
+}
+
+.tech-item {
+  padding: 6px 0;
+}
+
+.tech-item .q {
+  color: var(--text);
+}
+
+.tech-item .m {
+  margin-top: 2px;
+  color: var(--warn);
 }
 
 .admin {
