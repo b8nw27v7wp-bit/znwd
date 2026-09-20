@@ -58,24 +58,28 @@ onMounted(load);
 
 <template>
   <section class="admin">
-    <h2>运营视图</h2>
+    <h2>运营统计</h2>
     <input v-model="token" type="password" placeholder="ADMIN_TOKEN（未配置可留空）" @keyup.enter="load" />
     <button class="linkish" @click="load">加载 / 刷新</button>
     <p v-if="error" class="snippet" style="color: var(--warn)">{{ error }}</p>
 
     <table v-if="stats">
-      <tr><td>问答总数</td><td>{{ stats.chatTotal }}</td></tr>
-      <tr><td>引用资料回答</td><td>{{ stats.ragHits }}</td></tr>
-      <tr><td>资料未覆盖</td><td>{{ stats.noHit }}</td></tr>
-      <tr><td>多轮改写</td><td>{{ stats.rewritten }}</td></tr>
-      <tr><td>出错</td><td>{{ stats.errors }}</td></tr>
-      <tr><td>活跃会话</td><td>{{ stats.activeSessions }}</td></tr>
-      <tr><td>tokens</td><td>{{ tokens() }}</td></tr>
+      <tbody>
+        <tr><td>问答总数</td><td>{{ stats.chatTotal }}</td></tr>
+        <tr><td>引用资料回答</td><td>{{ stats.ragHits }}</td></tr>
+        <tr><td>资料未覆盖</td><td>{{ stats.noHit }}</td></tr>
+        <tr><td>多轮改写</td><td>{{ stats.rewritten }}</td></tr>
+        <tr><td>出错</td><td>{{ stats.errors }}</td></tr>
+        <tr><td>活跃会话</td><td>{{ stats.activeSessions }}</td></tr>
+        <tr><td>tokens</td><td>{{ tokens() }}</td></tr>
+      </tbody>
     </table>
 
     <table v-if="feedback">
-      <tr><td>有帮助</td><td>{{ feedback.up ?? 0 }}</td></tr>
-      <tr><td>没帮助</td><td>{{ feedback.down ?? 0 }}</td></tr>
+      <tbody>
+        <tr><td>有帮助</td><td>{{ feedback.up ?? 0 }}</td></tr>
+        <tr><td>没帮助</td><td>{{ feedback.down ?? 0 }}</td></tr>
+      </tbody>
     </table>
 
     <template v-if="uncovered.length">
