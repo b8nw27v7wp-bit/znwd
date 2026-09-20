@@ -68,7 +68,8 @@ public class StatusController {
         out.put("answerCacheSize", cache.size());
         out.put("dataDir", props.dataDirPath().toString());
         out.put("watchKnowledge", knowledge.watchEnabled());
-        out.put("adminTokenRequired", props.adminTokenRequired());
+        // 与 AdminGuard 同一判据：非本机回环访问时即使没设 NODE_ENV 也要口令
+        out.put("adminTokenRequired", com.znwd.hostess.web.AdminGuard.tokenRequiredNow(props, request.getLocalAddr()));
         out.put("corsOrigins", props.corsOriginList());
         out.put("minRelevanceScore", props.minRelevanceScore());
         out.put("noHitLlm", props.noHitLlm());

@@ -7,6 +7,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import jakarta.servlet.http.HttpServletRequest;
+
 import java.util.List;
 import java.util.Map;
 
@@ -74,8 +76,9 @@ public class KnowledgeController {
     /** 热更新知识并重建向量索引；reload 会清答案缓存（旧索引时代的答案不该继续命中） */
     @PostMapping("/api/knowledge/reload")
     public Map<String, Object> reload(
-            @RequestHeader(value = "authorization", required = false) String authorization) {
-        AdminGuard.require(authorization, props);
+            @RequestHeader(value = "authorization", required = false) String authorization,
+            HttpServletRequest request) {
+        AdminGuard.require(authorization, props, request.getLocalAddr());
         try {
             int chunks = knowledge.reload();
             Map<String, Integer> perFile = new LinkedHashMap<>();
@@ -109,8 +112,9 @@ public class KnowledgeController {
     public Map<String, Object> diagnostics(
             @RequestHeader(value = "authorization", required = false) String authorization,
             @RequestParam(value = "q", required = false) String q,
-            @RequestParam(value = "topK", required = false, defaultValue = "4") int topK) {
-        AdminGuard.require(authorization, props);
+            @RequestParam(value = "topK", required = false, defaultValue = "4") int topK,
+            HttpServletRequest request) {
+        AdminGuard.require(authorization, props, request.getLocalAddr());
         if (q == null || q.isBlank()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, ApiError.VALIDATION_ERROR, "q is required");
         }
@@ -155,8 +159,9 @@ public class KnowledgeController {
     /** 当前生效的同义词表（在线维护：改完立刻对下一个问题生效，不用重启） */
     @GetMapping("/api/admin/synonyms")
     public Map<String, Object> getSynonyms(
-            @RequestHeader(value = "authorization", required = false) String authorization) {
-        AdminGuard.require(authorization, props);
+            @RequestHeader(value = "authorization", required = false) String authorization,
+            HttpServletRequest request) {
+        AdminGuard.require(authorization, props, request.getLocalAddr());
         List<Map<String, Object>> entries = new ArrayList<>();
         Synonyms.asMap().forEach((key, alts) -> {
             Map<String, Object> row = new LinkedHashMap<>();
@@ -183,8 +188,9 @@ public class KnowledgeController {
     @SuppressWarnings("unchecked")
     public Map<String, Object> putSynonyms(
             @RequestHeader(value = "authorization", required = false) String authorization,
-            @RequestBody(required = false) Map<String, Object> body) {
-        AdminGuard.require(authorization, props);
+            @RequestBody(required = false) Map<String, Object> body,
+            HttpServletRequest request) {
+        AdminGuard.require(authorization, props, request.getLocalAddr());
         if (body == null || body.isEmpty()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, ApiError.VALIDATION_ERROR, "请求体不能为空");
         }

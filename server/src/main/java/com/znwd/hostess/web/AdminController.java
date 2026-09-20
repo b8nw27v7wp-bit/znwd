@@ -1,6 +1,8 @@
 package com.znwd.hostess.web;
 
 import java.util.LinkedHashMap;
+import jakarta.servlet.http.HttpServletRequest;
+
 import java.util.List;
 import java.util.Map;
 
@@ -32,15 +34,18 @@ public class AdminController {
     }
 
     @GetMapping("/api/stats")
-    public Map<String, Object> stats(@RequestHeader(value = "authorization", required = false) String authorization) {
-        AdminGuard.require(authorization, props);
+    public Map<String, Object> stats(
+            @RequestHeader(value = "authorization", required = false) String authorization,
+            HttpServletRequest request) {
+        AdminGuard.require(authorization, props, request.getLocalAddr());
         return analytics.stats(sessions.count());
     }
 
     @GetMapping("/api/admin/uncovered")
     public Map<String, Object> uncovered(
-            @RequestHeader(value = "authorization", required = false) String authorization) {
-        AdminGuard.require(authorization, props);
+            @RequestHeader(value = "authorization", required = false) String authorization,
+            HttpServletRequest request) {
+        AdminGuard.require(authorization, props, request.getLocalAddr());
         List<UncoveredEntry> items = analytics.uncoveredList(props.uncoveredLogSize());
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("count", items.size());
@@ -51,8 +56,9 @@ public class AdminController {
     @GetMapping("/api/admin/feedback-stats")
     public ResponseEntity<?> feedbackStats(
             @RequestHeader(value = "authorization", required = false) String authorization,
-            @RequestParam(value = "format", required = false) String format) {
-        AdminGuard.require(authorization, props);
+            @RequestParam(value = "format", required = false) String format,
+            HttpServletRequest request) {
+        AdminGuard.require(authorization, props, request.getLocalAddr());
         if ("csv".equalsIgnoreCase(format == null ? "" : format)) {
             String csv = analytics.feedbackCsv();
             return ResponseEntity.ok()

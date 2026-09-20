@@ -97,31 +97,75 @@ class HttpSupportTest {
         assertTrue(MessageLog.fields(null, false).isEmpty(), "空消息不产生日志字段");
     }
 
+    private static final String LOOPBACK = "127.0.0.1";
+
     @Test
     void 管理口令_未配置时开发放行生产拒绝_配置后必须带对() {
         AdminGuardFixture dev = new AdminGuardFixture(null, false, "");
-        com.znwd.hostess.web.AdminGuard.require(null, dev.props());
+        com.znwd.hostess.web.AdminGuard.require(null, dev.props(), LOOPBACK);
 
         AdminGuardFixture prod = new AdminGuardFixture(null, true, "");
-        assertThrowsApi(() -> com.znwd.hostess.web.AdminGuard.require(null, prod.props()));
+        assertThrowsApi(() -> com.znwd.hostess.web.AdminGuard.require(null, prod.props(), LOOPBACK));
 
         AdminGuardFixture secure = new AdminGuardFixture("secret", true, "");
-        assertThrowsApi(() -> com.znwd.hostess.web.AdminGuard.require(null, secure.props()));
-        assertThrowsApi(() -> com.znwd.hostess.web.AdminGuard.require("Bearer wrong", secure.props()));
-        com.znwd.hostess.web.AdminGuard.require("Bearer secret", secure.props());
+        assertThrowsApi(() -> com.znwd.hostess.web.AdminGuard.require(null, secure.props(), LOOPBACK));
+        assertThrowsApi(() -> com.znwd.hostess.web.AdminGuard.require("Bearer wrong", secure.props(), LOOPBACK));
+        com.znwd.hostess.web.AdminGuard.require("Bearer secret", secure.props(), LOOPBACK);
     }
 
     @Test
     void 管理口令_NODE_ENV为生产时未配口令必须拒绝() {
         for (String env : new String[] {"production", "prod", "staging", "PRODUCTION"}) {
             AdminGuardFixture fixture = new AdminGuardFixture(null, false, env);
-            assertThrowsApi(() -> com.znwd.hostess.web.AdminGuard.require(null, fixture.props()),
+            assertThrowsApi(() -> com.znwd.hostess.web.AdminGuard.require(null, fixture.props(), LOOPBACK),
                     "NODE_ENV=" + env + " 时未配 ADMIN_TOKEN 不得静默开放");
         }
         for (String env : new String[] {"", "development", "test"}) {
             AdminGuardFixture fixture = new AdminGuardFixture(null, false, env);
-            com.znwd.hostess.web.AdminGuard.require(null, fixture.props());
+            com.znwd.hostess.web.AdminGuard.require(null, fixture.props(), LOOPBACK);
         }
+    }
+
+    @Test
+    void 管理口令_非本机回环访问时未配口令必须拒绝() {
+        // 展厅最容易踩的组合：HOST=0.0.0.0 暴露到局域网 + 忘配 ADMIN_TOKEN
+        for (String addr : new String[] {"192.168.1.5", "10.0.0.12", "::ffff:192.168.1.5", "0.0.0.0"}) {
+            AdminGuardFixture fixture = new AdminGuardFixture(null, false, "");
+            assertThrowsApi(() -> com.znwd.hostess.web.AdminGuard.require(null, fixture.props(), addr),
+                    "请求来自 " + addr + " 时不得放行");
+        }
+        // 拿不到地址按非本机处理（宁可多要一次口令，也不能默认开放）
+        for (String addr : new String[] {null, "", "   "}) {
+            AdminGuardFixture fixture = new AdminGuardFixture(null, false, "");
+            assertThrowsApi(() -> com.znwd.hostess.web.AdminGuard.require(null, fixture.props(), addr),
+                    "地址缺失时不得放行");
+        }
+    }
+
+    @Test
+    void 管理口令_本机回环访问时开发放行() {
+        for (String addr : new String[] {"127.0.0.1", "127.0.1.1", "::1", "0:0:0:0:0:0:0:1", "localhost"}) {
+            AdminGuardFixture fixture = new AdminGuardFixture(null, false, "");
+            com.znwd.hostess.web.AdminGuard.require(null, fixture.props(), addr);
+        }
+    }
+
+    @Test
+    void 管理口令_配了口令后本机也必须带对() {
+        AdminGuardFixture fixture = new AdminGuardFixture("secret", false, "");
+        assertThrowsApi(() -> com.znwd.hostess.web.AdminGuard.require(null, fixture.props(), LOOPBACK));
+        assertThrowsApi(() -> com.znwd.hostess.web.AdminGuard.require("Bearer wrong", fixture.props(), LOOPBACK));
+        com.znwd.hostess.web.AdminGuard.require("Bearer secret", fixture.props(), LOOPBACK);
+    }
+
+    @Test
+    void 健康接口上报的口令要求与守卫判据一致() {
+        AdminGuardFixture dev = new AdminGuardFixture(null, false, "");
+        assertFalse(com.znwd.hostess.web.AdminGuard.tokenRequiredNow(dev.props(), LOOPBACK));
+        assertTrue(com.znwd.hostess.web.AdminGuard.tokenRequiredNow(dev.props(), "192.168.1.5"));
+
+        AdminGuardFixture prod = new AdminGuardFixture(null, false, "production");
+        assertTrue(com.znwd.hostess.web.AdminGuard.tokenRequiredNow(prod.props(), LOOPBACK));
     }
 
     private static void assertThrowsApi(Runnable action) {
