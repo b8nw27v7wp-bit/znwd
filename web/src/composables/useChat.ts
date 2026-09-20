@@ -1,4 +1,4 @@
-import { ref } from 'vue';
+import { reactive, ref } from 'vue';
 import type { ChatMeta, HealthInfo, Message, Source, Suggestion, ZoneInfo } from '../api';
 import {
   fetchHealth,
@@ -81,13 +81,16 @@ export function useChat() {
     lastMeta.value = null;
 
     messages.value.push({ id: `u-${Date.now()}`, role: 'user', content: text });
-    const assistant: Message = {
+    // 必须是 reactive：push 进响应式数组的普通对象在数组里被代理，但流式回调改的是原始对象，
+    // 字段变更不会被追踪（以前靠 streaming 变化顺带重渲染才读到新值，一旦模板里有基于消息内容的
+    // computed 就会读到空答案）。
+    const assistant = reactive<Message>({
       id: `a-${Date.now()}`,
       role: 'assistant',
       content: '',
       pending: true,
       meta: null,
-    };
+    });
     messages.value.push(assistant);
     streaming.value = true;
     const started = performance.now();
