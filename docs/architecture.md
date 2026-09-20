@@ -24,7 +24,7 @@
 
 资源与测试：`resources/{application.yml,schema.sql,openapi.json,META-INF/spring.factories}`；`db/init.sql`（建库建账号）；`eval/retrieval-cases.json`（评测用例）；`src/test/java/.../{knowledge,http,analytics,eval}`（单测 + 两个 CLI 工具）。
 
-前端源码根 `web/src/`：`App.vue`（页面状态与布局）、`api.ts`（契约与 SSE 解析）、`composables/useChat.ts`（问答状态机）、`composables/useSpeech.ts`（浏览器语音播报）、`components/{SourcePanel,AdminPanel,AvatarPortrait,AvatarFigure}.vue`、`styles.css`。
+前端源码根 `web/src/`：`App.vue`（页面状态与布局）、`api.ts`（契约与 SSE 解析）、`format.ts`（回答排版：粗体/列表/分段，不产出 HTML）、`composables/useChat.ts`（问答状态机）、`composables/useSpeech.ts`（浏览器语音播报）、`components/{SourcePanel,AdminPanel,AvatarPortrait,AvatarFigure}.vue`、`styles.css`。
 
 ## 2. 一次问答的时序
 
@@ -120,6 +120,7 @@ MySQL 表（`resources/schema.sql`，全部 `CREATE TABLE IF NOT EXISTS`）：
 | `api.ts` | 契约类型与调用；SSE 用 `fetch` 流式读取 + 逐帧解析（`EventSource` 只能 GET，提问要放 body）；跨 chunk 半帧重组；中文/TS 类型与后端字段一一对应 |
 | `composables/useChat.ts` | 问答状态机：发送、流式增量、失败不抹掉已收到的半句、来源、推荐问题、反馈 |
 | `composables/useSpeech.ts` | 浏览器语音播报：只读回答、流式结束整段读、长文按句切片、开关落 localStorage；Markdown 记号与链接先洗掉 |
+| `format.ts` | 回答排版：`**粗体**`→加粗片段、`1.`/`·` 列表→悬挂缩进、空行分段；只产出结构交给模板渲染，模型输出里的尖括号只是文字 |
 | `components/AvatarPortrait.vue` | 虚拟形象：立绘优先（`public/avatar-guide.png`），`AvatarFigure.vue`（手写 SVG）兜底；外部只吃 `state` 属性，换 3D/Live2D 只改内部 |
 | `components/SourcePanel.vue` | 来源折叠面板（「查看来源（N）」） |
 | `components/AdminPanel.vue` | 运营抽屉：统计、未覆盖问题、反馈 CSV |

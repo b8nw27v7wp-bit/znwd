@@ -18,10 +18,12 @@ Spring Boot 3.5.16（Java 21 目标）+ MyBatis + MySQL，前端由 React 重写
   行为对齐原地重写前的 React 版（`web/src/hooks/useSpeech.ts`，重写时被丢掉）：默认开声、读完才读、
   可单独停读、`voiceschanged` 预热中文音色；新增切片排队、定时 resume 与文本清洗。
 - 前端组件级测试环境：`@vue/test-utils` + `jsdom`，`web/src/App.spec.ts` 覆盖播报接线三条
-  （读完自动朗读 / 关掉一个字不读 / 新对话停读 / 停读按钮）。前端单测 **7 → 21 项**。
+  （读完自动朗读 / 关掉一个字不读 / 新对话停读 / 停读按钮）。前端单测 **7 → 27 项**。
 
 ### Fixed
 
+- **大屏上出现字面的 Markdown 记号**：模型习惯用 `**粗体**` 与 `*` 分点，前端当纯文本渲染，展厅屏幕上直接显示 `检测**无需停机**`。两头一起治：system 提示词要求直接输出纯文本（分点用「1.」/「·」），前端 `format.ts` 再把残留记号转成加粗片段与列表块（只产出结构、不产出 HTML，天然无注入）。实测回答已无记号。
+- **流式回答对象不是响应式的**：`push` 进响应式数组的普通对象被代理，但流式回调改的是原始对象，字段变更不被追踪——以前靠 `streaming` 变化顺带重渲染才碰巧读到新值，一旦模板里有基于消息内容的 computed 就会渲染出空答案。改成 `reactive()` 创建回答对象。
 - **`NODE_ENV=production` 强制管理口令的规则从未生效**：`AppProperties.nodeEnv` 是 record 组件，
   relaxed binding 只认键 `znwd.node-env`，而 `application.yml` 里没有这个键，`.env` 里的 `NODE_ENV`
   绑不上——「生产未配 `ADMIN_TOKEN` 的管理接口一律 401」静默失效（编译、启动、其余单测全都不报错）。
@@ -33,6 +35,7 @@ Spring Boot 3.5.16（Java 21 目标）+ MyBatis + MySQL，前端由 React 重写
 
 ### Changed
 
+- 界面细节：形象区四边留白加大（人物等比略缩、可见比例不变）、主标题 15.5 → 17px 拉开层级、展区下拉补自绘箭头（`appearance: none` 后原本没有可点击提示）、顶部入口允许换行、降级横幅与底部提示退一档视觉重量。
 - 文档收尾：根 `plan.md`（Node 时代交接文档）归档为 `docs/archive/old-node-plan.md` 并加归档说明；
   `knowledge/_meta/demo-docs.md` 里残留的旧栈命令换成新栈命令；README/docs 里的单测数量同步更新。
 
