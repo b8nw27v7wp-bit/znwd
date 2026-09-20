@@ -64,6 +64,13 @@ watch(
   },
 );
 
+/** 落库状态只给运营看：展厅大屏上不提示（技术问题一律走聊天窗口） */
+const storageLabel = computed(() => {
+  const health = chat.health.value;
+  if (!health) return '未知（后端未响应）';
+  return health.storageAvailable ? 'MySQL 已连接' : '未连接（会话/统计/反馈重启即丢）';
+});
+
 /** 回答按块渲染（粗体/列表/分段）：模型爱用 Markdown，直接当纯文本渲染会让 ** 和 * 上大屏 */
 const renderedAnswers = computed<Record<string, Block[]>>(() => {
   const out: Record<string, Block[]> = {};
@@ -167,10 +174,6 @@ function assistantSourceLabel(mode?: string, provider?: string): string {
         </div>
 
         <main ref="scrollArea" class="main">
-          <p v-if="chat.health.value && !chat.health.value.storageAvailable" class="banner">
-            数据库未连接：本次问答不会留存（会话/统计/反馈重启即丢）。运营侧请按 server/db/init.sql 初始化 MySQL。
-          </p>
-
           <div v-if="!chat.messages.value.length" class="empty">
             可以直接问，也可以点下面的问题开始：
           </div>
@@ -204,6 +207,7 @@ function assistantSourceLabel(mode?: string, provider?: string): string {
                 </p>
                 <span v-if="message.pending && !(renderedAnswers[message.id]?.length)" class="caret"></span>
               </div>
+              <div v-if="message.error" class="msg-error">技术问题：{{ message.error }}</div>
               <div class="msg-foot">
                 <span v-if="message.meta?.cached">缓存命中</span>
                 <span v-if="message.meta?.noHit" class="nohit">资料中未覆盖，已按“直说没有”回答</span>
@@ -226,8 +230,6 @@ function assistantSourceLabel(mode?: string, provider?: string): string {
               </div>
             </template>
           </div>
-
-          <div v-if="chat.error.value" class="banner">{{ chat.error.value }}</div>
 
           <div v-if="!chat.streaming.value && chat.sources.value.length" class="sources-block">
             <button class="src-toggle" @click="showSources = !showSources">
@@ -288,6 +290,10 @@ function assistantSourceLabel(mode?: string, provider?: string): string {
             {{ speech.enabled.value ? '开' : '关' }}
           </button>
           <span v-else class="muted">浏览器不支持</span>
+        </div>
+        <div class="row">
+          <span>数据留存</span>
+          <span class="muted">{{ storageLabel }}</span>
         </div>
         <div class="row">
           <span>当前会话</span>

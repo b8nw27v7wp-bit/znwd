@@ -6,6 +6,7 @@ import App from './App.vue';
 /**
  * 展厅页面（App.vue）的接线测试：用真组件 + 假合成器，验证四条现场行为——
  * 1) 页面上不放运营入口（四个入口与底部小字都不显示），运营视图只能靠 `?admin=1` 打开；
+ *    技术问题（落库状态、回答失败）一律走聊天窗口或运营视图，页面上不弹横幅；
  * 2) 回答流式结束后整段自动朗读，且读的是洗过的正文；
  * 3) 关掉朗读开关后不再朗读，且选择落 localStorage（重启保持）；
  * 4) 重新开始 / 朗读中点「停读」都能立刻停止。
@@ -61,20 +62,21 @@ function sse(...frames: string[]): Response {
 
 const ANSWER = '**叶片检测**不需要停机，按巡检规程 https://example.com/a 执行即可。';
 
-function stubFetch() {
+function stubFetch(storageAvailable = true, streamFails = false) {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes('/api/health')) {
         return new Response(
-          JSON.stringify({ ok: true, knowledgeChunks: 134, llmProvider: 'mock', embedding: 'bag', retrieval: 'keyword', storage: 'mysql', storageAvailable: true, activeSessions: 0, minRelevanceScore: 6.3, uptimeSec: 1 }),
+          JSON.stringify({ ok: true, knowledgeChunks: 134, llmProvider: 'mock', embedding: 'bag', retrieval: 'keyword', storage: 'mysql', storageAvailable, activeSessions: 0, minRelevanceScore: 6.3, uptimeSec: 1 }),
           { status: 200 },
         );
       }
       if (url.includes('/api/zones')) return new Response(JSON.stringify({ zones: [] }), { status: 200 });
       if (url.includes('/api/suggestions')) return new Response(JSON.stringify({ items: ['叶片检测要停机吗？'] }), { status: 200 });
       if (url.includes('/api/chat/stream')) {
+        if (streamFails) throw new Error('网络中断');
         return sse(
           'event:meta\ndata:{"mode":"rag","provider":"mock","retrieval":"keyword","noHit":false,"cached":false,"sources":[]}\n\n',
           `event:delta\ndata:{"text":${JSON.stringify(ANSWER)}}\n\n`,
@@ -129,6 +131,44 @@ describe('展厅页面：界面入口与语音播报接线', () => {
     expect(admin.find('.local-set').text()).toContain('回答朗读');
     expect(admin.find('.local-set').text()).toContain('重新开始');
     admin.unmount();
+  });
+
+  it('数据库未连接时页面上不提示，状态只出现在运营视图里', async () => {
+    installSpeech();
+    stubFetch(false);
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const text = wrapper.text();
+    expect(text).not.toContain('数据库未连接');
+    expect(text).not.toContain('init.sql');
+    expect(wrapper.find('.banner').exists()).toBe(false);
+    wrapper.unmount();
+
+    const admin = mountWithAdmin();
+    await flushPromises();
+    expect(admin.find('.local-set').text()).toContain('未连接');
+    admin.unmount();
+  });
+
+  it('回答失败时技术原因出现在聊天窗口里，不另起横幅', async () => {
+    installSpeech();
+    stubFetch(true, true);
+    const wrapper = mount(App);
+    await flushPromises();
+
+    await wrapper.find('textarea').setValue('叶片检测要停机吗？');
+    await wrapper.find('textarea').trigger('keydown', { key: 'Enter' });
+    await flushPromises();
+    await vi.waitFor(() => {
+      expect(wrapper.find('.msg-error').exists()).toBe(true);
+    });
+
+    expect(wrapper.find('.msg-error').text()).toContain('网络中断');
+    expect(wrapper.find('.msg.assistant').text()).toContain('这条问题暂时没能回答');
+    expect(wrapper.find('.banner').exists()).toBe(false);
+
+    wrapper.unmount();
   });
 
   it('回答流式结束后自动朗读洗过的正文', async () => {
