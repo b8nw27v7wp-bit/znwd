@@ -168,7 +168,11 @@ public class ChatController {
     }
 
     @PostMapping("/api/feedback")
-    public Map<String, Object> feedback(@RequestBody(required = false) Map<String, Object> body) {
+    public Map<String, Object> feedback(
+            @RequestBody(required = false) Map<String, Object> body,
+            HttpServletRequest request) {
+        // 反馈也过同一套按 IP 限流：否则可以刷统计/反馈（接口无鉴权，是公开写口）
+        rateLimit(request);
         Object rating = body == null ? null : body.get("rating");
         if (!FeedbackEntry.UP.equals(rating) && !FeedbackEntry.DOWN.equals(rating)) {
             throw ApiException.validation("rating must be 'up' or 'down'");

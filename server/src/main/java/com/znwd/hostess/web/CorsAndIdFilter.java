@@ -44,7 +44,9 @@ public class CorsAndIdFilter extends OncePerRequestFilter {
         response.setHeader("vary", "Origin");
         if (allowed != null) {
             response.setHeader("access-control-allow-origin", allowed);
-            response.setHeader("access-control-allow-credentials", "true");
+            // 刻意不发 access-control-allow-credentials：本服务不用 cookie 认证，管理口令走
+            // Authorization 头（不需要这个头）。而 CORS_ORIGINS=* 时会回显任意 Origin，
+            // 若同时声明允许携带凭据就是经典的错配。
         }
         if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
             response.setHeader("access-control-allow-methods", "GET,POST,DELETE,OPTIONS");
