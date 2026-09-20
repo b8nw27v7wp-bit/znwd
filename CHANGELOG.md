@@ -9,6 +9,15 @@ Spring Boot 3.5.16（Java 21 目标）+ MyBatis + MySQL，前端由 React 重写
 **接口契约保持不变**（`/api/chat`、SSE 的 `meta→delta→done`、`noHit`、`sources` 全部照旧，见 `docs/api.md`）。
 重写与加固的逐项记录在 `docs/optimization-backlog.md` 的第二/三/四/五轮。
 
+### Security
+
+- **管理接口 fail-closed**：请求不是从本机回环地址进来且未配 `ADMIN_TOKEN` 时一律 401（原来只有 `NODE_ENV=production` 才强制，`HOST=0.0.0.0` + 忘配口令等于全开）。`/api/health` 的 `adminTokenRequired` 同判据。
+- **CORS 不再声明 `access-control-allow-credentials`**：`CORS_ORIGINS=*` 会回显任意 Origin，叠加该头是经典错配；本服务不用 cookie，管理口令走 `Authorization`，不需要它。
+- **`/api/feedback` 纳入按 IP 限流**：公开写口，原先可刷统计与反馈。
+- **MySQL 账号收窄为最小权限**（`SELECT/INSERT/UPDATE/DELETE/CREATE`，仅限 `znwd` 库），临时实例实测建表与落库均正常。
+- **降级模式写库快速失败**：库不可用时不再每次白等 Hikari `connection-timeout`（实测 3.0s → 0.019s），每 60 秒重探一次，库恢复自动续写。
+- 新增 `docs/security.md`：加固项、已核查项、已接受的风险与上线检查清单，每条带复核命令。
+
 ### Added
 
 - **浏览器语音播报**（零依赖，Web Speech API）：回答流式结束后整段朗读；右上角「朗读：开/关」切换，

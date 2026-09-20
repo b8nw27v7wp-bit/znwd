@@ -16,6 +16,7 @@
 | [eval.md](./eval.md) | 检索评测与阈值标定（用例口径、指标、基线、标定工具） |
 | [deployment.md](./deployment.md) | 展厅/一体机部署、MySQL 初始化、运维与备份 |
 | [optimization-backlog.md](./optimization-backlog.md) | 已修问题、待做项、已知取舍 |
+| [security.md](./security.md) | 安全口径：已加固项、已核查项、已接受的风险、上线检查清单 |
 | [eval/](./eval/) | 评测基线与历史报告（json） |
 | [archive/](./archive/) | Node 时代的代码审查/审计文档与交接计划 `old-node-plan.md`（仅存档，不代表现状） |
 | [compose/spec/](./compose/spec/) | 早期功能 Spec（历史记录） |

@@ -37,7 +37,7 @@
 `AdminGuard` 规则与旧实现一致：
 
 - 配了 `ADMIN_TOKEN` → 必须带 `Authorization: Bearer <token>`；比对走 `MessageDigest.isEqual` 常量时间比较（不是 `String.equals`，避免逐字节试探口令）。
-- 没配 → 开发环境放行；**生产（`NODE_ENV=production|prod|staging` 或 `REQUIRE_ADMIN_TOKEN=true`）直接 401**，不会静默开放。
+- 没配 → **本机回环访问**放行（开发态）；其余情况一律 401：生产（`NODE_ENV=production|prod|staging`）、显式 `REQUIRE_ADMIN_TOKEN=true`、或**请求来自非回环地址**（服务绑了 `0.0.0.0`/被反代暴露），拿不到客户端地址时同样拒绝。
 
 需要鉴权：`GET /api/stats`、`POST /api/knowledge/reload`、`GET /api/admin/*`、`PUT /api/admin/synonyms`。
 

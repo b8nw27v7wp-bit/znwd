@@ -66,7 +66,7 @@ znwd/
 ## 校验命令
 
 ```bash
-cd server && ../tools/mvn -B test                                        # 单测（33 项）
+cd server && ../tools/mvn -B test                                        # 单测（42 项）
 cd server && ../tools/mvn -B test-compile exec:java@eval -Dexec.args="--no-write"   # 检索评测
 cd server && ../tools/mvn -B test-compile exec:java@calibrate            # 阈值标定（改语料后必跑）
 python tools/smoke.py                                                    # 接口契约冒烟（需服务在跑，56 项）
@@ -90,3 +90,4 @@ cd web && npm ci && npm run build                   # → web/dist
 知识正文替换与检索说明：[docs/knowledge.md](docs/knowledge.md)。
 部署与运维：[docs/deployment.md](docs/deployment.md)。评测与标定：[docs/eval.md](docs/eval.md)。
 待做与已知取舍：[docs/optimization-backlog.md](docs/optimization-backlog.md)。
+安全口径与上线检查清单：[docs/security.md](docs/security.md)。
