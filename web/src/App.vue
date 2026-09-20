@@ -13,7 +13,8 @@ const IDLE_RESET_MS = 180_000;
 const chat = useChat();
 const speech = useSpeech();
 const draft = ref('');
-const showAdmin = ref(false);
+/** 展厅大屏上不放运营入口：加 ?admin=1 打开（运营视图里的统计接口本来就要口令） */
+const showAdmin = ref(typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('admin'));
 const showSources = ref(false);
 const scrollArea = ref<HTMLElement | null>(null);
 const composer = ref<HTMLTextAreaElement | null>(null);
@@ -140,29 +141,15 @@ function assistantSourceLabel(mode?: string, provider?: string): string {
             <span class="sub">光伏清洁 · 风场检测 · 服务与合作</span>
           </div>
           <div class="head-actions">
-            <span v-if="chat.health.value">
-              {{ chat.health.value.knowledgeChunks }} 条资料
-            </span>
-            <button
-              v-if="speech.supported"
-              class="linkish speak-toggle"
-              :class="{ off: !speech.enabled.value }"
-              :aria-pressed="speech.enabled.value"
-              :title="speech.enabled.value ? '回答会自动朗读，点击关闭' : '点击开启自动朗读'"
-              @click="speech.toggle()"
-            >
-              朗读：{{ speech.enabled.value ? '开' : '关' }}
-            </button>
+            <!-- 页面上只留"正在朗读"时的停读；朗读开关与会话重置收进运营视图的本机设置 -->
             <button
               v-if="speech.speaking.value"
               class="linkish"
-              title="停止朗读（不影响朗读开关）"
+              title="停止朗读"
               @click="speech.stop()"
             >
               停读
             </button>
-            <button class="linkish" @click="chat.startOver()">新对话</button>
-            <button class="linkish" @click="showAdmin = true">运营视图</button>
           </div>
         </header>
 
@@ -275,11 +262,6 @@ function assistantSourceLabel(mode?: string, provider?: string): string {
             <button v-if="chat.streaming.value" class="send ghost" @click="chat.cancel()">停</button>
             <button v-else class="send" :disabled="!draft.trim()" @click="submit()">↑</button>
           </div>
-          <div class="hint">
-            回车发送 · Shift+回车换行 · 回答严格依据展厅资料，资料没有的会直说没有 · 闲置 3 分钟自动回到欢迎语<template
-              v-if="speech.supported && speech.enabled.value"
-            > · 回答会自动朗读</template>
-          </div>
         </footer>
       </div>
     </section>
@@ -292,6 +274,27 @@ function assistantSourceLabel(mode?: string, provider?: string): string {
         <span>运营视图</span>
         <button class="linkish" @click="showAdmin = false">关闭</button>
       </div>
+
+      <section class="local-set">
+        <h2>本机设置</h2>
+        <div class="row">
+          <span>回答朗读</span>
+          <button
+            v-if="speech.supported"
+            class="linkish"
+            :aria-pressed="speech.enabled.value"
+            @click="speech.toggle()"
+          >
+            {{ speech.enabled.value ? '开' : '关' }}
+          </button>
+          <span v-else class="muted">浏览器不支持</span>
+        </div>
+        <div class="row">
+          <span>当前会话</span>
+          <button class="linkish" @click="chat.startOver()">重新开始</button>
+        </div>
+      </section>
+
       <AdminPanel />
     </div>
   </div>

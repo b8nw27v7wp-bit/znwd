@@ -4,10 +4,11 @@ import { flushPromises, mount } from '@vue/test-utils';
 import App from './App.vue';
 
 /**
- * 展厅页面（App.vue）的语音播报接线测试：用真组件 + 假合成器，验证三条现场行为——
- * 1) 回答流式结束后整段自动朗读，且读的是洗过的正文；
- * 2) 点「朗读：关」后不再朗读，且选择落 localStorage（重启保持）；
- * 3) 换问题/开新对话时立刻停掉上一条。
+ * 展厅页面（App.vue）的接线测试：用真组件 + 假合成器，验证四条现场行为——
+ * 1) 页面上不放运营入口（四个入口与底部小字都不显示），运营视图只能靠 `?admin=1` 打开；
+ * 2) 回答流式结束后整段自动朗读，且读的是洗过的正文；
+ * 3) 关掉朗读开关后不再朗读，且选择落 localStorage（重启保持）；
+ * 4) 重新开始 / 朗读中点「停读」都能立刻停止。
  *
  * 为什么要有这一层：composable 单测只覆盖了「怎么读」，读不读、什么时候读是 App.vue 里的
  * 两个 watcher 决定的，只能挂载真组件才验得到。
@@ -96,19 +97,44 @@ async function askAndWait(wrapper: ReturnType<typeof mount>) {
   await flushPromises();
 }
 
+/** 运营视图只能靠 URL 参数打开（页面上不再放按钮） */
+function mountWithAdmin() {
+  window.history.replaceState({}, '', '/?admin=1');
+  return mount(App);
+}
+
 beforeEach(() => {
   localStorage.clear();
+  window.history.replaceState({}, '', '/');
   vi.unstubAllGlobals();
   stubFetch();
 });
 
-describe('展厅页面：语音播报接线', () => {
-  it('回答流式结束后自动朗读洗过的正文，开关默认开', async () => {
-    const { spoken } = installSpeech();
+describe('展厅页面：界面入口与语音播报接线', () => {
+  it('页面上不显示四个入口与底部小字，运营视图用 ?admin=1 打开', async () => {
+    installSpeech();
     const wrapper = mount(App);
     await flushPromises();
 
-    expect(wrapper.text()).toContain('朗读：开');
+    const text = wrapper.text();
+    for (const gone of ['134 条资料', '朗读：', '新对话', '运营视图', '回车发送']) {
+      expect(text).not.toContain(gone);
+    }
+    expect(wrapper.find('.drawer').exists()).toBe(false);
+    wrapper.unmount();
+
+    const admin = mountWithAdmin();
+    await flushPromises();
+    expect(admin.find('.drawer').exists()).toBe(true);
+    expect(admin.find('.local-set').text()).toContain('回答朗读');
+    expect(admin.find('.local-set').text()).toContain('重新开始');
+    admin.unmount();
+  });
+
+  it('回答流式结束后自动朗读洗过的正文', async () => {
+    const { spoken } = installSpeech();
+    const wrapper = mount(App);
+    await flushPromises();
 
     await askAndWait(wrapper);
 
@@ -120,15 +146,15 @@ describe('展厅页面：语音播报接线', () => {
     wrapper.unmount();
   });
 
-  it('关掉开关后不再朗读，且选择落 localStorage', async () => {
+  it('关掉朗读开关后不再朗读，且选择落 localStorage', async () => {
     const { spoken } = installSpeech();
-    const wrapper = mount(App);
+    const wrapper = mountWithAdmin();
     await flushPromises();
 
-    const toggle = wrapper.findAll('button').find((b) => b.text().startsWith('朗读：'));
-    expect(toggle).toBeTruthy();
-    await toggle!.trigger('click');
-    expect(wrapper.text()).toContain('朗读：关');
+    const toggle = wrapper.find('.local-set .row button');
+    expect(toggle.text()).toBe('开');
+    await toggle.trigger('click');
+    expect(wrapper.find('.local-set .row button').text()).toBe('关');
     expect(localStorage.getItem('znwd.speak')).toBe('0');
 
     const before = spoken.length;
@@ -138,16 +164,16 @@ describe('展厅页面：语音播报接线', () => {
     wrapper.unmount();
   });
 
-  it('开新对话时停掉正在读的回答', async () => {
+  it('重新开始会停掉正在读的回答并清空消息', async () => {
     const { spoken, synth } = installSpeech();
     const cancelSpy = vi.spyOn(synth, 'cancel');
-    const wrapper = mount(App);
+    const wrapper = mountWithAdmin();
     await flushPromises();
     await askAndWait(wrapper);
     expect(spoken.length).toBeGreaterThan(0);
 
-    const newChat = wrapper.findAll('button').find((b) => b.text() === '新对话');
-    await newChat!.trigger('click');
+    const restart = wrapper.findAll('.local-set .row button').find((b) => b.text() === '重新开始');
+    await restart!.trigger('click');
     await flushPromises();
 
     expect(cancelSpy).toHaveBeenCalled();
@@ -170,7 +196,7 @@ describe('展厅页面：语音播报接线', () => {
     await stop!.trigger('click');
     expect(cancelSpy).toHaveBeenCalled();
     expect(wrapper.findAll('button').some((b) => b.text() === '停读')).toBe(false);
-    expect(wrapper.text()).toContain('朗读：开'); // 停读不等于静音
+    expect(localStorage.getItem('znwd.speak')).not.toBe('0'); // 停读不等于静音
 
     wrapper.unmount();
   });
