@@ -18,13 +18,14 @@
 ## 删除方式
 
 ```bash
-rm knowledge/*/demo-*.md          # 清掉全部演示资料
-npm run calibrate -w server       # 删完必须重标阈值（IDF 变了）
-npm run eval:retrieval -w server  # 再跑一遍评测，确认数字回到真实知识水平
+rm knowledge/*/demo-*.md                                             # 清掉全部演示资料
+cd server && ../tools/mvn -B test-compile exec:java@calibrate        # 删完必须重标阈值（IDF 变了）
+cd server && ../tools/mvn -B test-compile exec:java@eval -Dexec.args="--no-write"   # 再跑评测，确认数字回到真实知识水平
+curl -s -X POST http://127.0.0.1:8787/api/knowledge/reload           # 服务在跑时让索引跟上（或直接重启）
 ```
 
 ## 为什么要重标定
 
 相关性闸门阈值（`MIN_RELEVANCE_SCORE`）是**相对量**：它按关键词 IDF 加权打分，
-语料变了 IDF 就变，阈值必须跟着重标。演示资料入库后语料从 8 篇涨到 16 篇，
+语料变了 IDF 就变，阈值必须跟着重标。演示资料入库后语料从 8 篇涨到 16 篇（当前 134 块），
 阈值不重标会出现「真实问题被闸门拦掉」或「域外问题被放进来」。

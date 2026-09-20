@@ -1,66 +1,103 @@
-# 开发指南
+# 本地开发手册
 
-## 环境要求
+后端 Spring Boot 3.5.16（`server/`），前端 Vue 3 + Vite 6 + TypeScript（`web/`）。
 
-- Node.js 20+（本机验证：v24）
-- npm 10+（workspaces）
-- 浏览器：支持 `speechSynthesis` 的 Chromium / Edge 等
+## 1. 环境要求
 
-## 常用命令
+| 组件 | 版本 | 说明 |
+| --- | --- | --- |
+| JDK | **21+**（`maven.compiler.release=21`） | 本机用 JDK 25 跑通，但**语法与 API 只能用 21**（换机编译不会翻车） |
+| Maven | 3.9.x | 用仓库自带的 `tools/mvn`，见下 |
+| Node | 20+（本机 22） | 前端构建与单测 |
+| MySQL | 8+ / 9.x，**可选** | 不装也能开发：服务照常讲解，只是不落库（`/api/health` 报 `storageAvailable=false`，前端顶部出降级横幅） |
 
-在仓库根目录 `E:\znwd`：
+### 为什么用 `tools/mvn` 而不是 `mvn`
+
+官方 `bin/mvn` 在 git-bash/MSYS 下走 mingw 分支，不把 `/d/Maven/...` 转成 Windows 路径，java 加载不到 `plexus-classworlds`，报「找不到主类 Launcher」。
+`tools/mvn` 直接用 Windows 风格路径调 Maven 自己的 launcher 绕开它：
 
 ```bash
-npm install              # 安装全部 workspace 依赖
-npm run dev:server       # 后端 :8787（tsx watch）
-npm run dev:web          # 前端 :5173（代理 /api → 8787）
-npm run build            # server tsc + web vite build
-npm run start            # 以 server/dist 启动（需先 build）
+cd server && ../tools/mvn -B test        # 等价于 mvn -B test
 ```
 
-开发时**两个终端**分别跑 `dev:server` 与 `dev:web`。
+换机器时改 `tools/mvn` 顶部的两个变量，或用环境变量覆盖：`MVN_HOME_WIN=D:/Maven/apache-maven-3.9.16`、`JAVA_HOME_WIN=D:/JDK25`。
 
-## 本地验证清单
+## 2. 常用命令
 
-1. `GET /api/health` → `ok: true`，`retrieval.mode=hybrid`  
-2. 页面左侧约 1/3 UI（上形象、下聊天）  
-3. 提问「光伏清洁无人机是做什么的？」→ sources 命中光伏文档并朗读  
-4. 提问「叶片检测要停机吗？」→ 命中风场检测文档  
-5. 无命中 → mock 文案「暂未在内部知识库中检索到」  
+| 目的 | 命令（工作目录） | 预期输出 |
+| --- | --- | --- |
+| 起后端 | `cd server && ../tools/mvn spring-boot:run` | `Tomcat started on port 8787` / `Started HostessApplication` |
+| 单测 | `cd server && ../tools/mvn -B test` | `Tests run: 33, Failures: 0, Errors: 0` |
+| 检索评测 | `cd server && ../tools/mvn -B test-compile exec:java@eval -Dexec.args="--no-write"` | `top1Rate = 0.9333`、`top3Rate = 0.9667`、`gateBlockedCount = 0`、`minKeywordScore = 6.3` |
+| 阈值标定 | `cd server && ../tools/mvn -B test-compile exec:java@calibrate` | 在域最弱 8 条、域外降序、"建议 minKeywordScore=6.3"；`--grid` 再加 36 组参数网格；报告落 `docs/eval/calibration-*.json` |
+| 接口冒烟 | `python tools/smoke.py`（需服务在跑，`BASE=http://…` 可改目标） | `通过 56 项，失败 0 项` |
+| 前端 dev | `cd web && npm install && npm run dev` | `VITE v6 ready`，`:5173`，`/api` 代理到 8787 |
+| 前端构建 | `cd web && npm run build` | `vue-tsc -b` 类型检查 + `vite build`，产物 `web/dist` |
+| 前端单测 | `cd web && npm test` | `21 passed`（含 jsdom 下的组件接线测试） |
+| 打包后端 | `cd server && ../tools/mvn -B -DskipTests package` | `server/target/hostess-server.jar` |
 
-联调请用 Node `fetch` 或浏览器；PowerShell 中文 JSON 可能乱码。
+评测/标定是**改语料、改同义词、改打分参数后的必跑项**，口径见 `docs/eval.md`。
 
-## 目录规范
+## 3. 配置读取
 
-| 位置 | 放什么 | 不放什么 |
-|------|--------|----------|
-| 根 `README.md` | 三分钟上手 | 长篇架构 |
-| `CHANGELOG.md` | 版本与迁移说明 | 日志流水 |
-| `docs/` | 架构、API、部署、开发约定、排查记录 | 业务知识正文 |
-| `docs/compose/spec/` | 功能 Spec | 重复 README |
-| `knowledge/0x_*` | **仅**进入 RAG 的业务文档 | 工程说明 |
-| `knowledge/_meta/` | zones.json 展区元数据 | 长篇正文 |
-| `server/indexes/` | 本地向量索引 | 提交 git |
-| `server/src/` | API、RAG、LLM 适配 | UI 组件 |
-| `web/src/` | 界面与语音 | 直接读知识文件 |
-| `web/public/live2d/` | 模型资产与说明 | 源码 |
-| `.env` | 本机密钥（已 gitignore） | 提交到 git |
+`server/.env` 由 `DotEnvPropertySource`（`EnvironmentPostProcessor`）读成 Spring 配置源，**沿用 Node 版的运维习惯**（现场只认这个文件，密钥也不进仓库）。
 
-新增文档：优先挂到 [docs/README.md](./README.md) 索引表。
+优先级：**系统环境变量 > `.env` > `application.yml` 默认值**。
+查找顺序：`server/.env` → `.env`（在仓库根启动也能命中）。
+`.env` 里**空值视为未配置**（`LLM_BASE_URL=` 不会把默认值覆盖成空串）。
 
-## 代码约定
+键名以 `server/.env.example` 与 `application.yml` 为准，分六组：LLM、Embedding、MySQL（`DB_*`）、HTTP（`HOST`/`PORT`/`ADMIN_TOKEN`/`CORS_ORIGINS`）、检索（`MIN_RELEVANCE_SCORE`/`ANSWER_CACHE_SIZE`/`UNCOVERED_LOG_SIZE`）、日志（`LOG_MAX_BYTES`/`LOG_MESSAGE_MODE`）。
 
-- 语言：TypeScript strict；服务端 ESM + `NodeNext`（相对导入带 `.js`）。  
-- 样式：浅色极简、白底、`#1d1d1f`，少注释，命名表意图。  
-- 新 LLM：实现 `ChatModel`，在 `server/src/llm/index.ts` 注册，用 `LLM_PROVIDER` 切换。  
-- 新 UI：保持左右 1fr/2fr 分栏与现设计 token 一致。  
+MySQL 首次使用：把 `server/db/init.sql` 里两处 `CHANGE_ME_znwd` 改成自定口令执行一次，再把同一口令写进 `.env` 的 `DB_PASSWORD`；建表由应用在库可达时幂等执行 `schema.sql`。
 
-## 分支与提交
+## 4. 日常改动的落点
 
-- 功能分支：`feature/<slug>`（当前：`feature/virtual-receptionist`）。  
-- 提交信息：`feat:` / `fix:` / `docs:` / `chore:` + 简短英文或中英混合摘要。  
-- 不提交：`node_modules/`、`dist/`、`*.log`、`.env`、`*.tsbuildinfo`。  
+| 要改的东西 | 落点 | 注意 |
+| --- | --- | --- |
+| 加/改 HTTP 接口 | `server/src/main/java/com/znwd/hostess/web/` 下对应 Controller | 错误一律抛 `ApiException`（统一信封）；同步更新 `resources/openapi.json` 与 `tools/smoke.py` |
+| 检索打分参数 | `knowledge/ScoringOptions` 默认值 | **改完必须跑 `exec:java@calibrate --grid`**，别凭手感调 |
+| 闸门阈值 | `.env` / `application.yml` / `HybridRetriever` 默认值 / CI 环境变量 | 四处同步；先标定再改 |
+| 同义词 | `PUT /api/admin/synonyms`（在线，可落盘）或 `knowledge/_meta/synonyms.tsv` | 改完重跑标定与评测 |
+| 虚拟形象 | 只动 `web/src/components/AvatarPortrait.vue` 内部 | 外部只吃 `state` 属性，换 3D/Live2D 不改调用方 |
+| 加一张表 | `resources/schema.sql` + `domain/` 记录 + `repository/` mapper | 幂等 `CREATE TABLE IF NOT EXISTS`，由 `DatabaseStatus` 执行 |
+| 加前端 API | `web/src/api.ts` + `composables/useChat.ts` | 字段名必须与后端一致（有 `x-request-id`、`non_null` 两个坑） |
 
-## Spec 流程（可选）
+## 5. 代码约定
 
-较大功能建议：`docs/compose/spec/<feature>.md` 写清 S1/S2/S3 与 Tasks，实现后勾选并写 Report。
+- **注释写「为什么」**：能踩的坑（路径错位、非语义向量参与融合、两个入口行为不一致）都留了说明，改代码前先读注释。
+- **异常**：业务错误抛 `ApiException`，`GlobalExceptionHandler` 统一成 `{error, message, requestId}`；5xx 对外只有「服务内部错误」。
+- **空值**：Jackson 配了 `non_null`，null 字段不出现在响应里；新增响应字段时同步 `openapi.json`。
+- **测试用合成语料**：`KnowledgeRetrievalTest` 自己造块，闸门行为才可复现；合成语料用**自己的固定阈值**（不跟生产阈值走，否则重新标定会让它无辜变红）。
+- **工具类输出 UTF-8**：`RetrievalEval`/`Calibrate` 入口显式设 `System.setOut(..., UTF_8)`，否则 Windows 控制台按 GBK 花屏。
+- **凭据**：`server/.env` 不进仓库、不打印、不贴日志；需要给别人看就贴 `.env.example`。
+
+## 6. Windows 坑（踩过的）
+
+| 现象 | 原因 | 做法 |
+| --- | --- | --- |
+| `curl --get --data-urlencode "q=中文"` 返回的诊断"什么都被拦" | GBK 控制台把中文参数编坏，后端收到乱码 | 用 Python 发（`urllib.parse.quote`），或直接 `python tools/smoke.py` |
+| `mvn` 报「找不到主类 Launcher」 | MSYS 路径转换 | 用 `tools/mvn` |
+| 8787 端口被占 | 上一次 `spring-boot:run` 没退干净 | `netstat -ano \| grep :8787` 找 PID，再 `MSYS_NO_PATHCONV=1 taskkill /PID <pid> /F`（不加 `MSYS_NO_PATHCONV=1` 时 `/PID` 会被 MSYS 当路径转换） |
+| native 程序报「cannot change to /c/…」 | MSYS 路径不转换 | 给 native 程序传 `C:/…` 正斜杠路径，或用 `cygpath -w` |
+| 临时脚本被 native 程序读不到 | `/tmp` 在 MSYS 里 | 写到 `$LOCALAPPDATA/Temp` |
+
+## 7. 测试与 CI
+
+```bash
+cd server && ../tools/mvn -B test                     # 33 项：检索/HTTP/统计会话/同义词/诊断文案/配置接线
+cd web && npm test                                     # 21 项：SSE 解析、问答状态机、朗读切片、播报接线（jsdom）
+python tools/smoke.py                                  # 56 项契约（需服务在跑）
+```
+
+CI（`.github/workflows/ci.yml`，push/PR 都跑）：
+
+- **backend**：`mvn test` → `exec:java@eval --no-write` → `package` → 起 jar 跑 `python3 tools/smoke.py`（`LLM_PROVIDER=mock`，`MIN_RELEVANCE_SCORE=6.3` 显式给出，失败时打印服务日志）
+- **frontend**：`npm ci` → `npm run build` → `npm test`
+
+失败时的判断顺序：先在本地复现对应命令；契约类失败（smoke）先看 `docs/api.md` 的字段表，检索类失败（eval）先跑 `calibrate` 看阈值区间是否还成立。
+
+## 8. 提交约定
+
+- **不要提交**：`server/.env`、`server/indexes/`、`server/data/`、`web/dist/`、`node_modules/`、日志文件。
+- 仓库当前**没有远端**，提交只落本地；不要擅自 push 或改写历史。
+- 提交信息用中文简述「为什么改」（例：`fix(retrieval): 修非语义向量污染排序`），一个提交只做一件事。

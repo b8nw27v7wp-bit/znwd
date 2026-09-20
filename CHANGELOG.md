@@ -2,6 +2,40 @@
 
 本项目版本与变更记录。日期：YYYY-MM-DD。
 
+## [1.2.0] — 2026-09-20
+
+本节起版本号与 `StatusController.VERSION` / `openapi.json` 对齐：后端已由 Node/Fastify 原地重写为
+Spring Boot 3.5.16（Java 21 目标）+ MyBatis + MySQL，前端由 React 重写为 Vue 3 + Vite 6，
+**接口契约保持不变**（`/api/chat`、SSE 的 `meta→delta→done`、`noHit`、`sources` 全部照旧，见 `docs/api.md`）。
+重写与加固的逐项记录在 `docs/optimization-backlog.md` 的第二/三/四/五轮。
+
+### Added
+
+- **浏览器语音播报**（零依赖，Web Speech API）：回答流式结束后整段朗读；右上角「朗读：开/关」切换，
+  选择落 `localStorage`（默认开），朗读中出现「停读」按钮。长文按句切片排队（Chrome 对超长 utterance
+  会中途静默），每 5 秒 `resume` 一次绕开 Chrome 约 15 秒后自动暂停的老毛病；朗读前洗掉 Markdown 记号、
+  链接与代码块；换问题、开新对话、闲置复位、组件卸载都会立刻停读。播报期间虚拟形象保持「说话」态。
+  行为对齐原地重写前的 React 版（`web/src/hooks/useSpeech.ts`，重写时被丢掉）：默认开声、读完才读、
+  可单独停读、`voiceschanged` 预热中文音色；新增切片排队、定时 resume 与文本清洗。
+- 前端组件级测试环境：`@vue/test-utils` + `jsdom`，`web/src/App.spec.ts` 覆盖播报接线三条
+  （读完自动朗读 / 关掉一个字不读 / 新对话停读 / 停读按钮）。前端单测 **7 → 21 项**。
+
+### Fixed
+
+- **`NODE_ENV=production` 强制管理口令的规则从未生效**：`AppProperties.nodeEnv` 是 record 组件，
+  relaxed binding 只认键 `znwd.node-env`，而 `application.yml` 里没有这个键，`.env` 里的 `NODE_ENV`
+  绑不上——「生产未配 `ADMIN_TOKEN` 的管理接口一律 401」静默失效（编译、启动、其余单测全都不报错）。
+  已显式写 `node-env: ${NODE_ENV:}`；实测不设 `NODE_ENV` → `/api/stats` **200**（开发放行），
+  `NODE_ENV=production` → **401**。
+- 新增配置接线守卫测试 `AppPropertiesBindingTest`：反射遍历 `AppProperties` 的每个字段，
+  断言 `application.yml` 的 `znwd` 段里有对应 kebab-case 键（临时删掉 `node-env` 会变红）。
+  后端单测 **30 → 33 项**。
+
+### Changed
+
+- 文档收尾：根 `plan.md`（Node 时代交接文档）归档为 `docs/archive/old-node-plan.md` 并加归档说明；
+  `knowledge/_meta/demo-docs.md` 里残留的旧栈命令换成新栈命令；README/docs 里的单测数量同步更新。
+
 ## [0.13.0] — 2026-09-19
 
 检索排序与成本优化：修掉「非语义向量仍参与融合」，参数改为数据驱动，闸门拦截不再调用大模型。

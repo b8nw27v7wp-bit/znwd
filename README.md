@@ -1,96 +1,92 @@
 # AI 虚拟讲解问答（产品展厅）
 
-浏览器大屏：**整页仅占左约 1/3**——上方虚拟形象（Live2D 占位可替换），**下方对话框**；右侧约 2/3 留白（可并排放展览视频）。  
-基于本地企业知识 **Hybrid RAG** 与可插拔 **LLM** 生成回答，浏览器 **TTS 朗读**。
+浏览器大屏：**整页仅占左约 1/3**——上方虚拟形象，**下方对话框**；右侧约 2/3 留白（可并排放展览视频）。
+基于本地企业知识 **Hybrid RAG** 与可插拔 **LLM** 生成回答。
 
 当前知识业务：**光伏清洁无人机**、**风场检测无人机**（及服务/展厅须知）。
+
+技术栈：后端 **Spring Boot 3.5.16**（Java 21 目标）+ MyBatis + **MySQL**；前端 **Vue 3 + Vite 6 + TypeScript**（纯手写 CSS，不引 UI 框架）。
+（2026-09 由 Node/Fastify + React 原地重写而来，旧代码只在 git 历史里。）
 
 ## 快速开始
 
 ```bash
-npm install
-cp server/.env.example server/.env   # 可选：配置 LLM / Embedding
-npm run dev:server                    # :8787
-npm run dev:web                       # :5173（代理 /api）
+# 配置（可选：不配也能跑，LLM 走 mock、不落库）
+cp server/.env.example server/.env
+
+# 起后端（:8787）—— 用仓库自带的 maven 包装脚本，别用系统 mvn（见 docs/development.md）
+cd server && ../tools/mvn spring-boot:run
+
+# 起前端（:5173，/api 自动代理到 8787）
+cd web && npm install && npm run dev
 ```
 
 打开 `http://localhost:5173`，在对话区提问（Enter 发送）。
+
+- **没有 MySQL 也能起**：会话/统计不落库，`/api/health` 报 `storageAvailable=false`，页面顶部会出现降级横幅。
+  要真落库：把 `server/db/init.sql` 里两处 `CHANGE_ME_znwd` 改成自定口令执行一次，再把同一口令写进 `server/.env` 的 `DB_PASSWORD`。
+- 接真模型：在 `server/.env` 里设 `LLM_PROVIDER=openai_compat` + `LLM_BASE_URL/API_KEY/MODEL`（示例见该文件的注释）。
+- **回答会自动朗读**（浏览器内置语音合成，零依赖、离线可用）：右上角「朗读：开/关」切换（选择记在浏览器里），朗读中还会出现「停读」按钮；换问题、开新对话、闲置复位都会立刻停止朗读。
 
 ## 项目结构
 
 ```
 znwd/
-├── README.md
-├── CHANGELOG.md
-├── docs/                     # 工程文档（见 docs/README.md）
-│   ├── api.md
-│   ├── knowledge.md
-│   ├── code-review.md
-│   └── compose/spec/
-├── knowledge/                # RAG 知识（可整目录替换业务资料）
-│   ├── _meta/zones.json
-│   ├── 01_光伏清洁无人机/
-│   ├── 02_风场检测无人机/
-│   ├── 03_服务与合作/
-│   └── 90_通识/
-├── server/                   # Fastify + Hybrid RAG
-│   ├── .env.example
-│   ├── indexes/              # 向量索引（不入库）
-│   └── src/
-└── web/                      # Vite React
-    └── src/
+├── server/                      # Spring Boot（HTTP / RAG / LLM / MySQL）
+│   ├── db/init.sql              # 建库建账号（首次部署执行一次）
+│   ├── eval/retrieval-cases.json  # 检索评测用例
+│   ├── indexes/                 # 向量索引（不入库，可重建）
+│   └── src/main/java/com/znwd/hostess/{config,embedding,knowledge,llm,http,domain,repository,session,analytics,rag,web}
+├── web/                         # Vue 3 + Vite：左 1/3 形象 + 下方对话
+│   └── src/{App.vue,api.ts,composables,components,styles.css}
+├── knowledge/                   # RAG 知识（整目录替换业务资料；_meta/zones.json 管展区）
+├── tools/                       # mvn（MSYS 包装脚本）、smoke.py（接口契约冒烟）
+├── docs/                        # 工程文档（见 docs/README.md）
+└── .github/workflows/ci.yml     # 后端 test+eval+smoke、前端 build+test
 ```
 
 ## 常用 API
 
-- `GET /api/health`（含 `retrieval.mode`/`semantic`/`thresholds`、`corsOrigins`）
-- `GET /api/suggestions`（`?zone=pv-clean` / `wind-inspect` / `exhibit-*`）
+- `GET /api/health`（含 `retrieval.mode`/`semantic`/`thresholds`、`storageAvailable`、`corsOrigins`）
+- `GET /api/suggestions`（`?zone=pv-clean` / `wind-inspect` / `exhibit-*`；返回**字符串数组**）
 - `GET /api/zones`
-- `POST /api/chat` — `{ "message", "sessionId" }` → 含 `noHit`（知识库未覆盖）
+- `POST /api/chat` — `{ "message", "sessionId" }` → 含 `noHit`（知识库未覆盖）与 `sources`
 - `POST /api/chat/stream` — SSE（`meta` → `delta`* → `done`）
-- `GET /api/openapi.json`（含 components schemas）
 - `GET|DELETE /api/sessions/:sessionId`
 - `POST /api/feedback`（未带 `question` 时自动取会话最后一条提问）
-- `GET /api/stats`（可选 `ADMIN_TOKEN`；含 `noHit` 计数）
-- `GET /api/knowledge/list`
-- `POST /api/knowledge/reload`（可选 `ADMIN_TOKEN`）
+- `GET /api/knowledge/list`（含 `retrieval` 与同义词表摘要）
+- `POST /api/knowledge/reload`（重建关键词 + 向量索引，清答案缓存）
+- `GET /api/admin/diagnostics?q=…` — 检索诊断：为什么被拦/为什么命中、离阈值还差多少
+- `GET|PUT /api/admin/synonyms` — 同义词表在线维护（改完立即生效，可选落盘）
+- `GET /api/stats`、`GET /api/admin/feedback-stats`（`?format=csv`）、`GET /api/admin/uncovered`
+- `GET /api/openapi.json`
+
+管理类接口的鉴权规则：配了 `ADMIN_TOKEN` 就必须带 `Authorization: Bearer <token>`（常量时间比对）；没配时开发环境放行，生产（`NODE_ENV=production|prod|staging` 或 `REQUIRE_ADMIN_TOKEN=true`）直接 401，不会静默开放。
 
 ## 校验命令
 
 ```bash
-npm run verify               # 一键：build + unit + 起服务 + api-audit + eval（独立端口 8791）
-npm run verify:quick         # 只验后端（跳过 web 构建与 eval）
-
-npm test -w server           # 单元测试
-npm run eval:retrieval       # 检索评测（top1/top3 + 闸门漏答 + 追问改写对比）
-npm run calibrate -w server  # 相关性阈值标定（改知识后必跑）
-npm run ingest -w server -- --src ./inbox --zone pv-clean   # PDF/Word/txt 入库
+cd server && ../tools/mvn -B test                                        # 单测（33 项）
+cd server && ../tools/mvn -B test-compile exec:java@eval -Dexec.args="--no-write"   # 检索评测
+cd server && ../tools/mvn -B test-compile exec:java@calibrate            # 阈值标定（改语料后必跑）
+python tools/smoke.py                                                    # 接口契约冒烟（需服务在跑，56 项）
+cd web && npm run build && npm test                                      # 前端类型检查+构建、单测
 ```
 
-审计报告：[docs/code-audit.md](docs/code-audit.md)。评测方法：[docs/eval.md](docs/eval.md)。CI：[.github/workflows/ci.yml](.github/workflows/ci.yml)。
-
-## 配置
-
-`server/.env`：
-
-```
-LLM_PROVIDER=mock | openai_compat
-LLM_BASE_URL=...
-EMBED_PROVIDER=bag | openai_compat
-EMBED_MODEL=...
-# CORS_ORIGINS=https://exhibit.your-host
-# ADMIN_TOKEN=secret
-# MIN_RELEVANCE_SCORE=3.8   # 用 npm run calibrate -w server 标定
-# PERSIST_STATE=true        # 重启保留计数/反馈/未覆盖清单/会话
-# UNCOVERED_LOG_SIZE=50     # noHit 原始提问留存条数（补资料靶子）
-# KNOWLEDGE_WATCH=true
-```
-
-知识正文替换与检索说明：[docs/knowledge.md](docs/knowledge.md)。  
-代码排查记录：[docs/code-review.md](docs/code-review.md)。
+当前基线：检索 top1 **0.9333** / top3 **0.9667** / 闸门漏答 **0**（阈值 6.3）；标定区间 3.654~8.933 → 建议 6.3。
 
 ## 构建
 
 ```bash
-npm run build
+cd server && ../tools/mvn -B -DskipTests package    # → server/target/hostess-server.jar
+cd web && npm ci && npm run build                   # → web/dist
 ```
+
+## 配置
+
+模板见 `server/.env.example`（LLM / Embedding / MySQL / HTTP / 检索阈值 / 日志，逐项带说明）。
+读取顺序：系统环境变量 > `server/.env` > `application.yml` 默认值。
+
+知识正文替换与检索说明：[docs/knowledge.md](docs/knowledge.md)。
+部署与运维：[docs/deployment.md](docs/deployment.md)。评测与标定：[docs/eval.md](docs/eval.md)。
+待做与已知取舍：[docs/optimization-backlog.md](docs/optimization-backlog.md)。

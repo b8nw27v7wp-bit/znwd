@@ -1,0 +1,75 @@
+# 优化与新增清单（重构后）
+
+记录重构后代码审查的结论：已修的、待做的。待做项按"展厅实际影响 × 成本"排序。
+
+## 已修（第一轮，均有验证）
+
+| 问题 | 影响 | 修法 |
+| --- | --- | --- |
+| `ChatLogMapper.insert` 用了 `#{promptTokens}`，而 `ChatLogEntry` 只有 `usage` 对象 | **每次问答的 chat_log 落库都在静默失败**（被 catch 成 warn），统计重启即清零 | 改成 `#{usage.promptTokens}` 等嵌套取值 |
+| `FeedbackMapper.insert` 带 `@Options(useGeneratedKeys, keyProperty="id")`，record 无 id | 插入成功但抛异常、日志刷 warn | 去掉 `@Options` |
+| `Analytics.logChat` 从不写 `uncovered_question` | 未覆盖问题清单只活在内存里，运营重启后拿不到补资料靶子 | 落库（单独一张表，保留期与内存窗口一致） |
+| `Analytics.logChat/logFeedback` 持锁做数据库 I/O | 库慢会拖住所有问答请求（与"内存是热路径"的设计相矛盾） | 内存操作加锁、DB 写移到锁外 |
+| 请求体非法 JSON 时回 `message is required` | `/api/feedback` 收到坏 body 会把排查方向指错 | 拆成独立 handler，回"请求体不是合法 JSON 对象" |
+| `AdminGuard` 用 `String.equals` 比对口令 | 理论上可逐字节试探 | 改 `MessageDigest.isEqual` 常量时间比较 |
+| `RateLimiter.evictExpired()` 无人调用 | 长时间运行后按 IP 的历史窗口不回收 | 挂到已有的定时清理任务上 |
+| `FeedbackMapper.count/countUp` 无调用方 | 死代码 | 删除 |
+| pom.xml 注释里出现 `--` | XML 注释非法，**所有 maven 命令直接失败** | 改注释文案 |
+| 前端无闲置处理 | 大屏前换人后上一个参观者的对话还挂在屏幕上 | 闲置 3 分钟自动回到欢迎态 |
+| `vite.config.ts` 用 `process.env` 但没装类型 | `npm run build` 类型检查失败 | 加 `@types/node` 并写进 tsconfig types |
+
+## 已做（第二轮：工程资产与运维口子）
+
+| 项 | 内容 | 验证 |
+| --- | --- | --- |
+| **标定工具**（原 `scripts/calibrate.ts` + `tune-scoring.mjs`） | `mvn -q test-compile exec:java@calibrate`。输出：在域/域外分数对照表、闸门区间建议、参数网格（`--grid`）、报告落 `docs/eval/calibration-*.json`；区间不成立时退出码 2，可当 CI 失败条件 | 实测：在域最低 **8.933** / 域外最高 **3.654** → 建议阈值 **6.3**（与生产 `.env` 一致，余量 0.58）；网格 **36 组没有一组超过当前默认**，确认 `ScoringOptions` 默认值仍是最优 |
+| **检索诊断接口** `/api/admin/diagnostics?q=&topK=` | 走线上同一套索引与阈值，回 `gated/reason/两路分数/候选数/阈值/距阈值距离` + 一句人话结论（`RetrievalVerdict`），命中项带分数与命中词 | 实测：在域"叶片检测要停机吗"→ keyword 24.33 / 余量 18.03；域外"写一首夏天的诗"→ gated、距阈值 4.08 |
+| **同义词表热更新** `GET/PUT /api/admin/synonyms` | 内置表 + `knowledge/_meta/synonyms.tsv` 覆盖；`PUT` 立即生效（查询期展开，无需重建索引）、可选落盘；`knowledge` reload 时一并重载 TSV | 冒烟探针实测：加一个 `ZWPROBE→叶片` 的临时映射后，探针问题的关键词分立刻从 0 抬起，还原后回到原值 |
+| **评测/标定共用** `EvalSupport` | 用例解析、命中判定、域外样本、报告落盘只留一份，防"评测一套口径、标定另一套口径" | 改完重跑评测：top1 0.9333 / top3 0.9667 / 漏答 0，与改动前逐项一致 |
+| 契约与元数据 | `openapi.json` 补两个新路径 + `Diagnostics`/`Synonyms` schema，版本 1.2.0（`/api/health` 同步）；`/api/knowledge/list` 增加同义词摘要 | `python tools/smoke.py` **56/56**（原 32 项，新增 24 项覆盖诊断与热更新） |
+| 工具类输出编码 | Windows 控制台默认 GBK，评测/标定报告中文花屏 | 两个工具入口统一按 UTF-8 输出 |
+
+### 标定暴露的两个事实（供后续决策）
+
+- **召回天花板目前是 2 条漏例**：`wind-06`、`svc-05` 在任何参数组合下都进不了 top1（部分组合还会多漏 `mix-02`）。要提升只能补语料或补同义词，调参数无用。
+- **默认阈值已按标定改成 6.3**（2026-09-20 决定）：3.8 是 23 块语料时代的中点，当前 134 块语料下的中点是 6.3，评测在 6.3 下闸门漏答为 0。三处已同步：`application.yml` 的 `MIN_RELEVANCE_SCORE` 默认值、`HybridRetriever.DEFAULT_MIN_KEYWORD_SCORE`、CI 的环境变量。同时把合成语料单测的阈值固定成自己的 3.8——它不该跟着生产阈值走，否则每次重新标定都会让闸门行为测试无辜变红。
+
+## 待做
+
+1. **资料入库工具**（旧 Node 版的 `npm run ingest`）**尚未移植**：PDF/Word/txt → markdown 的转换链路（`pdftotext -layout`、python-docx 保留标题层级与表格、规范化去页码/合并断行）在新栈里没有对应实现。当前只能外部转换后按展区目录手工落盘。仓库里也没有 `inbox/` 目录与相关依赖，按需再补。
+2. **前端组件测试只覆盖了 App 的播报接线**：已加 `@vue/test-utils` + `jsdom` 并写了 `App.spec.ts`（朗读接线三条），但 `AdminPanel.vue` 与对话主流程的回归仍靠人工点；要继续补可直接沿用这套环境。
+3. **（可选）指标暴露**：已带 `spring-boot-starter-actuator`（只暴露 `health,info`）；接多屏/后台要 Prometheus 指标时再接 `micrometer-registry-prometheus`。单机展厅当前 `/api/health` + `/api/stats` 够用。
+4. **（可选）把标定挂进 CI**：区间塌了要早知道；但语料换成正式资料期间可能误报红，等资料稳定再加。
+5. **本机 MySQL 还没初始化**：3306 上有 MySQL 在跑，但 `server/db/init.sql` 没执行过、`server/.env` 里也没有 `DB_*` 口令，所以 `/api/health` 报 `storageAvailable=false`（会话/统计/反馈不落库，重启即清零）。执行 `server/db/init.sql`（两处 `CHANGE_ME_znwd` 改成自定口令）并把同一口令填进 `DB_PASSWORD` 后即落库——这一步需要本机管理员口令，助手不代做。
+
+## 已完成（第三轮：文档与配置换成新栈）
+
+| 项 | 内容 |
+| --- | --- |
+| 文档全部重写 | `README.md`、`docs/{README,api,architecture,development,deployment,eval,knowledge}.md` 从 Node/Fastify + React 时代改成 Spring Boot + Vue 3 的写法（命令、路径、环境变量、接口字段逐条对着代码核对）；Node 时代的审查文档留在 `docs/archive/` |
+| `server/.env.example` 修正 | 去掉新栈里已不存在的 `PERSIST_STATE`/`PERSIST_INTERVAL_SEC`（状态已落 MySQL）、补上原先完全缺失的 `DB_*` 全组、标定命令改成 `mvn exec:java@calibrate`、默认阈值改 6.3；键名以 `application.yml` 为准 |
+| 阈值三处同步 | `application.yml` 默认值、`HybridRetriever.DEFAULT_MIN_KEYWORD_SCORE`、CI 环境变量都改为 6.3 |
+
+## 已修（第四轮：配置接线 + 文档收尾）
+
+| 项 | 内容 | 验证 |
+| --- | --- | --- |
+| **`NODE_ENV` 绑定失效 → 生产强制管理口令的安全规则从未生效** | `AppProperties.nodeEnv` 是 record 字段，relaxed binding 只认键 `znwd.node-env`，而 application.yml 里没有这个键；`.env` / 系统环境里的 `NODE_ENV` 是另一条独立键，绑不上。于是「生产（`NODE_ENV=production`）未配 `ADMIN_TOKEN` 的管理接口必须 401」这条规则静默失效——编译、启动、其余单测全都不报错 | application.yml 增加 `node-env: ${NODE_ENV:}`。实测两个场景：不设 `NODE_ENV` → `GET /api/stats` **200**（开发放行）；`NODE_ENV=production` 且未配口令 → **401** |
+| 配置接线守卫测试 | 新增 `config/AppPropertiesBindingTest`：反射遍历 `AppProperties` 每个 record 字段，断言 application.yml 的 `znwd` 段里有对应 kebab-case 键；另有一条断言 `node-env` 必须显式绑 `${NODE_ENV:}` | 把 `node-env` 行临时删掉 → 该测试 **2 项失败**（确实拦得住这个 bug 类），恢复后通过 |
+| 管理口令规则测试 | `HttpSupportTest` 补一条：`NODE_ENV` ∈ production/prod/staging（含大写）且未配口令必须 401；development/test/空 放行 | 单测 30 → **33 项全绿** |
+| 文档收尾 | 根 `plan.md`（Node 时代交接文档）按仓库约定归档为 `docs/archive/old-node-plan.md` 并加归档说明；`knowledge/_meta/demo-docs.md` 里残留的 `npm run calibrate` / `npm run eval:retrieval` 换成新栈命令（并补 reload 一步）；README 与 docs 里的单测数 30 → 33；archive 索引补上归档计划文件 | `git status` 显示为 rename；全库 grep 已无旧栈命令 |
+
+## 已完成（第五轮：浏览器语音播报）
+
+| 项 | 内容 | 验证 |
+| --- | --- | --- |
+| **语音播报**（零依赖，Web Speech API） | 回答流式结束后整段朗读；右上角「朗读：开/关」切换，选择落 `localStorage`（默认开——展厅就是靠它讲解），朗读中出现「停读」按钮。三条现场取舍：**只读回答不读提问**、**流式结束才读**（边流边读会切成碎音）、**长文按句切片排队**（Chrome 对超长 utterance 会中途静默），并每 5 秒 `resume` 一次绕开 Chrome 约 15 秒后自动暂停的老毛病；朗读前先洗掉 Markdown 记号/链接/代码块；换问题、开新对话、闲置复位、组件卸载都会立刻停读。**行为对齐重写前的 React 版**（`web/src/hooks/useSpeech.ts`，原地重写时被丢掉）：默认开声、读完才读、可单独停读、`voiceschanged` 预热中文音色；新增的是切片排队、定时 resume 与文本清洗 | `web/src/composables/useSpeech.spec.ts` 10 项 + `web/src/App.spec.ts` 4 项（组件级接线：读完自动朗读、关掉一个字不读、新对话停读、停读按钮）；前端单测 7 → **21 项**；`npm run build`（vue-tsc + vite）通过 |
+| 前端组件测试环境 | 新增 `@vue/test-utils` + `jsdom`（backlog 待做第 2 条要的就是这套）；`App.spec.ts` 用 `// @vitest-environment jsdom` 局部切换环境，node 环境的既有测试不受影响 | 全量 `npm test` 21/21 |
+| 形象状态联动 | 语音播报期间虚拟形象保持「说话」态（`avatarState` 把 `speech.speaking` 并进去），读完回到空闲 | 组件测试覆盖（`speaking` 影响渲染分支） |
+
+## 已知取舍（不是 bug）
+
+- `EMBED_PROVIDER=bag` 是特征哈希，不是语义向量：`/api/health` 会如实报 `semantic=false`、`degradedReason`，检索模式只报 `keyword`，不冒充 `hybrid`。要真语义检索需配 `openai_compat` 的 embedding 并 reload 重建索引。
+- MySQL 不可用时服务照常讲解（不落库），`storageAvailable=false` 会在 `/api/health` 与前端顶部横幅同时提示——这是刻意降级，不是故障。
+- 答案缓存只在"单轮且无历史"时命中（多轮上下文不同，复用会答错）。
+- 诊断接口的 `q` 必须由调用方按 UTF-8 正确编码；在 GBK 控制台下用 curl 手拼中文会变成乱码（表现为"什么都被拦"），用 `python tools/smoke.py` 或浏览器访问可避免。

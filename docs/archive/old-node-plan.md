@@ -1,4 +1,8 @@
-# 项目后端优化 Plan（交接文档）
+# 项目后端优化 Plan（交接文档 · 已归档）
+
+> **本文件已归档**：它描述的是 **Node/Fastify + React** 时代的实现与优化计划，其中的命令、文件路径
+> 与现状不符。当前技术栈（Spring Boot + Vue 3）的现状看 `docs/README.md`、`README.md` 与
+> `docs/optimization-backlog.md`；这里只作为那一轮工作的历史记录保留。
 
 > 生成日期：2026-09-17（第二轮加固于 2026-09-18 追加，见 §11）  
 > 仓库：`E:\znwd`  

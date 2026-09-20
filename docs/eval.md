@@ -1,137 +1,118 @@
-# 检索评测报告
+# 检索评测与阈值标定
 
-> 脚本：`npm run eval:retrieval`（`server/scripts/eval-retrieval.ts`）
-> 用例：`server/eval/retrieval-cases.json`（30 条计分 + 2 条开放问）
-> 结果落盘：`docs/eval/baseline.json` 与带时间戳的 `retrieval-*.json`
+评测回答一个问题：**「这次改动有没有让检索变差」**；标定回答另一个：**「闸门阈值还合不合适」**。
+两者共用同一批用例与同一个命中口径（`EvalSupport`），并走 Spring 容器里**线上同一套**知识/同义词/阈值——评测说 0.93、标定按另一套口径建议调阈值，是谁也不敢信的状态。
 
-## 如何跑
+## 1. 评测口径
 
-```bash
-npm install
-npm run eval:retrieval
-```
+用例文件：`server/eval/retrieval-cases.json`，两块：
 
-输出摘要：`top1Rate` / `top3Rate`（**未加闸门**的召回能力）、`gatedTop1Rate` / `gatedTop3Rate` /
-`gateBlockedCount`（**生产路径**含相关性闸门后的指标与漏答清单）、`minKeywordScore`、
-`followUp*`（追问场景下「不改写 vs 改写」的命中对比）。
+| 字段 | 含义 |
+| --- | --- |
+| `cases` | 单轮用例：`{ id, question, zone?, sourcePathIncludes? }` |
+| `followUps` | 多轮用例：`{ id, question, context }`，`context` 是上一轮原话，用于验证指代/省略句改写 |
 
-加 `--no-write` 只打印不落盘（换 `KNOWLEDGE_DIR` 做实验时用，避免覆盖仓库基线）：
+**命中判定**（与旧实现一致）：`expectZone` 与命中块的 `zone` 相同，**或** `sourcePathIncludes` 是命中块 `sourcePath` 的子串——任一成立即算命中。只带 `zone`/`sourcePathIncludes` 的用例参与计分（`scored`）。
 
-```bash
-KNOWLEDGE_DIR=/path/to/other/knowledge npm run eval:retrieval -- --no-write
-```
-
-`npm run verify` 里对 top1 的期望下限是显式可配的（默认 0.9）：`EVAL_MIN_TOP1=0.85 npm run verify`。
-写死一个魔数会导致没人知道它从哪来；调低期望时请一并说明原因（例如当前是演示语料）。
-
-## 三个指标要分开看
-
-| 指标 | 含义 | 看什么 |
-|------|------|--------|
-| `top1Rate` / `top3Rate` | 原始融合检索的召回上限 | 换 embedding / 改同义词后的趋势 |
-| `gatedTop1Rate` / `gatedTop3Rate` | 叠加相关性闸门（生产实际走这条路） | 闸门是否把该答的问题也拦了 |
-| `gateBlockedCount` / `gateBlocked` | 被闸门拦下的**计分用例**（即漏答） | **必须为 0**；非 0 说明阈值过紧或知识缺口 |
-| `followUpRawTop1Rate` / `followUpRewrittenTop1Rate` | 追问用例：不改写 vs 多轮指代改写 | 改写是否真的救回省略式追问 |
-
-## 相关性阈值标定
+## 2. 跑评测
 
 ```bash
-npm run calibrate -w server
+cd server
+../tools/mvn -B test-compile exec:java@eval -Dexec.args="--no-write"     # 只打印，不写报告
+../tools/mvn -B test-compile exec:java@eval                             # 同时写 docs/eval/retrieval-java-<时间戳>.json
+../tools/mvn -B test-compile exec:java@eval -Dexec.args="--baseline=docs/eval/baseline-java.json"
 ```
 
-在现有知识库上打印在域用例与 10 条域外闲聊（天气、写诗、会议室…）的关键词分分布，
-并给出 `MIN_RELEVANCE_SCORE` 建议值（取两侧区间中点）。**知识库或同义词变更后必须重跑**：
-阈值是相对量，chunk 数量一变（分块、增删资料）IDF 就变，分数整体平移。
+参数：`--no-write`（不落报告）、`--baseline=<路径>`（与历史基线对比）。
+为什么走 exec 插件而不是 `java -cp`：评测类在 `test` 作用域，`classpathScope=test` 才能拿到测试依赖；`exec:java` 还会把 Spring 容器完整起起来（无 DB 也能跑）。
 
-## 演示语料下的实测（2026-09-19，临时）
+## 3. 指标
 
-真实知识正文尚未提供，先用 8 篇公开资料（`knowledge/*/demo-*.md`，来源见 `knowledge/_meta/demo-docs.md`）
-把链路跑通。语料 8 篇 → 16 篇、chunk 23 → **134**，IDF 变了，阈值必须重标：
+| 指标 | 含义 | 当前基线 |
+| --- | --- | --- |
+| `top1Rate` | 第一条命中即算命中 | **0.9333**（30 条计分用例中 28 条） |
+| `top3Rate` | 前三里有命中 | **0.9667** |
+| `gateBlockedCount` | 在域用例被闸门误拦的条数 | **0** |
+| `followUpRawTop1Rate` | 多轮追问**不改写**直接检索的 top1 | 0.3333 |
+| `followUpRewrittenTop1Rate` | 改写后 top1 | **1.0** |
+| `followUpRewriteTriggered` | 触发改写的次数 | 见实跑输出 |
+| `minKeywordScore` | 当次运行实际生效的闸门阈值 | 6.3 |
 
-| 项 | 真实语料（参考 baseline） | 演示语料（临时） |
-|----|----|----|
-| knowledgeChunks | 23 | 134 |
-| minKeywordScore | 3.8 | **6.3**（域外最高 3.654 / 在域最低 8.933，取中点） |
-| top1Rate | 0.9667 | **0.9333** |
-| top3Rate | 1.00 | **0.9667** |
-| gateBlockedCount | 0 | 0 |
+报告 JSON 除 summary 外还带逐例明细（`id`、`question`、`expectZone`、`top1`、`top1Path`、`hit1`、`hit3`、`gated`、`reason`、`keywordBestScore`）与多轮明细（`rawTop1`/`rwTop1`/`rawHit1`/`rwHit1`/`rwHit3`）——定位"哪条用例退化"靠这个。
 
-两处残余失分及其原因（都是「演示语料与用例不匹配」，不是检索逻辑错）：
+**当前两条漏例**：`wind-06`、`svc-05`（任何参数组合都进不了 top1）。这是召回天花板，要提升只能补语料或补同义词，调参数无用。
 
-- `wind-06 风场展区展示什么？`：两篇展览文档（`展览_风场检测` / `展览_光伏清洁`）互相干扰，
-  光伏那篇的片段也提到风场/风机，命中词条更多。
-- `svc-05 作业报告模板哪里获取？`：抓来的长网页文档（大疆作业流程）反复出现「作业/流程/报告」，
-  把短而精准的 `服务培训与合作`（写着「报告模板与数据对接」）挤到第 5 位。
+基线文件：
 
-真实正文入库后重跑 `calibrate` + `eval:retrieval` 重新基线，演示资料同时删除。
-`docs/eval/baseline.json` 保留真实语料口径，未被演示语料覆盖。
+- `docs/eval/baseline-java.json` —— 当前实现（Spring Boot）的基线，阈值 6.3，可直接 `--baseline=` 对比。
+- `docs/eval/baseline.json` —— **历史文件**（23 块语料时代，Node 实现）。语料规模不同，`top1/top3` **不可直接比**，只作为证据留存。
+- `docs/eval/retrieval-*.json` —— 历史实跑报告（按时间戳）。
 
-## 打分参数怎么定（别手调）
+## 4. 标定
 
 ```bash
-npm run tune:scoring -w server     # 网格搜索 expW/tfCap/zoneBoost/lenB，输出 top1/top3 + 闸门余量
+cd server
+../tools/mvn -B test-compile exec:java@calibrate                # 阈值标定（默认也写报告）
+../tools/mvn -B test-compile exec:java@calibrate -Dexec.args="--grid"          # 加跑打分参数网格
+../tools/mvn -B test-compile exec:java@calibrate -Dexec.args="--no-write"      # 只打印
 ```
 
-选出的默认值写在 `server/src/knowledge/retriever.ts` 的 `DEFAULT_SCORING`（当前
-扩展词权重 0.45、词频上限 2.2、展区标签权重 1.0、长度归一化关闭）。
-实测结论：长度归一化（lenB>0）在这批语料上不提 top1，反而把闸门余量压到 1 附近，故默认关闭。
+四段输出：
 
-## Baseline（bag / offline，2026-09-18 第二轮加固后）
+1. **在域用例（按关键词分升序，最弱 8 条）**：会被闸门误拦的候选从这儿看，附带 `cos`（向量余弦）与命中词。
+2. **域外问题（按分数降序）**：闸门可能放过去乱答的从这儿看。
+3. **区间与建议**：`在域最低 X` / `域外最高 Y` / `区间 X~Y` / `建议 minKeywordScore = 中点`；若 `域外最高 / 当前阈值 > 0.9` 会额外告警「闸门偏松」。
+4. **打分参数网格**（`--grid`）：`expansionWeight × maxTfBoost × zoneBoost × lengthB`（默认 36 组）按 top1/top3 排序，标出当前默认值与每组漏例。
 
-| 字段 | 值 |
-|------|-----|
-| embedProvider / semantic | `bag` / `false`（向量路不参与，检索按 `keyword` 上报） |
-| llmProvider | `mock` |
-| knowledgeChunks | **23**（标题感知分块；加固前为 8） |
-| cases | 30 计分（另 2 条开放问不计分） |
-| top1Rate | **0.9667**（29/30） |
-| top3Rate | **1.00**（30/30） |
-| gatedTop1Rate / gatedTop3Rate | **0.9667 / 1.00** |
-| gateBlockedCount | **0**（无漏答） |
-| minKeywordScore | 3.8 |
-| followUp（追问改写） | 不改写 top1 **0.6667** → 改写后 **1.00**（6 条追问，5 条触发改写） |
+退出码：区间不成立（域外最高分不低于在域最低分）→ **退出码 2**，可以直接当 CI 的失败条件。
+报告写到 `docs/eval/calibration-<时间戳>.json`。
 
-对照：加固前（0.8.0，8 chunks、单字命中参与打分）top1 0.90 / top3 1.00。
-提升来自两处：中文分词改为 bigram-only + IDF 加权（单字噪声不再给分）、按 markdown 标题分块。
+### 当前标定结论（2026-09-20，134 块语料）
 
-闸门另一侧的实测（`/api/chat` 直连）：
+| 项 | 值 |
+| --- | --- |
+| 在域用例最低关键词分 | 8.933 |
+| 域外问题最高关键词分 | 3.654 |
+| 区间 | 3.654 ~ 8.933（成立） |
+| 建议阈值 | **6.3**（区间中点） |
+| 实际生效阈值 | 6.3（`.env`、`application.yml` 默认值、`HybridRetriever` 默认常量、CI 四处一致） |
+| 参数网格 | 36 组**没有一组超过当前默认值**（top1 0.9333 / top3 0.9667），默认参数保持不动 |
 
-| 类型 | 样本 | 结果 |
-|------|------|------|
-| 域内 | 6 条（产品/流程/服务/参观） | 全部 `noHit=false`、给出 sources |
-| 域外 | 10 条（今天上海天气 / 写诗 / 会议室 / 股票 …） | 全部 `noHit=true`、`sources=[]`、答「展厅资料中没有这方面的内容」 |
+阈值演进：`3.8`（23 块语料时代的中点）→ `6.3`（当前语料中点，评测在 6.3 下闸门漏答为 0）。
+**阈值是相对量**：语料一变，IDF 随之变化、分数整体平移，不重标就可能把该答的问题拦掉。
 
-## 接入真实 Embedding / LLM（C1 / C2）
-
-当前仓库代码已支持 `openai_compat`，**无需改业务 API**。在 `server/.env`：
+## 5. 改语料后的标准流程
 
 ```bash
-# C1 语义向量（推荐 bge-small-zh 等中文模型，经内网 OpenAI 兼容网关）
-EMBED_PROVIDER=openai_compat
-EMBED_BASE_URL=http://<内网网关>/v1
-EMBED_API_KEY=<key>
-EMBED_MODEL=bge-small-zh
-
-# C2 真实 LLM（Mock 仅作离线兜底）
-LLM_PROVIDER=openai_compat
-LLM_BASE_URL=http://<内网网关>/v1
-LLM_API_KEY=<key>
-LLM_MODEL=<模型名>
+# 1) 重载知识并重建索引
+curl -X POST http://127.0.0.1:8787/api/knowledge/reload -H "authorization: Bearer $ADMIN_TOKEN"
+# 2) 抽查一在域一域外（中文用 Python 发，见 docs/api.md）
+#    GET /api/admin/diagnostics?q=…  → 在域应 gated=false；域外应 gated=true 且 distanceToGate>0
+# 3) 重新标定，看区间是否还成立
+cd server && ../tools/mvn -B test-compile exec:java@calibrate --grid
+# 4) 需要改阈值时，四处同步：.env / application.yml / HybridRetriever 默认常量 / CI 环境变量
+# 5) 评测确认不退化（top1/top3 不低于基线、gateBlockedCount 仍为 0）
+cd server && ../tools/mvn -B test-compile exec:java@eval -Dexec.args="--no-write"
+# 6) 接口契约冒烟
+python tools/smoke.py
 ```
 
-然后：
+## 6. CI 里怎么跑
 
-1. `POST /api/knowledge/reload`（或重启 server）重建向量索引；
-2. `npm run eval:retrieval` 与 `npm run calibrate -w server` 各跑一次：语义向量上线后
-   `semantic=true`、`retrieval` 变为 `hybrid`，靠关键词兜不住的问法应能被向量路救回
-   （`MIN_VECTOR_SCORE` 控制这一路兜底门槛）；
-3. 回答不再出现「Mock 演示」类文案即 C2 生效；`health.retrieval.semantic=true` 即 C1 生效。
+`.github/workflows/ci.yml` 的 backend 作业：`mvn test` → `exec:java@eval --no-write` → `package` → 起 jar 跑 `python3 tools/smoke.py`，并显式给出 `MIN_RELEVANCE_SCORE=6.3`（CI 里没有 `server/.env`，不显式给就会退回代码默认值——"CI 通过"必须验的是线上那套阈值）。
 
-**本机当前状态**：未配置 `server/.env`，评测在 **bag + 关键词为主** 下完成，作为 baseline。
+失败该往哪修：
 
-## 运营接口（Phase C）
+| 失败 | 先看 |
+| --- | --- |
+| `mvn test` 红 | 单测本身：检索/HTTP/统计/同义词/诊断文案 |
+| eval 的 `top1/top3` 下降 | 最近的打分/分块/同义词改动；必要时 `--baseline=` 对比逐例明细找出退化的用例 |
+| eval 的 `gateBlockedCount > 0` | 在域问题被闸门拦：跑标定看区间，通常是阈值相对语料变了 |
+| 标定退出码 2 | 区间不成立：补同义词、补语料，或换真语义 embedding（`EMBED_PROVIDER=openai_compat`） |
+| smoke 红 | 契约被改坏：对照 `docs/api.md` 的字段表 |
 
-- `GET /api/admin/feedback-stats`：负反馈 top 问题（含 `recent` 便于核对正向反馈）
-- `GET /api/admin/feedback-stats?format=csv`：导出
-- `GET /api/stats`：`noHit` 计数 = 知识库未覆盖次数（下一批要补的资料）
-- 展览联动：页面 URL `?zone=pv-clean` 或 `window.znwdSetZone('exhibit-wind-inspect')`
+## 7. 测试与评测的边界
+
+- **单测**（`mvn test`，33 项）用**合成语料**：闸门行为要可复现，不受展厅资料改动影响；合成语料用**自己的固定阈值**，不跟生产阈值走。
+- **评测/标定**用**真实知识库**：目标是线上效果，必须读 `KNOWLEDGE_DIR` 里的真资料。
+- 两者都不需要 MySQL；评测与标定会完整启动 Spring 容器（无库时按降级模式运行，`storageAvailable=false`，不影响检索结论）。
