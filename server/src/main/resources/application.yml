@@ -1,0 +1,108 @@
+server:
+  # 默认只监听本机（展厅内网部署时用 .env 显式改 HOST=0.0.0.0）
+  address: ${HOST:127.0.0.1}
+  port: ${PORT:8787}
+  compression:
+    enabled: true
+  shutdown: graceful
+  error:
+    # 统一错误信封由 GlobalExceptionHandler 处理，关掉 Spring 默认错误页
+    whitelabel:
+      enabled: false
+
+spring:
+  application:
+    name: znwd-hostess
+  lifecycle:
+    timeout-per-shutdown-phase: 8s
+  mvc:
+    # 未知路由也走统一错误信封（否则返回框架默认体）
+    throw-exception-if-no-handler-found: true
+  web:
+    resources:
+      add-mappings: false
+  sql:
+    init:
+      # 建表不放这里：Spring 的 sql.init 在「连不上库」时不受 continue-on-error 保护，会把整个上下文打挂。
+      # 改由 DatabaseStatus.check() 在库可达时用 ResourceDatabasePopulator 执行 schema.sql（幂等）。
+      mode: never
+  datasource:
+    url: jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:3306}/${DB_NAME:znwd}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
+    username: ${DB_USER:znwd}
+    password: ${DB_PASSWORD:}
+    hikari:
+      pool-name: znwd-pool
+      maximum-pool-size: ${DB_POOL_SIZE:8}
+      minimum-idle: 2
+      connection-timeout: 3000
+      idle-timeout: 300000
+      max-lifetime: 1500000
+      # -1 = 连接失败不在启动期抛错，改为首次用时重试（配合上面的 continue-on-error）
+      initialization-fail-timeout: -1
+  jackson:
+    default-property-inclusion: non_null
+    time-zone: Asia/Shanghai
+
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true
+    default-fetch-size: 100
+    default-statement-timeout: 10
+
+logging:
+  level:
+    root: INFO
+    com.znwd.hostess: INFO
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level [%thread] %logger{28} - %msg%n"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+
+# —— 业务配置（默认值与原 Node 版一致；.env 可覆盖，系统环境变量优先级最高）——
+znwd:
+  knowledge-dir: ${KNOWLEDGE_DIR:./knowledge}
+  index-dir: ${INDEX_DIR:./server/indexes}
+  data-dir: ${DATA_DIR:./server/data}
+  watch-knowledge: ${KNOWLEDGE_WATCH:false}
+  min-relevance-score: ${MIN_RELEVANCE_SCORE:6.3}
+  min-vector-score: ${MIN_VECTOR_SCORE:0.35}
+  chat-rate-per-min: ${CHAT_RATE_PER_MIN:30}
+  answer-cache-size: ${ANSWER_CACHE_SIZE:200}
+  uncovered-log-size: ${UNCOVERED_LOG_SIZE:50}
+  admin-token: ${ADMIN_TOKEN:}
+  require-admin-token: ${REQUIRE_ADMIN_TOKEN:false}
+  # 生产/预发标记：production|prod|staging 且未配 ADMIN_TOKEN 时，管理接口一律 401（与旧实现一致）。
+  # 必须显式绑到 NODE_ENV：record 字段名是 nodeEnv，relaxed binding 只会去找 znwd.node-env，
+  # 而 .env / 系统环境里的 NODE_ENV 是另一条独立键，绑不上就静默失效（编译、启动、单测都不报错）。
+  node-env: ${NODE_ENV:}
+  no-hit-llm: ${NO_HIT_LLM:false}
+  log-max-bytes: ${LOG_MAX_BYTES:5000000}
+  log-message-mode: ${LOG_MESSAGE_MODE:hash}
+  cors-origins: ${CORS_ORIGINS:}
+  llm:
+    provider: ${LLM_PROVIDER:mock}
+    base-url: ${LLM_BASE_URL:}
+    api-key: ${LLM_API_KEY:}
+    model: ${LLM_MODEL:}
+    timeout-ms: ${LLM_TIMEOUT_MS:90000}
+    stream-timeout-ms: ${LLM_STREAM_TIMEOUT_MS:180000}
+    max-retries: ${LLM_MAX_RETRIES:2}
+    retry-base-ms: ${LLM_RETRY_BASE_MS:1000}
+    # 0 = 不限制（对应原版未设置 LLM_MAX_TOKENS）
+    max-tokens: ${LLM_MAX_TOKENS:0}
+    extra-body: ${LLM_EXTRA_BODY:}
+  embed:
+    provider: ${EMBED_PROVIDER:bag}
+    base-url: ${EMBED_BASE_URL:}
+    api-key: ${EMBED_API_KEY:}
+    model: ${EMBED_MODEL:}
+    dims: ${EMBED_DIMS:0}
+    bag-dims: ${EMBED_BAG_DIMS:512}
+    timeout-ms: ${EMBED_TIMEOUT_MS:60000}

@@ -1,0 +1,1 @@
+org.springframework.boot.env.EnvironmentPostProcessor=com.znwd.hostess.config.DotEnvPropertySource

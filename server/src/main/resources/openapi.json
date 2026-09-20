@@ -1,0 +1,240 @@
+{
+  "openapi": "3.0.0",
+  "info": { "title": "Virtual Hostess API", "version": "1.2.0" },
+  "servers": [{ "url": "/" }],
+  "components": {
+    "schemas": {
+      "Source": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "snippet": { "type": "string" },
+          "score": { "type": "number" },
+          "sourcePath": { "type": "string" },
+          "zone": { "type": "string", "nullable": true },
+          "zoneTitle": { "type": "string", "nullable": true },
+          "vectorScore": { "type": "number", "nullable": true },
+          "keywordScore": { "type": "number", "nullable": true }
+        },
+        "required": ["title", "snippet", "score", "sourcePath"]
+      },
+      "ChatRequest": {
+        "type": "object",
+        "required": ["message"],
+        "properties": {
+          "message": { "type": "string", "minLength": 1, "maxLength": 2000 },
+          "sessionId": { "type": "string", "maxLength": 64 }
+        }
+      },
+      "ChatResponse": {
+        "type": "object",
+        "properties": {
+          "answer": { "type": "string" },
+          "sources": { "type": "array", "items": { "$ref": "#/components/schemas/Source" } },
+          "mode": { "type": "string", "enum": ["rag", "llm_only"] },
+          "provider": { "type": "string" },
+          "retrieval": { "type": "string", "enum": ["hybrid", "keyword"] },
+          "noHit": { "type": "boolean", "description": "相关性闸门未通过（知识库未覆盖）" },
+          "sessionId": { "type": "string", "nullable": true },
+          "latencyMs": { "type": "number" },
+          "cached": { "type": "boolean" },
+          "usage": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "promptTokens": { "type": "integer" },
+              "completionTokens": { "type": "integer" },
+              "reasoningTokens": { "type": "integer" },
+              "totalTokens": { "type": "integer" }
+            }
+          },
+          "rewrite": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "rewritten": { "type": "boolean" },
+              "reason": { "type": "string", "enum": ["none", "no_history", "prev_weak", "ellipsis_merged"] },
+              "carriedTokens": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "required": ["answer", "sources", "mode", "provider", "retrieval", "noHit"]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": { "type": "string" },
+          "message": { "type": "string" },
+          "requestId": { "type": "string", "nullable": true }
+        },
+        "required": ["error", "message"]
+      },
+      "Diagnostics": {
+        "type": "object",
+        "description": "检索诊断：这句话为什么被拦/为什么命中（走线上同一套阈值与索引）",
+        "properties": {
+          "query": { "type": "string" },
+          "topK": { "type": "integer" },
+          "gated": { "type": "boolean", "description": "true = 被相关性闸门拦下（知识库未覆盖）" },
+          "mode": { "type": "string", "enum": ["keyword", "hybrid"] },
+          "reason": { "type": "string", "enum": ["keyword_hit", "vector_hit", "no_candidates", "below_threshold"] },
+          "semantic": { "type": "boolean", "description": "向量路是否可用（false = 降级为关键词路）" },
+          "degraded": { "type": "boolean" },
+          "keywordBestScore": { "type": "number" },
+          "vectorBestCosine": { "type": "number" },
+          "candidates": { "type": "integer" },
+          "thresholds": {
+            "type": "object",
+            "properties": {
+              "minKeywordScore": { "type": "number" },
+              "minVectorScore": { "type": "number" }
+            }
+          },
+          "distanceToGate": { "type": "number", "description": ">0 表示还差多少才够阈值" },
+          "verdict": { "type": "string", "description": "人话结论" },
+          "hits": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": { "type": "string" },
+                "sourcePath": { "type": "string" },
+                "zone": { "type": "string", "nullable": true },
+                "zoneTitle": { "type": "string", "nullable": true },
+                "fuseScore": { "type": "number" },
+                "keywordScore": { "type": "number" },
+                "vectorScore": { "type": "number" },
+                "matchedTokens": { "type": "integer" },
+                "matched": { "type": "array", "items": { "type": "string" } },
+                "snippet": { "type": "string" }
+              }
+            }
+          }
+        },
+        "required": ["query", "hits", "gated", "verdict"]
+      },
+      "Synonyms": {
+        "type": "object",
+        "properties": {
+          "count": { "type": "integer" },
+          "source": { "type": "string", "description": "builtin 或生效中的文件路径" },
+          "file": { "type": "string", "description": "覆盖表落盘位置" },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": { "type": "string" },
+                "alternatives": { "type": "array", "items": { "type": "string" } }
+              }
+            }
+          },
+          "tsv": { "type": "string" }
+        },
+        "required": ["count", "source"]
+      }
+    },
+    "securitySchemes": {
+      "adminToken": { "type": "http", "scheme": "bearer" }
+    }
+  },
+  "paths": {
+    "/api/health": { "get": { "summary": "运行状态", "responses": { "200": { "description": "健康信息（含检索模式、阈值、CORS 白名单）" } } } },
+    "/api/chat": {
+      "post": {
+        "summary": "问答（非流式）",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChatRequest" } } } },
+        "responses": {
+          "200": { "description": "回答", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChatResponse" } } } },
+          "400": { "description": "入参非法", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "429": { "description": "超出限流 CHAT_RATE_PER_MIN" }
+        }
+      }
+    },
+    "/api/chat/stream": {
+      "post": {
+        "summary": "问答（SSE：meta → delta* → done）",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChatRequest" } } } },
+        "responses": { "200": { "description": "text/event-stream" } }
+      }
+    },
+    "/api/suggestions": {
+      "get": {
+        "summary": "推荐问题",
+        "parameters": [{ "name": "zone", "in": "query", "schema": { "type": "string" }, "description": "zoneId 或 mediaId" }],
+        "responses": { "200": { "description": "推荐问法列表" } }
+      }
+    },
+    "/api/zones": { "get": { "summary": "展区分区与媒体映射", "responses": { "200": { "description": "zones" } } } },
+    "/api/knowledge/list": { "get": { "summary": "知识文件清单", "responses": { "200": { "description": "docs + retrieval stats" } } } },
+    "/api/knowledge/reload": {
+      "post": {
+        "summary": "重载知识并重建向量索引",
+        "security": [{ "adminToken": [] }],
+        "responses": { "200": { "description": "reload 结果" }, "401": { "description": "unauthorized" } }
+      }
+    },
+    "/api/admin/feedback-stats": {
+      "get": {
+        "summary": "反馈统计（?format=csv 导出）",
+        "security": [{ "adminToken": [] }],
+        "parameters": [{ "name": "format", "in": "query", "schema": { "type": "string", "enum": ["json", "csv"] } }],
+        "responses": { "200": { "description": "统计或 CSV" }, "401": { "description": "unauthorized" } }
+      }
+    },
+    "/api/admin/diagnostics": {
+      "get": {
+        "summary": "检索诊断：为什么被拦/为什么命中（?q=…&topK=4）",
+        "security": [{ "adminToken": [] }],
+        "parameters": [
+          { "name": "q", "in": "query", "required": true, "schema": { "type": "string" }, "description": "要诊断的问题" },
+          { "name": "topK", "in": "query", "schema": { "type": "integer", "default": 4, "maximum": 20 } }
+        ],
+        "responses": {
+          "200": { "description": "诊断结果", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Diagnostics" } } } },
+          "400": { "description": "q 缺失" },
+          "401": { "description": "unauthorized" }
+        }
+      }
+    },
+    "/api/admin/synonyms": {
+      "get": {
+        "summary": "当前生效的同义词表",
+        "security": [{ "adminToken": [] }],
+        "responses": { "200": { "description": "同义词表", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Synonyms" } } } }, "401": { "description": "unauthorized" } }
+      },
+      "put": {
+        "summary": "替换同义词表（立即生效，可选落盘）",
+        "description": "请求体收 { lines: [\"主词\\t备选1,备选2\"] } 或 { entries: { \"主词\": [\"备选1\"] } }；persist=false 只改内存。同义词在查询时生效，无需重建索引。",
+        "security": [{ "adminToken": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object" } } } },
+        "responses": {
+          "200": { "description": "{ ok, count, source, persistedTo, reloadRequired:false }" },
+          "400": { "description": "请求体为空或没有 lines/entries" },
+          "401": { "description": "unauthorized" }
+        }
+      }
+    },
+    "/api/admin/uncovered": {
+      "get": {
+        "summary": "未覆盖问题清单（noHit 原始提问，供补资料）",
+        "security": [{ "adminToken": [] }],
+        "responses": { "200": { "description": "{ count, items[] }" }, "401": { "description": "unauthorized" } }
+      }
+    },
+    "/api/stats": {
+      "get": {
+        "summary": "运行统计（MySQL 累计，重启不清零）",
+        "security": [{ "adminToken": [] }],
+        "responses": { "200": { "description": "统计" }, "401": { "description": "unauthorized" } }
+      }
+    },
+    "/api/sessions/{sessionId}": {
+      "get": { "summary": "查看会话", "responses": { "200": { "description": "messages" }, "404": { "description": "无会话" } } },
+      "delete": { "summary": "重置会话", "responses": { "200": { "description": "ok" } } }
+    },
+    "/api/feedback": {
+      "post": { "summary": "回答点赞/点踩", "responses": { "200": { "description": "{ ok: true }" }, "400": { "description": "rating 非法" } } }
+    }
+  }
+}
