@@ -168,7 +168,7 @@ python tools/smoke.py
 
 - **生产必须配 `ADMIN_TOKEN`**：绑 `0.0.0.0` 时若没配口令，管理接口会对非本机请求一律 401（fail-closed，不会把统计、知识重载、诊断、同义词表对局域网开放）。此时运营视图也会打不开——这是预期行为，配上口令即可。
 - MySQL 账号是最小权限（`SELECT/INSERT/UPDATE/DELETE/CREATE`，只限 `znwd` 库）：改表结构需要临时 `GRANT ALTER, DROP`。
-- 库不可用时每次写库会**跳过**（不再白等 3 秒），每 60 秒自动重探一次；恢复后无需重启即接着落库。
+- 库不可用时写库与定时裁剪都会**跳过**（不再白等 Hikari 的 connection-timeout，实测 3 秒 → 毫秒级），日志也不刷建连堆栈；应用每 60 秒自动重探一次，**恢复后无需重启即接着落库**，`/api/health` 的 `storageAvailable` 会跟着变回 true。
 - `CORS_ORIGINS` 显式列出展厅域名/IP，不要用 `*`。
 - 应用账号只用 `znwd@localhost` 的最小权限账号，别把 root 口令写进 `.env`。
 - 限流 `CHAT_RATE_PER_MIN` 是防刷底线（默认 30/分钟/IP），现场若有人连续刷提问会收到 429。

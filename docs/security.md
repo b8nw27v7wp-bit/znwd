@@ -11,7 +11,7 @@
 | CORS | 回显 Origin 的同时声明 `access-control-allow-credentials: true`（`CORS_ORIGINS=*` 时是「任意站点 + 允许携带凭据」的经典错配） | 不再发该头（本服务不用 cookie，管理口令走 `Authorization`，不需要它） | 冒烟不依赖该头；预检仍放行 `content-type,authorization` |
 | `/api/feedback` | 无鉴权的公开写口，且不过限流 → 可刷统计与反馈 | 过同一套按 IP 限流（与两个 chat 接口共用一个桶） | 实测：`CHAT_RATE_PER_MIN=2` 时第 3 次即 429；默认 30 时第 28 次起 429 |
 | MySQL 账号权限 | `GRANT ALL PRIVILEGES ON znwd.*` | 收窄到 `SELECT, INSERT, UPDATE, DELETE, CREATE`（建表靠 `CREATE`；不给 DROP/ALTER/LOCK TABLES/GRANT） | 临时实例（3307）实测：用该账号建出 5 张表、问答与反馈各落 1 行、重启后会话与统计恢复 |
-| 降级模式写库 | 库挂掉时**每次问答/反馈白等 Hikari `connection-timeout`（实测 3.0 秒/次）**，文档却写着「照常讲解」 | 写路径先问 `DatabaseStatus.shouldAttempt()`：已知不可用就跳过（毫秒级返回），最多每 60 秒重探一次，库恢复自动接着落库 | 实测：降级模式下反馈 3.0s → **0.019s**；单测 5 条（含「不可用时不写、可用时照写、内存上下文不受影响」） |
+| 降级模式（写库 + 日志） | 库挂掉时**每次问答/反馈/定时裁剪白等 Hikari `connection-timeout`（实测 3.0 秒/次）**，且连接池每 65 秒刷一条建连 WARN + 16 行堆栈（同一根因反复刷屏，真日志被淹） | 写路径与 `trimStorage` 先问 `DatabaseStatus.shouldAttempt()`；`minimum-idle: 0` 去掉后台反复建连；压掉 `PoolBase` 的重探 WARN；新增每 60 秒静默探活（恢复后无需重启即续写） | 实测：反馈 3.0s → **0.019s**；降级静置 70 秒日志 = 1 条 WARN + **0 行堆栈**；建库后未重启第 50 秒自动恢复并落库 4 行；单测 7 条 |
 
 ## 二、已核查、确认没问题（含复核命令）
 

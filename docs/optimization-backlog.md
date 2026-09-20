@@ -87,7 +87,7 @@
 | CORS 错配 | 去掉 `access-control-allow-credentials`（`CORS_ORIGINS=*` 时回显任意 Origin + 允许携带凭据是经典错配；本服务不用 cookie） | 冒烟 56/56（不依赖该头） |
 | `/api/feedback` 限流 | 公开写口纳入按 IP 限流（与两个 chat 接口共用一个桶） | 实测 `CHAT_RATE_PER_MIN=2` 时第 3 次 429；默认 30 时第 28 次起 429 |
 | MySQL 最小权限 | `ALL PRIVILEGES` → `SELECT, INSERT, UPDATE, DELETE, CREATE`（仅 `znwd` 库） | 临时实例实测：建出 5 张表、问答 1 行 + 反馈 1 行、重启后恢复 |
-| **降级模式写库白等 3 秒** | 库挂掉时每次问答/反馈都要等 Hikari `connection-timeout`（实测 3.0s/次），而文档写的是「照常讲解」。改为写路径先问 `DatabaseStatus.shouldAttempt()`：已知不可用直接跳过，最多每 60 秒重探一次，库恢复自动续写 | 实测反馈 3.0s → **0.019s**；单测 5 条（不可用不写 / 可用照写 / 内存上下文不受影响 / 无状态对象兼容 / 探活失败后不反复探） |
+| **降级模式写库白等 3 秒 + 日志刷屏** | 库挂掉时每次问答/反馈/定时裁剪都要等 Hikari `connection-timeout`（实测 3.0s/次），且 Hikari 每 65 秒刷一条建连 WARN + 16 行堆栈（同一根因反复刷，把真日志淹掉）。三层一起改：① 写路径与 `trimStorage` 都先问 `DatabaseStatus.shouldAttempt()`，已知不可用直接跳过；② `minimum-idle: 0` 去掉连接池的后台反复建连，另加每 60 秒的静默探活（恢复后无需重启即续写，health 也跟着变）；③ 压掉 `PoolBase` 每次重探的 WARN 堆栈（根因启动已报一次、health 如实上报） | 实测：反馈 3.0s → **0.019s**；降级静置 70 秒日志只有 **1 条 WARN、0 行堆栈**（原来约 3 段 ×16 行）；建库后**未重启**第 50 秒自动恢复落库，随后问答/反馈各落 1 行；单测 7 条 |
 | 全仓安全核查 | 凭据、注入、XSS、管理面、日志、异常、Actuator 七项逐条核查（含命令） | 见 `docs/security.md` 第二、三节 |
 
 ## 已知取舍（不是 bug）

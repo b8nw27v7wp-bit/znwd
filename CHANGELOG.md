@@ -15,7 +15,7 @@ Spring Boot 3.5.16（Java 21 目标）+ MyBatis + MySQL，前端由 React 重写
 - **CORS 不再声明 `access-control-allow-credentials`**：`CORS_ORIGINS=*` 会回显任意 Origin，叠加该头是经典错配；本服务不用 cookie，管理口令走 `Authorization`，不需要它。
 - **`/api/feedback` 纳入按 IP 限流**：公开写口，原先可刷统计与反馈。
 - **MySQL 账号收窄为最小权限**（`SELECT/INSERT/UPDATE/DELETE/CREATE`，仅限 `znwd` 库），临时实例实测建表与落库均正常。
-- **降级模式写库快速失败**：库不可用时不再每次白等 Hikari `connection-timeout`（实测 3.0s → 0.019s），每 60 秒重探一次，库恢复自动续写。
+- **降级模式写库快速失败 + 日志不刷屏**：库不可用时写路径与定时裁剪都跳过（不再白等 Hikari `connection-timeout`，实测 3.0s → 0.019s）；去掉连接池的后台反复建连并压掉每次重探的 WARN 堆栈（降级静置 70 秒只剩 1 条启动提示、0 行堆栈）；新增每 60 秒的静默探活，**库恢复后无需重启即续写**，`/api/health` 的 `storageAvailable` 跟着翻转。
 - 新增 `docs/security.md`：加固项、已核查项、已接受的风险与上线检查清单，每条带复核命令。
 
 ### Added
