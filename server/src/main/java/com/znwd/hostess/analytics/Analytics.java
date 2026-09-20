@@ -15,6 +15,7 @@ import com.znwd.hostess.domain.FeedbackEntry;
 import com.znwd.hostess.domain.UncoveredEntry;
 import com.znwd.hostess.llm.LlmUsage;
 import com.znwd.hostess.repository.ChatLogMapper;
+import com.znwd.hostess.repository.DatabaseStatus;
 import com.znwd.hostess.repository.FeedbackMapper;
 import com.znwd.hostess.repository.UncoveredMapper;
 
@@ -37,6 +38,7 @@ public class Analytics {
     private final FeedbackMapper feedbackMapper;
     @Nullable
     private final UncoveredMapper uncoveredMapper;
+    private final DatabaseStatus databaseStatus;
     private final int maxUncovered;
 
     private final List<ChatLogEntry> logs = new ArrayList<>();
@@ -51,11 +53,18 @@ public class Analytics {
     private long rewritten;
     private final TokenTotals tokens = new TokenTotals();
 
+    /** 库不可用时跳过写库（不白等 connection-timeout）；测试里传 null 表示"照常尝试" */
+    private boolean dbWritable() {
+        return databaseStatus == null || databaseStatus.shouldAttempt();
+    }
+
     public Analytics(@Nullable ChatLogMapper chatLogMapper, @Nullable FeedbackMapper feedbackMapper,
-                     @Nullable UncoveredMapper uncoveredMapper, int uncoveredLogSize) {
+                     @Nullable UncoveredMapper uncoveredMapper, @Nullable DatabaseStatus databaseStatus,
+                     int uncoveredLogSize) {
         this.chatLogMapper = chatLogMapper;
         this.feedbackMapper = feedbackMapper;
         this.uncoveredMapper = uncoveredMapper;
+        this.databaseStatus = databaseStatus;
         this.maxUncovered = Math.max(0, uncoveredLogSize);
     }
 
@@ -97,7 +106,7 @@ public class Analytics {
             }
         }
 
-        if (chatLogMapper != null) {
+        if (chatLogMapper != null && dbWritable()) {
             try {
                 chatLogMapper.insert(item);
             } catch (RuntimeException e) {
@@ -105,7 +114,7 @@ public class Analytics {
             }
         }
         // 未覆盖问题单独成表：它是运营补资料的待办清单，重启后必须还在
-        if (uncoveredMapper != null && maxUncovered > 0
+        if (uncoveredMapper != null && maxUncovered > 0 && dbWritable()
                 && item.noHit() && item.questionForUncovered() != null) {
             try {
                 uncoveredMapper.insert(new UncoveredEntry(item.at(), item.sessionId(), item.questionForUncovered()));
@@ -122,7 +131,7 @@ public class Analytics {
                 feedback.remove(feedback.size() - 1);
             }
         }
-        if (feedbackMapper != null) {
+        if (feedbackMapper != null && dbWritable()) {
             try {
                 feedbackMapper.insert(item);
             } catch (RuntimeException e) {

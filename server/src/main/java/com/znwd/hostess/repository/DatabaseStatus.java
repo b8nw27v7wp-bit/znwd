@@ -23,10 +23,14 @@ public class DatabaseStatus {
 
     private static final Logger log = LoggerFactory.getLogger(DatabaseStatus.class);
 
+    /** 库不可用时两次重探之间的最小间隔：写路径靠它自动恢复，又不必每次写都等 connection-timeout */
+    private static final long REPROBE_MS = 60_000L;
+
     private final HealthMapper healthMapper;
     private final DataSource dataSource;
     private volatile boolean available;
     private volatile String error;
+    private volatile long lastCheckAt;
 
     public DatabaseStatus(HealthMapper healthMapper, DataSource dataSource) {
         this.healthMapper = healthMapper;
@@ -35,6 +39,7 @@ public class DatabaseStatus {
 
     /** 探活 → 可达则建表（幂等）。返回库是否可用。 */
     public boolean check() {
+        lastCheckAt = System.currentTimeMillis();
         try {
             healthMapper.ping();
         } catch (RuntimeException e) {
@@ -64,6 +69,23 @@ public class DatabaseStatus {
 
     public boolean available() {
         return available;
+    }
+
+    /**
+     * 写路径用：现在值不值得尝试写库。
+     *
+     * <p>库已知不可用时直接返回 false —— 否则每次问答/反馈都要白等一次 Hikari
+     * {@code connection-timeout}（实测 3 秒/次，展厅现场就是「问一句卡三秒」）。
+     * 但也不能一票否决到底：最多每 60 秒重探一次，库恢复后自动接着落库。
+     */
+    public boolean shouldAttempt() {
+        if (available) {
+            return true;
+        }
+        if (System.currentTimeMillis() - lastCheckAt < REPROBE_MS) {
+            return false;
+        }
+        return check();
     }
 
     public String error() {

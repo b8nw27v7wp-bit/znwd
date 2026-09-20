@@ -40,14 +40,15 @@ public class AppConfig {
     private static final Logger log = LoggerFactory.getLogger(AppConfig.class);
 
     @Bean
-    public SessionStore sessionStore(SessionMapper sessionMapper) {
-        return new SessionStore(sessionMapper);
+    public SessionStore sessionStore(SessionMapper sessionMapper, DatabaseStatus databaseStatus) {
+        return new SessionStore(sessionMapper, databaseStatus);
     }
 
     @Bean
     public Analytics analytics(ChatLogMapper chatLogMapper, FeedbackMapper feedbackMapper,
-                               UncoveredMapper uncoveredMapper, AppProperties props) {
-        return new Analytics(chatLogMapper, feedbackMapper, uncoveredMapper, props.uncoveredLogSize());
+                               UncoveredMapper uncoveredMapper, DatabaseStatus databaseStatus,
+                               AppProperties props) {
+        return new Analytics(chatLogMapper, feedbackMapper, uncoveredMapper, databaseStatus, props.uncoveredLogSize());
     }
 
     @Bean

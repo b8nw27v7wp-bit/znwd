@@ -12,6 +12,7 @@ import org.springframework.lang.Nullable;
 
 import com.znwd.hostess.llm.ChatMessage;
 import com.znwd.hostess.llm.ChatRole;
+import com.znwd.hostess.repository.DatabaseStatus;
 import com.znwd.hostess.repository.SessionMapper;
 
 /**
@@ -30,10 +31,12 @@ public class SessionStore {
 
     @Nullable
     private final SessionMapper mapper;
+    private final DatabaseStatus databaseStatus;
     private final Map<String, Entry> map = new LinkedHashMap<>();
 
-    public SessionStore(@Nullable SessionMapper mapper) {
+    public SessionStore(@Nullable SessionMapper mapper, @Nullable DatabaseStatus databaseStatus) {
         this.mapper = mapper;
+        this.databaseStatus = databaseStatus;
     }
 
     /** 供 LLM 使用：刷新 lastActive */
@@ -151,7 +154,8 @@ public class SessionStore {
     }
 
     private void persist(String sessionId, int seq, String user, String assistant) {
-        if (mapper == null) {
+        // 库不可用就别写：否则每次问答都要白等一次 Hikari connection-timeout（实测 3 秒）
+        if (mapper == null || (databaseStatus != null && !databaseStatus.shouldAttempt())) {
             return;
         }
         try {

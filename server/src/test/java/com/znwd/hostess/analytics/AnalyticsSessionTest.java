@@ -21,7 +21,7 @@ class AnalyticsSessionTest {
 
     @Test
     void 会话追加与查看与重置() {
-        SessionStore store = new SessionStore(null);
+        SessionStore store = new SessionStore(null, null);
         store.append("s1", "问一", "答一");
         assertEquals(2, store.history("s1").size());
         assertNotNull(store.peek("s1"));
@@ -34,7 +34,7 @@ class AnalyticsSessionTest {
 
     @Test
     void 无会话ID时不记录上下文() {
-        SessionStore store = new SessionStore(null);
+        SessionStore store = new SessionStore(null, null);
         store.append(null, "问", "答");
         assertTrue(store.history(null).isEmpty());
         assertEquals(0, store.count());
@@ -42,7 +42,7 @@ class AnalyticsSessionTest {
 
     @Test
     void 会话只保留最近六轮() {
-        SessionStore store = new SessionStore(null);
+        SessionStore store = new SessionStore(null, null);
         for (int i = 0; i < 10; i++) {
             store.append("s1", "问" + i, "答" + i);
         }
@@ -54,7 +54,7 @@ class AnalyticsSessionTest {
 
     @Test
     void 统计noHit与tokens并留存未覆盖问题() {
-        Analytics analytics = new Analytics(null, null, null, 3);
+        Analytics analytics = new Analytics(null, null, null, null, 3);
         analytics.logChat(entry(1, "rag", false, false, null, new LlmUsage(100, 50, 0, 150)));
         analytics.logChat(entry(2, "llm_only", true, true, "会议室在哪里", null));
 
@@ -76,7 +76,7 @@ class AnalyticsSessionTest {
 
     @Test
     void 未覆盖清单按留存上限截断且新在前() {
-        Analytics analytics = new Analytics(null, null, null, 2);
+        Analytics analytics = new Analytics(null, null, null, null, 2);
         analytics.logChat(entry(1, "llm_only", true, false, "问题A", null));
         analytics.logChat(entry(2, "llm_only", true, false, "问题B", null));
         analytics.logChat(entry(3, "llm_only", true, false, "问题C", null));
@@ -87,7 +87,7 @@ class AnalyticsSessionTest {
 
     @Test
     void 反馈统计按问题聚合负反馈并可导出CSV() {
-        Analytics analytics = new Analytics(null, null, null, 50);
+        Analytics analytics = new Analytics(null, null, null, null, 50);
         analytics.logFeedback(new FeedbackEntry(1, "s1", "up", null, "提供培训吗？"));
         analytics.logFeedback(new FeedbackEntry(2, "s2", "down", "回答太笼统", "叶片检测要停机吗？"));
         analytics.logFeedback(new FeedbackEntry(3, "s3", "down", null, "叶片检测要停机吗？"));
@@ -111,7 +111,7 @@ class AnalyticsSessionTest {
 
     @Test
     void 统计窗口只保留最近若干条() {
-        Analytics analytics = new Analytics(null, null, null, 50);
+        Analytics analytics = new Analytics(null, null, null, null, 50);
         for (int i = 0; i < Analytics.MAX_LOGS + 20; i++) {
             analytics.logChat(entry(i, "rag", false, false, null, null));
         }
@@ -124,7 +124,7 @@ class AnalyticsSessionTest {
 
     @Test
     void 错误日志计入errors且不计入rag() {
-        Analytics analytics = new Analytics(null, null, null, 50);
+        Analytics analytics = new Analytics(null, null, null, null, 50);
         analytics.logChat(new ChatLogEntry(1, "s1", "llm_only", "mock", "h#1#问", 1, "", 5, false, null, false, null,
                 null, "internal_error"));
         Map<String, Object> stats = analytics.stats(0);
@@ -136,7 +136,7 @@ class AnalyticsSessionTest {
 
     @Test
     void 无usage时token统计为零而不报错() {
-        Analytics analytics = new Analytics(null, null, null, 50);
+        Analytics analytics = new Analytics(null, null, null, null, 50);
         analytics.logChat(entry(1, "rag", false, false, null, null));
         @SuppressWarnings("unchecked")
         Map<String, Object> tokens = (Map<String, Object>) analytics.stats(0).get("tokens");
