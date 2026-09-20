@@ -14,6 +14,8 @@
   --accent-soft: #e8f1fd;
   --warn: #b25000;
   --warn-soft: #fff5e6;
+  /* 横幅用的柔和警示色：语义保留，视觉重量比 --warn 低一档 */
+  --warn-text: #8a5f22;
   --line: #e5e5ea;
   --radius: 14px;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
@@ -90,7 +92,8 @@ select {
 .avatar-slot {
   display: grid;
   place-items: center;
-  margin: 14px 18px 0;
+  /* 四边留白决定形象的"呼吸感"：框越小人物等比略缩，可见比例（--frame-ratio）不受影响 */
+  margin: 34px 28px 0;
   overflow: hidden;
 }
 
@@ -117,11 +120,11 @@ select {
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
-  padding: 14px 0 10px;
+  padding: 18px 0 12px;
 }
 
 .head h1 {
-  font-size: 15.5px;
+  font-size: 17px;
   font-weight: 600;
   letter-spacing: 0.01em;
   margin: 0;
@@ -129,14 +132,17 @@ select {
 
 .head .sub {
   display: block;
-  margin-top: 3px;
-  font-size: 11.5px;
+  margin-top: 5px;
+  font-size: 12px;
+  letter-spacing: 0.01em;
   color: var(--text-faint);
 }
 
 .head-actions {
   display: flex;
-  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px 12px;
   align-items: center;
   font-size: 12px;
   color: var(--text-dim);
@@ -171,12 +177,17 @@ select {
 
 .zone-select {
   flex: 1;
-  padding: 7px 10px;
+  padding: 7px 30px 7px 11px;
   border-radius: 10px;
   background: var(--bg-soft);
   border: none;
   font-size: 13px;
   appearance: none;
+  /* appearance:none 之后没有系统箭头，会看不出这是个下拉 */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2386868b' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 11px center;
+  cursor: pointer;
 }
 
 .main {
@@ -191,18 +202,19 @@ select {
 }
 
 .banner {
-  margin: 0 0 14px;
-  padding: 10px 13px;
-  border-radius: 12px;
+  margin: 0 0 12px;
+  padding: 8px 11px;
+  border-radius: 10px;
   background: var(--warn-soft);
-  color: var(--warn);
-  font-size: 12.5px;
+  color: var(--warn-text);
+  font-size: 12px;
+  line-height: 1.55;
 }
 
 .empty {
   color: var(--text-faint);
-  font-size: 13.5px;
-  padding: 18px 0 6px;
+  font-size: 13px;
+  padding: 16px 0 4px;
 }
 
 .chips {
@@ -244,9 +256,32 @@ select {
 }
 
 .answer {
-  white-space: pre-wrap;
   font-size: 15px;
   line-height: 1.72;
+}
+
+/* 回答按块渲染：段落留白、列表悬挂缩进（编号/中点对齐正文，不参与折行） */
+.answer .line {
+  margin: 0 0 8px;
+}
+
+.answer .line:last-child {
+  margin-bottom: 0;
+}
+
+.answer .li {
+  padding-left: 1.35em;
+  text-indent: -1.35em;
+}
+
+.answer .marker {
+  display: inline-block;
+  width: 1.1em;
+  color: var(--text-dim);
+}
+
+.answer strong {
+  font-weight: 600;
 }
 
 .caret {
@@ -369,7 +404,7 @@ select {
 
 .hint {
   margin-top: 7px;
-  font-size: 11px;
+  font-size: 11.5px;
   color: var(--text-faint);
   line-height: 1.5;
 }

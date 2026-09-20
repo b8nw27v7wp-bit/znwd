@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useChat } from './composables/useChat';
 import { useSpeech } from './composables/useSpeech';
+import { formatAnswer, type Block } from './format';
 import SourcePanel from './components/SourcePanel.vue';
 import AdminPanel from './components/AdminPanel.vue';
 import AvatarPortrait from './components/AvatarPortrait.vue';
@@ -61,6 +62,15 @@ watch(
     if (!chat.messages.value.length) speech.stop();
   },
 );
+
+/** 回答按块渲染（粗体/列表/分段）：模型爱用 Markdown，直接当纯文本渲染会让 ** 和 * 上大屏 */
+const renderedAnswers = computed<Record<string, Block[]>>(() => {
+  const out: Record<string, Block[]> = {};
+  for (const message of chat.messages.value) {
+    if (message.role === 'assistant') out[message.id] = formatAnswer(message.content);
+  }
+  return out;
+});
 
 // 语音播报：新问题一来先闭嘴，流式结束后整段读（失败/取消的那条不读）
 watch(
@@ -190,7 +200,22 @@ function assistantSourceLabel(mode?: string, provider?: string): string {
             <template v-else>
               <div class="speaker">{{ assistantSourceLabel(message.meta?.mode, message.meta?.provider) }}</div>
               <div class="answer" aria-live="polite">
-                {{ message.content }}<span v-if="message.pending" class="caret"></span>
+                <p
+                  v-for="(block, bi) in renderedAnswers[message.id] ?? []"
+                  :key="bi"
+                  :class="block.kind === 'li' ? 'line li' : 'line'"
+                >
+                  <span v-if="block.marker" class="marker">{{ block.marker }}</span>
+                  <template v-for="(seg, si) in block.segments" :key="si">
+                    <strong v-if="seg.bold">{{ seg.text }}</strong>
+                    <template v-else>{{ seg.text }}</template>
+                  </template>
+                  <span
+                    v-if="message.pending && bi === (renderedAnswers[message.id]?.length ?? 0) - 1"
+                    class="caret"
+                  ></span>
+                </p>
+                <span v-if="message.pending && !(renderedAnswers[message.id]?.length)" class="caret"></span>
               </div>
               <div class="msg-foot">
                 <span v-if="message.meta?.cached">缓存命中</span>
