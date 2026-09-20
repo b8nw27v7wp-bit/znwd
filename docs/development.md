@@ -33,7 +33,7 @@ cd server && ../tools/mvn -B test        # 等价于 mvn -B test
 | 接口冒烟 | `python tools/smoke.py`（需服务在跑，`BASE=http://…` 可改目标） | `通过 56 项，失败 0 项` |
 | 前端 dev | `cd web && npm install && npm run dev` | `VITE v6 ready`，`:5173`，`/api` 代理到 8787 |
 | 前端构建 | `cd web && npm run build` | `vue-tsc -b` 类型检查 + `vite build`，产物 `web/dist` |
-| 前端单测 | `cd web && npm test` | `27 passed`（含 jsdom 下的组件接线测试） |
+| 前端单测 | `cd web && npm test` | `28 passed`（含 jsdom 下的组件接线测试） |
 | 打包后端 | `cd server && ../tools/mvn -B -DskipTests package` | `server/target/hostess-server.jar` |
 
 评测/标定是**改语料、改同义词、改打分参数后的必跑项**，口径见 `docs/eval.md`。
@@ -85,7 +85,7 @@ MySQL 首次使用：把 `server/db/init.sql` 里两处 `CHANGE_ME_znwd` 改成�
 
 ```bash
 cd server && ../tools/mvn -B test                     # 33 项：检索/HTTP/统计会话/同义词/诊断文案/配置接线
-cd web && npm test                                     # 27 项：SSE 解析、问答状态机、朗读切片、回答排版、播报接线（jsdom）
+cd web && npm test                                     # 28 项：SSE 解析、问答状态机、朗读切片、回答排版、播报接线（jsdom）
 python tools/smoke.py                                  # 56 项契约（需服务在跑）
 ```
 
