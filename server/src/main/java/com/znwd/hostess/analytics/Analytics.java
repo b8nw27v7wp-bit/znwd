@@ -278,6 +278,10 @@ public class Analytics {
 
     /** 定时裁剪：反馈/未覆盖清单只保留最近部分，展厅跑半年也不会把表撑爆 */
     public void trimStorage(int keepFeedback, int keepUncovered) {
+        // 与写入路径同一个守卫：库不可用时定时任务不该白等 connection-timeout 再刷一条 WARN + 堆栈
+        if (!dbWritable()) {
+            return;
+        }
         try {
             if (feedbackMapper != null) {
                 feedbackMapper.trim(keepFeedback);

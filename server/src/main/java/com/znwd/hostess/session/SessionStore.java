@@ -131,6 +131,10 @@ public class SessionStore {
             mapper.deleteExpiredMessages(now - TTL_MS);
             mapper.deleteExpiredSessions(now - TTL_MS);
             for (SessionMapper.SessionRow row : mapper.recentSessions(now - TTL_MS, MAX_SESSIONS)) {
+                if (map.containsKey(row.id())) {
+                    // 内存里已有的会话更新：覆盖会把库不可用期间的追问上下文冲掉
+                    continue;
+                }
                 List<ChatMessage> messages = new ArrayList<>();
                 for (SessionMapper.MessageRow m : mapper.messages(row.id())) {
                     ChatRole role = switch (m.role() == null ? "" : m.role()) {

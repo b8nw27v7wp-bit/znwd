@@ -135,6 +135,23 @@ public class AppConfig {
                     props.chatRatePerMin(), props.corsOriginList());
         }
 
+        /**
+         * 库不可用时定期重探：恢复后无需重启即可继续落库，`/api/health` 也不会一直报旧状态。
+         *
+         * <p>为什么必须有这一条：写路径的守卫（`DatabaseStatus.shouldAttempt`）只在**有请求**时才重探，
+         * 展厅闲下来时库恢复了也不会被发现，运营在 `/api/health` 上看到的是过期的 false。
+         * 库可用时这个任务什么都不做（不进库、不建连）。
+         */
+        @Scheduled(fixedDelay = 60_000L, initialDelay = 60_000L)
+        public void probeDatabase() {
+            if (databaseStatus.available()) {
+                return;
+            }
+            if (databaseStatus.check()) {
+                log.info("[db] MySQL 恢复可用：已续上落库（库不可用期间的数据仍只在内存里）");
+            }
+        }
+
         /** 定时清理：反馈与未覆盖清单的历史尾巴，并回收限流器的过期窗口 */
         @Scheduled(fixedDelay = 10 * 60 * 1000L, initialDelay = 10 * 60 * 1000L)
         public void housekeeping() {

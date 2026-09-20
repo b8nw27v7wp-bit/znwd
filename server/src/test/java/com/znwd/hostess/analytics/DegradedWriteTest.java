@@ -12,6 +12,7 @@ import com.znwd.hostess.repository.DatabaseStatus;
 import com.znwd.hostess.repository.FeedbackMapper;
 import com.znwd.hostess.repository.HealthMapper;
 import com.znwd.hostess.repository.SessionMapper;
+import com.znwd.hostess.repository.UncoveredMapper;
 import com.znwd.hostess.session.SessionStore;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -41,7 +42,12 @@ class DegradedWriteTest {
         }
     }
 
-    /** 记录调用次数的 mapper 替身（MyBatis 接口用动态代理实现） */
+    /**
+     * 记录调用次数的 mapper 替身（MyBatis 接口用动态代理实现）。
+     *
+     * <p>返回值必须按真实返回类型给默认值：`trim` 返回 int，返回 null 会在拆箱时 NPE，
+     * 而调用方（trimStorage）把异常 catch 掉了——表现是「只数到一条裁剪」，很容易看错。
+     */
     @SuppressWarnings("unchecked")
     private static <T> T counting(Class<T> type, AtomicInteger counter) {
         return (T) Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[] {type}, (proxy, method, args) -> {
@@ -49,6 +55,16 @@ class DegradedWriteTest {
                 return type.getSimpleName() + "Stub";
             }
             counter.incrementAndGet();
+            Class<?> returnType = method.getReturnType();
+            if (returnType == int.class) {
+                return 0;
+            }
+            if (returnType == long.class) {
+                return 0L;
+            }
+            if (returnType == boolean.class) {
+                return false;
+            }
             return null;
         });
     }
@@ -78,6 +94,18 @@ class DegradedWriteTest {
     }
 
     @Test
+    void 库不可用时定时裁剪不碰库() {
+        AtomicInteger writes = new AtomicInteger();
+        Analytics analytics = new Analytics(
+                counting(ChatLogMapper.class, writes), counting(FeedbackMapper.class, writes),
+                counting(UncoveredMapper.class, writes), new FakeDbStatus(false), 50);
+
+        analytics.trimStorage(20, 50);
+
+        assertEquals(0, writes.get(), "库不可用时定时裁剪也不该碰库（否则每 10 分钟一条 WARN + 堆栈）");
+    }
+
+    @Test
     void 库可用时照常写库() {
         AtomicInteger writes = new AtomicInteger();
         Analytics analytics = new Analytics(
@@ -88,6 +116,18 @@ class DegradedWriteTest {
         analytics.logFeedback(feedback());
 
         assertEquals(2, writes.get(), "库可用时两条写入都应发生");
+    }
+
+    @Test
+    void 库可用时定时裁剪照常执行() {
+        AtomicInteger writes = new AtomicInteger();
+        Analytics analytics = new Analytics(
+                null, counting(FeedbackMapper.class, writes), counting(UncoveredMapper.class, writes),
+                new FakeDbStatus(true), 50);
+
+        analytics.trimStorage(20, 50);
+
+        assertEquals(2, writes.get(), "库可用时两条裁剪都应执行");
     }
 
     @Test

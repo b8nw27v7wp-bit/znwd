@@ -33,7 +33,10 @@ spring:
     hikari:
       pool-name: znwd-pool
       maximum-pool-size: ${DB_POOL_SIZE:8}
-      minimum-idle: 2
+      # 0 = 不后台维持空闲连接：库不可用时否则 connection-adder 每 65 秒重试一次，
+      # 每次都打一条 WARN + 完整堆栈（同一原因重复刷屏，把真正的日志淹掉）。
+      # 代价是库可用时首请求现建一条连接（毫秒级），展厅场景可忽略。
+      minimum-idle: 0
       connection-timeout: 3000
       idle-timeout: 300000
       max-lifetime: 1500000
@@ -53,6 +56,10 @@ logging:
   level:
     root: INFO
     com.znwd.hostess: INFO
+    # 库不可用时，Hikari 每次建连失败都由 PoolBase 打一条 WARN + 完整堆栈（同一根因反复刷屏）。
+    # 根因在启动时已报一次、/api/health 的 storageAvailable 也如实上报，这里只压掉每次重探的噪声；
+    # 连接池自身的其它告警（HikariPool：池耗尽/取连接超时）保持默认级别不动。
+    com.zaxxer.hikari.pool.PoolBase: ERROR
   pattern:
     console: "%d{HH:mm:ss.SSS} %-5level [%thread] %logger{28} - %msg%n"
 
