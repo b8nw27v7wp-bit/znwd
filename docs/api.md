@@ -186,7 +186,7 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 | `corsOrigins` | 生效的 CORS 白名单 |
 | `minRelevanceScore` / `noHitLlm` | 当前闸门阈值 / 拒答是否走模型 |
 | `storage` | 固定 `mysql` |
-| `storageAvailable` | **库是否可用**；`false` 时服务照常讲解、只是不落库（前端顶部显示降级横幅） |
+| `storageAvailable` | **库是否可用**；`false` 时服务照常讲解、只是不落库（前端不在页面上提示，只在运营视图的「本机设置」里显示） |
 | `host` / `uptimeSec` | 监听地址 / 运行秒数 |
 
 `retrieval`（`HybridStats`）：

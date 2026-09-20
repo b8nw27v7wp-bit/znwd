@@ -23,7 +23,7 @@ cd web && npm install && npm run dev
 
 打开 `http://localhost:5173`，在对话区提问（Enter 发送）。
 
-- **没有 MySQL 也能起**：会话/统计不落库，`/api/health` 报 `storageAvailable=false`，页面顶部会出现降级横幅。
+- **没有 MySQL 也能起**：会话/统计不落库，`/api/health` 报 `storageAvailable=false`。展厅页面上不提示（大屏不放技术信息），要看落库状态就打开运营视图 `?admin=1`，「本机设置」里有一行数据留存。
   要真落库：把 `server/db/init.sql` 里两处 `CHANGE_ME_znwd` 改成自定口令执行一次，再把同一口令写进 `server/.env` 的 `DB_PASSWORD`。
 - 接真模型：在 `server/.env` 里设 `LLM_PROVIDER=openai_compat` + `LLM_BASE_URL/API_KEY/MODEL`（示例见该文件的注释）。
 - **回答会自动朗读**（浏览器内置语音合成，零依赖、离线可用）：默认开，选择记在浏览器里；朗读中页面上会出现「停读」。展厅大屏上不放运营入口——运营视图用 `?admin=1` 打开，里面可以关掉朗读、重置当前会话，以及看统计/未覆盖问题/同义词表。

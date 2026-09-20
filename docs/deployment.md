@@ -97,7 +97,7 @@ DB_PASSWORD=<上一步的口令>
 
 `init.sql` 只做三件事：建库 `znwd`、建最小权限账号 `znwd@localhost`、授权该库读写。**表结构不用手建**——应用启动时 `DatabaseStatus` 在库可达的情况下幂等执行 `schema.sql`（五张表：`session`、`session_message`、`chat_log`、`feedback`、`uncovered_question`）。
 
-判断当前是否连着库：`GET /api/health` 的 `storageAvailable`（`false` = 没连上，服务仍在讲解但不落库，前端顶部显示橙色降级横幅）。
+判断当前是否连着库：`GET /api/health` 的 `storageAvailable`（`false` = 没连上，服务仍在讲解但不落库；前端不在大屏上提示，打开 `?admin=1` 的运营视图看「本机设置 → 数据留存」）。
 
 ## 5. 运维接口
 

@@ -109,7 +109,7 @@ MySQL 表（`resources/schema.sql`，全部 `CREATE TABLE IF NOT EXISTS`）：
 | `uncovered_question` | 闸门拦下的原始提问 | 运营补资料的靶子 |
 
 - **建表不在 `spring.sql.init`**：实测「连不上库」时 `continue-on-error` 不生效、会把整个 Spring 上下文打挂。改由 `DatabaseStatus.check()` 在库可达时用 `ResourceDatabasePopulator` 幂等执行 `schema.sql`（`spring.sql.init.mode: never`）。
-- **库不可用不是故障**：服务照常讲解，只是不落库；`/api/health` 报 `storageAvailable=false`，前端顶部显示橙色降级横幅。Hikari 的 `initialization-fail-timeout: -1` + `connection-timeout: 3000` 保证启动不被库拖死。
+- **库不可用不是故障**：服务照常讲解，只是不落库；`/api/health` 报 `storageAvailable=false`。展厅页面上不提示，状态只出现在运营视图（`?admin=1`）的「本机设置」里——大屏不给参观者看技术信息。Hikari 的 `initialization-fail-timeout: -1` + `connection-timeout: 3000` 保证启动不被库拖死。
 - **面向展厅的语义**：数据表负责「重启不丢」与运营留痕，**内存才是热路径**。
 
 ## 6. 前端结构
