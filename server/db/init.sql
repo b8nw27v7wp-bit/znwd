@@ -13,8 +13,13 @@ CREATE DATABASE IF NOT EXISTS znwd
 CREATE USER IF NOT EXISTS 'znwd'@'localhost' IDENTIFIED BY 'CHANGE_ME_znwd';
 ALTER USER 'znwd'@'localhost' IDENTIFIED BY 'CHANGE_ME_znwd';
 
--- 只给这一个库的读写权限，够建表+读写会话/统计/反馈
-GRANT ALL PRIVILEGES ON znwd.* TO 'znwd'@'localhost';
+-- 最小权限：只给这一个库，且只给应用真正用到的权限
+--   SELECT/INSERT/UPDATE/DELETE —— 会话、问答日志、反馈、未覆盖问题的读写
+--   CREATE —— 启动时幂等执行 schema.sql 建表（全是 CREATE TABLE IF NOT EXISTS）
+-- 刻意不给 DROP/ALTER/LOCK TABLES/GRANT：应用用不到，真出事时也少一分破坏力。
+-- 将来若要改表结构（需要 ALTER/DROP），临时执行一次：
+--   GRANT ALTER, DROP ON znwd.* TO 'znwd'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE ON znwd.* TO 'znwd'@'localhost';
 FLUSH PRIVILEGES;
 
 -- 表结构由应用启动时执行 schema.sql（幂等）自动创建，这里不用手建。
