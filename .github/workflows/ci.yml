@@ -6,37 +6,71 @@ on:
   pull_request:
 
 jobs:
-  verify:
+  backend:
+    name: 后端（编译 + 单测 + 检索评测 + 接口冒烟）
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     env:
-      # CI 里没有 server/.env，若不显式给阈值，评测/标定会退回代码默认值 3.8，
-      # 于是「CI 通过」验的不是线上实际用的阈值。改 .env 时这里必须一起改。
+      # CI 里没有 server/.env。6.3 现在同时也是代码默认值（application.yml 的 MIN_RELEVANCE_SCORE
+      # 与 HybridRetriever.DEFAULT_MIN_KEYWORD_SCORE），显式写出来是为了让"CI 通过的阈值"可见可改；
+      # 重新标定后这三处要一起改。
       MIN_RELEVANCE_SCORE: '6.3'
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: 单元测试（不需要 MySQL）
+        run: mvn -B -f server/pom.xml test
+
+      - name: 检索评测（同一批用例，不写报告）
+        run: mvn -B -q -f server/pom.xml test-compile exec:java@eval -Dexec.args="--no-write"
+
+      - name: 打包
+        run: mvn -B -f server/pom.xml -DskipTests package
+
+      - name: 起服务并跑接口冒烟
+        run: |
+          java -jar server/target/hostess-server.jar --spring.main.banner-mode=off > /tmp/server.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf http://127.0.0.1:8787/api/health >/dev/null && break
+            sleep 1
+          done
+          python3 tools/smoke.py
+        env:
+          LLM_PROVIDER: mock
+          HOST: 127.0.0.1
+          PORT: '8787'
+
+      - name: 失败时打印服务日志
+        if: failure()
+        run: tail -80 /tmp/server.log
+
+  frontend:
+    name: 前端（类型检查 + 构建 + 单测）
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
+          cache-dependency-path: web/package-lock.json
+
       - name: 安装依赖
+        working-directory: web
         run: npm ci
-      - name: 构建（server + web）
+
+      - name: 类型检查 + 构建
+        working-directory: web
         run: npm run build
-      - name: 单元测试
-        run: npm test -w server
-      - name: 检索评测（含闸门漏答检查，不写基线）
-        run: npm run eval:retrieval -- --no-write
-      - name: 相关性阈值标定（区间必须成立）
-        run: npm run calibrate -w server
-      - name: 起服务并跑 API 审计
-        run: |
-          node server/dist/index.js &
-          for i in $(seq 1 30); do
-            curl -sf http://127.0.0.1:8787/api/health >/dev/null && break
-            sleep 1
-          done
-          node server/scripts/api-audit.mjs
-        env:
-          HOST: 127.0.0.1
-          PORT: '8787'
+
+      - name: 单测（SSE 解析、问答状态机、朗读切片、播报接线）
+        working-directory: web
+        run: npm test
