@@ -143,3 +143,8 @@ jobs:
       - name: 单测（SSE 解析、问答状态机、朗读切片、播报接线、注入面）
         working-directory: web
         run: npm test
+
+      # 部署一体机的要求是「除大模型外一律本地」，这条容易被一次顺手引 CDN 破坏，
+      # 所以放在构建之后跑：产物、后端源码出网入口、依赖清单一起查。
+      - name: 本地化不变量（除 LLM 外一律本地）
+        run: python3 tools/offline-check.py

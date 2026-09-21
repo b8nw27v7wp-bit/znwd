@@ -173,3 +173,32 @@ python tools/smoke.py
 - 应用账号只用 `znwd@localhost` 的最小权限账号，别把 root 口令写进 `.env`。
 - 限流 `CHAT_RATE_PER_MIN` 是防刷底线（默认 30/分钟/IP），现场若有人连续刷提问会收到 429。
 - `.env`、`server/data/`、`server/indexes/`、`web/dist/` 都不进版本库（见 `docs/development.md` 提交约定）。
+
+## 离线/内网部署：只有大模型出网
+
+一体机是独立环境，网络只用来接大模型。这条要求现在是**可执行的检查**，不是口头约定：
+
+```bash
+python tools/offline-check.py              # 产物 / 后端源码出网入口 / 依赖清单
+python tools/offline-check.py --runtime    # 追加：跑着的服务 provider 是否符合预期
+```
+
+| 类别 | 结论 | 依据 |
+| --- | --- | --- |
+| 前端产物 | 无任何联网引用（字体走系统栈、形象图本地、无 CDN/埋点） | O01–O03 扫 `web/dist` |
+| 后端出网入口 | 只有 `llm/OpenAiCompatChatModel` 与 `embedding/OpenAiCompatEmbeddingProvider` | O04 扫源码（白名单之外出现网络调用即失败） |
+| 依赖 | 无云 SDK / 遥测库 | O05 扫 `pom.xml`、`package.json` |
+| 知识/检索/闸门/落库 | 全在本地 | MySQL 本机；`EMBED_PROVIDER=bag` 时向量路离线兜底 |
+
+**没网时会发生什么**（按组件逐个说清，避免现场才发现）：
+
+| 场景 | 表现 |
+| --- | --- |
+| 启动、加载知识、检索、闸门判定 | 正常（都是本地计算） |
+| 域外/未覆盖问题 | 正常给固定拒答（闸门拦截不调用大模型） |
+| 命中知识的问题 | 需要调大模型；没网则回答失败，页面给友好提示，技术原因进运营视图 |
+| 演示/验收（无网、无模型） | `LLM_PROVIDER=mock`：整条链路可跑，回答是带「Mock 演示回复」的固定摘要 |
+| 想离线也有真回答 | 在机器上放本地大模型，`LLM_BASE_URL` 指向它（OpenAI 兼容即可，无需改代码） |
+
+自检套件本身也都在本地跑：`smoke.py`（接口契约）、`security.py`（边界与安全）、`db-check.py`（库层），
+三个都不需要外网，可直接拷到一体机上执行。

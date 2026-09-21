@@ -33,6 +33,7 @@ cd server && ../tools/mvn -B test        # 等价于 mvn -B test
 | 接口冒烟 | `python tools/smoke.py`（需服务在跑，`BASE=http://…` 可改目标） | `通过 56 项，失败 0 项` |
 | 边界与安全 | `python tools/security.py`（同上；非回环越权与误配置组见 `docs/security-testing.md`） | `通过 49 项，失败 0 项`（只跑主实例）／`57 项`（另起两个实例时） |
 | 库层核查 | `python tools/db-check.py`（需本机 mysql 客户端；缺客户端整组 SKIP） | `通过 8 项，失败 0 项` |
+| 本地化不变量 | `python tools/offline-check.py`（`--runtime` 追加运行期核查） | `通过 5 项，失败 0 项` |
 | 前端 dev | `cd web && npm install && npm run dev` | `VITE v6 ready`，`:5173`，`/api` 代理到 8787 |
 | 前端构建 | `cd web && npm run build` | `vue-tsc -b` 类型检查 + `vite build`，产物 `web/dist` |
 | 前端单测 | `cd web && npm test` | `31 passed`（含 jsdom 下的组件接线测试） |
