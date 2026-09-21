@@ -51,6 +51,18 @@
   CI 在冒烟之后跑一遍；用例编号、输入、期望与「已接受的风险」见 `docs/security-testing.md`。
 - 前端 `format.spec.ts` 增「排版注入面」3 条：HTML 标签与事件属性、`javascript:` 链接语法、用粗体记号闭合属性，
   断言产出只有 `text/bold` 两个字段（没有 `href`/`src`/`onerror` 可塞）。
+- **`tools/db-check.py`：库层核查** 8 项（本机 mysql 客户端 + 应用自己的最小权限账号，探测数据用完即删）：
+  表齐全、账号无 `DROP/ALTER/GRANT`、`chat_log.message_preview` 只存 `hash#长度#前20字`、`message_len` 记原长、
+  `answer_preview` 有截断、会话落库、未覆盖问题进表。**同时写明一条取舍**：`uncovered_question` 与
+  `session_message` 存原文（运营补知识、多轮上下文需要），「不落原话」只保证 `chat_log` 与 JSONL 日志。
+- 误配置 fail-closed 常驻用例 M01–M03：另起一个「绑 `0.0.0.0` 但忘配 `ADMIN_TOKEN`」的实例，
+  验非回环访问管理接口一律 401、`/api/health` 对该来源如实报 `adminTokenRequired=true`、
+  且 `/api/zones`、`/api/suggestions` 照常可用（fail-closed 不误伤讲解）。
+- 前端 `App.spec.ts` 增 3 条 DOM 注入面用例（挂真组件 + 假 SSE）：回答里的 `<img onerror>`/`<script>`、
+  粗体记号里夹的 `<b>`/`<iframe>`、来源面板片段里的同一载荷，断言 DOM 里没有对应元素被造出来、
+  文本被转义成实体。断言刻意写成「查载荷那个元素」而不是「整页有没有 img」——页面上本来就有一个合法的形象图。
+- CI backend 作业改为起三个实例（主 / 带口令的第二实例 / 忘配口令的误配置实例），
+  一次跑完边界与安全 57 项；三个实例各用各的 `DATA_DIR`，避免事件日志互相插队。
 
 ### Changed
 
@@ -59,7 +71,7 @@
 
 ### Verified
 
-- 后端单测 50/50、前端 34/34、契约冒烟 56/56、边界与安全 **54/54**（含第二实例的非回环越权组）；
+- 后端单测 50/50、前端 **37/37**、契约冒烟 56/56、边界与安全 **57/57**（主实例 + 带口令的第二实例 + 忘配口令的误配置实例）、库层核查 **8/8**；
   检索评测 top1 **0.9333** / top3 **0.9667** / 闸门漏答 **0**（与基线一致）。
 - 手工另验一组最危险的误配置：`HOST=0.0.0.0` + 忘配 `ADMIN_TOKEN` → 回环放行、内网地址访问管理接口 **401**，
   且 `/api/health` 对该来源如实上报 `adminTokenRequired=true`（不会出现「接口 401、health 说不需要口令」）。

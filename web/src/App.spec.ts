@@ -62,7 +62,7 @@ function sse(...frames: string[]): Response {
 
 const ANSWER = '**叶片检测**不需要停机，按巡检规程 https://example.com/a 执行即可。';
 
-function stubFetch(storageAvailable = true, streamFails = false) {
+function stubFetch(storageAvailable = true, streamFails = false, answer = ANSWER, sources: unknown[] = []) {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL) => {
@@ -82,10 +82,11 @@ function stubFetch(storageAvailable = true, streamFails = false) {
       if (url.includes('/api/suggestions')) return new Response(JSON.stringify({ items: ['叶片检测要停机吗？'] }), { status: 200 });
       if (url.includes('/api/chat/stream')) {
         if (streamFails) throw new Error('网络中断');
+        const src = JSON.stringify(sources);
         return sse(
-          'event:meta\ndata:{"mode":"rag","provider":"mock","retrieval":"keyword","noHit":false,"cached":false,"sources":[]}\n\n',
-          `event:delta\ndata:{"text":${JSON.stringify(ANSWER)}}\n\n`,
-          `event:done\ndata:{"mode":"rag","provider":"mock","retrieval":"keyword","noHit":false,"cached":false,"sources":[],"answer":${JSON.stringify(ANSWER)},"latencyMs":42}\n\n`,
+          `event:meta\ndata:{"mode":"rag","provider":"mock","retrieval":"keyword","noHit":false,"cached":false,"sources":${src}}\n\n`,
+          `event:delta\ndata:{"text":${JSON.stringify(answer)}}\n\n`,
+          `event:done\ndata:{"mode":"rag","provider":"mock","retrieval":"keyword","noHit":false,"cached":false,"sources":${src},"answer":${JSON.stringify(answer)},"latencyMs":42}\n\n`,
         );
       }
       if (url.includes('/api/sessions/')) return new Response(JSON.stringify({ ok: true }), { status: 200 });
@@ -290,6 +291,79 @@ describe('展厅页面：界面入口与语音播报接线', () => {
     expect(wrapper.findAll('button').some((b) => b.text() === '停读')).toBe(false);
     expect(localStorage.getItem('znwd.speak')).not.toBe('0'); // 停读不等于静音
 
+    wrapper.unmount();
+  });
+});
+
+/**
+ * 注入面：模型的回答、知识片段的正文最终都会渲染到展厅大屏上。
+ * 后端只回 JSON、排版函数只产出结构，这一层要验的是**浏览器里真的没有元素被造出来**——
+ * 也就是 Vue 的文本插值确实把尖括号当文字了（而不是靠"我们没用 v-html"这句话）。
+ */
+describe('展厅页面：回答与片段里的 HTML 不上屏', () => {
+  const XSS = '<img src=x onerror=alert(1)><script>alert(document.cookie)</script>';
+
+  it('回答里的标签当文字渲染，不生成 img/script 元素', async () => {
+    installSpeech();
+    stubFetch(true, false, `检测结果 ${XSS} 如下`);
+    const wrapper = mount(App);
+    await flushPromises();
+    await wrapper.find('textarea').setValue('叶片检测要停机吗？');
+    await wrapper.find('textarea').trigger('keydown', { key: 'Enter' });
+    await flushPromises();
+    await vi.waitFor(() => {
+      expect(wrapper.find('.msg.assistant .answer').text()).toContain('检测结果');
+    });
+
+    // 注意断言要精确：页面上本来就有一个合法的形象图 <img src="/avatar-guide.png">，
+    // 所以查的是「载荷里的那个元素」而不是整页有没有 img（这条自己踩过一次）。
+    expect(wrapper.find('.msg.assistant').element.querySelector('img, script, iframe')).toBeNull();
+    expect(wrapper.element.querySelector('[onerror]')).toBeNull();
+    expect(wrapper.element.querySelector('img[src="x"]')).toBeNull();
+    // 原文照旧可读（当文字显示），并被转义成实体
+    expect(wrapper.find('.msg.assistant .answer').text()).toContain(XSS);
+    expect(wrapper.find('.msg.assistant .answer').html()).toContain('&lt;img');
+    wrapper.unmount();
+  });
+
+  it('粗体记号里夹的标签也逃不出去', async () => {
+    installSpeech();
+    stubFetch(true, false, '**<b>加粗</b>** 与 <iframe src=//evil.example></iframe>');
+    const wrapper = mount(App);
+    await flushPromises();
+    await wrapper.find('textarea').setValue('叶片检测要停机吗？');
+    await wrapper.find('textarea').trigger('keydown', { key: 'Enter' });
+    await flushPromises();
+    await vi.waitFor(() => {
+      expect(wrapper.find('.msg.assistant .answer').text()).toContain('加粗');
+    });
+
+    expect(wrapper.find('.msg.assistant').element.querySelector('b, iframe')).toBeNull();
+    expect(wrapper.element.querySelector('[src*="evil.example"]')).toBeNull();
+    expect(wrapper.find('.msg.assistant .answer').html()).toContain('&lt;b');
+    wrapper.unmount();
+  });
+
+  it('来源面板的片段同样是文字，不是节点', async () => {
+    installSpeech();
+    stubFetch(true, false, '回答正文', [
+      { title: '恶意标题', snippet: `片段 ${XSS}`, score: 0.01, sourcePath: 'x.md', zone: null, zoneTitle: null, vectorScore: 0, keywordScore: 9.9 },
+    ]);
+    const wrapper = mount(App);
+    await flushPromises();
+    await wrapper.find('textarea').setValue('叶片检测要停机吗？');
+    await wrapper.find('textarea').trigger('keydown', { key: 'Enter' });
+    await flushPromises();
+    await vi.waitFor(() => {
+      expect(wrapper.find('.src-toggle').exists()).toBe(true);
+    });
+    await wrapper.find('.src-toggle').trigger('click');
+    await flushPromises();
+
+    expect(wrapper.find('.sources-block').exists()).toBe(true);
+    expect(wrapper.find('.sources-block').element.querySelector('img, script, iframe')).toBeNull();
+    expect(wrapper.find('.sources-block').element.querySelector('[onerror]')).toBeNull();
+    expect(wrapper.find('.sources-block .snippet').text()).toContain(XSS);
     wrapper.unmount();
   });
 });

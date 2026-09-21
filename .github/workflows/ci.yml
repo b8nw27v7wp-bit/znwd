@@ -45,18 +45,40 @@ jobs:
           LLM_PROVIDER: mock
           HOST: 127.0.0.1
           PORT: '8787'
+          # 固定事件日志目录：下一步的安全用例要按同一路径核对「提问原话没落盘」
+          DATA_DIR: /tmp/data-a
 
-      # 边界与安全用例（同一份脚本、同一个跑着的服务）。S16–S18 那组非回环越权需要第二个实例，
-      # 这里不设 SECOND_BASE 会标 SKIP——CI 只保证「不该崩、不该漏、不该越权」这批常驻断言不回归。
-      - name: 边界与安全用例
-        run: python3 tools/security.py
+      # 边界与安全用例。非回环那几组要另外两个实例，都用本机的非回环地址访问：
+      #   B: HOST=0.0.0.0 + ADMIN_TOKEN —— 验「非回环请求必须带对口令」（S16–S18）
+      #   C: HOST=0.0.0.0 但故意不配口令 —— 验误配置下是 fail-closed 而不是把管理接口交给局域网（M01–M03）
+      # 三个实例各用各的 DATA_DIR，避免事件日志互相插队。
+      - name: 边界与安全用例（含非回环越权与误配置 fail-closed）
+        run: |
+          HOSTIP=$(hostname -I | awk '{print $1}')
+          HOST=0.0.0.0 PORT=8799 ADMIN_TOKEN=$ADMIN_TOKEN DATA_DIR=/tmp/data-b \
+            java -jar server/target/hostess-server.jar --spring.main.banner-mode=off > /tmp/server-b.log 2>&1 &
+          HOST=0.0.0.0 PORT=8798 DATA_DIR=/tmp/data-c \
+            java -jar server/target/hostess-server.jar --spring.main.banner-mode=off > /tmp/server-c.log 2>&1 &
+          for port in 8799 8798; do
+            for i in $(seq 1 60); do
+              curl -sf "http://127.0.0.1:$port/api/health" >/dev/null && break
+              sleep 1
+            done
+          done
+          echo "非回环地址：$HOSTIP"
+          SECOND_BASE="http://$HOSTIP:8799" MISCONFIG_BASE="http://$HOSTIP:8798" \
+            python3 tools/security.py
         env:
-          HOST: 127.0.0.1
-          PORT: '8787'
+          LLM_PROVIDER: mock
+          DATA_DIR: /tmp/data-a
+          ADMIN_TOKEN: ci-only-token-not-a-secret
 
-      - name: 失败时打印服务日志
+      - name: 失败时打印三个实例的日志
         if: failure()
-        run: tail -80 /tmp/server.log
+        run: |
+          for f in /tmp/server.log /tmp/server-b.log /tmp/server-c.log; do
+            echo "===== $f ====="; tail -40 "$f" 2>/dev/null || true
+          done
 
   frontend:
     name: 前端（类型检查 + 构建 + 单测）

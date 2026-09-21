@@ -12,24 +12,37 @@ BASE=http://127.0.0.1:9900 python tools/security.py
 | 项的定位 | 内容 |
 | --- | --- |
 | `tools/smoke.py` | 接口**契约**：字段、状态码、SSE 事件序列是否照旧 |
-| `tools/security.py` | 边界与安全：畸形输入、越界参数、注入串、越权访问、脱敏、限流 |
+| `tools/security.py` | 边界与安全：畸形输入、越界参数、注入串、越权访问、脱敏、限流、SSE 边界 |
+| `tools/db-check.py` | **库层**：落库后到底存了什么（脱敏形态、最小权限、会话与未覆盖问题） |
 | `mvn test` | 单元级：入参解析、CORS 策略、限流窗口、日志脱敏、管理口令判据（`HttpSupportTest`） |
-| `web/src/format.spec.ts` | 前端注入面：排版函数只产出「结构 + 文本」，不产出 HTML |
+| `web/src/format.spec.ts`、`App.spec.ts` | 前端注入面：排版函数只产出「结构 + 文本」；挂真组件后 DOM 里确实没有元素被造出来 |
 
 `SECOND_BASE` 指向第二个实例（`HOST=0.0.0.0` + 非回环地址访问）时，才会跑 S16–S18 这组越权用例；
 不设该变量时它们标 `SKIP`，**SKIP 不等于通过**。
 
 ```bash
-# 第二实例（示例：8799，带管理口令，绑所有网卡）
-cd server && HOST=0.0.0.0 PORT=8799 ADMIN_TOKEN=$(openssl rand -hex 16) ../tools/mvn -B spring-boot:run
-python tools/security.py SECOND_BASE=http://<本机内网地址>:8799
+# 第二实例（8799）：绑所有网卡 + 管理口令 —— 验「非回环请求必须带对口令」（S16–S18）
+cd server && HOST=0.0.0.0 PORT=8799 ADMIN_TOKEN=<口令> ../tools/mvn -B spring-boot:run
+# 误配置实例（8798）：绑所有网卡但故意不配口令 —— 验 fail-closed（M01–M03）
+cd server && HOST=0.0.0.0 PORT=8798 ../tools/mvn -B spring-boot:run
+
+# 主实例跑到 8787（DATA_DIR 记得固定，脱敏用例要按同一路径读事件日志）
+cd /e/znwd && SECOND_BASE=http://<本机内网地址>:8799 MISCONFIG_BASE=http://<本机内网地址>:8798 \
+  ADMIN_TOKEN=<口令> python tools/security.py
+
+# 库层核查（需要本机 mysql 客户端；缺了就整组 SKIP）
+python tools/db-check.py
 ```
 
 ## 用例清单与实测结果
 
 实测环境：Windows 11 + Spring Boot 3.5.16（Java 25 运行）+ MySQL 9.7，知识语料 126 块，闸门阈值 8.1。
-最近一次（跑了第二实例，S16–S18 不再跳过）：**通过 54 / 失败 0 / 跳过 0**；
-只跑主实例时是 **通过 49 / 失败 0 / 跳过 4**（跳过的就是 E 组的非回环三项）。
+最近一次（主实例 + 第二实例 + 误配置实例三个都在跑）：**通过 57 / 失败 0 / 跳过 0**；
+只起第二实例时 54/54；只跑主实例时 49/49 且跳过 E、H 两组共 7 项非回环用例（SKIP 不算通过）。
+库层核查 `tools/db-check.py`：**8/8**。
+
+> 跑完 `security.py` 紧接着跑 `smoke.py` / 手工验证时注意：F 组会（刻意）打满每 IP 30 次/分钟的限流，
+> 脚本收尾会自动等窗口恢复再退出；如果你只跑了 F 组就中断，等约 1 分钟再继续，否则会看到一片 429。
 
 ### A 组：输入边界（畸形 body、长度、字符集）
 
@@ -112,6 +125,17 @@ python tools/security.py SECOND_BASE=http://<本机内网地址>:8799
 注意第三行：`/api/health` 对**该请求的来源**如实上报 `adminTokenRequired=true`，
 所以不会出现「接口 401、health 却说不需要口令」的自相矛盾。
 
+### H 组：误配置 fail-closed（绑 0.0.0.0 但忘配 `ADMIN_TOKEN`）
+
+展厅部署最容易踩的一脚：服务绑到了所有网卡，却忘了配管理口令。这组用例专门钉住「这种情况下是拒绝，
+而不是把统计、知识重载、诊断、同义词表交给整个局域网」。
+
+| 编号 | 输入 | 期望 | 实测 | 结论 |
+| --- | --- | --- | --- | --- |
+| M01 | 从**内网地址**访问 5 个管理端点（该实例未配口令） | 一律 401 | 401 ×5 | ✅ |
+| M02 | 同上，先看 `/api/health` | 对该来源如实报 `adminTokenRequired=true` | `true` | ✅ |
+| M03 | 同上，访问 `/api/zones`、`/api/suggestions` | 200（fail-closed 不误伤讲解） | 200 | ✅ |
+
 ### G 组：SSE 流式边界
 
 | 编号 | 输入 | 期望 | 实测 | 结论 |
@@ -131,6 +155,27 @@ python tools/security.py SECOND_BASE=http://<本机内网地址>:8799
 | S20 | 35 次连续提问（`CHAT_RATE_PER_MIN=30`） | 出现 429 | 出现 429 | ✅ |
 | S21 | 被限流的响应 | 统一信封 + 重试提示 | `rate_limited` + `retryAfterSeconds` | ✅ |
 | S22 | 限流期间的只读接口 | 不受影响 | `/api/health` 200 | ✅ |
+
+## 库层核查（`tools/db-check.py`）
+
+HTTP 层看到的响应是脱敏之后的，但**运维导出、备份、误配权限**这些场景扩散的是表格里的内容，
+所以单独看一遍「落库之后长什么样」。用应用自己的账号连（也就是最小权限账号），探测数据用完即删。
+
+| 编号 | 检查 | 期望 | 实测 | 结论 |
+| --- | --- | --- | --- | --- |
+| D01 | `SHOW TABLES` | 5 张表齐全 | session / session_message / chat_log / feedback / uncovered_question | ✅ |
+| D02 | `SHOW GRANTS FOR CURRENT_USER()` | 无 `DROP`/`ALTER`/`GRANT OPTION`/`ALL` | 只有 SELECT,INSERT,UPDATE,DELETE,CREATE（限本库） | ✅ |
+| D03 | 提问「20 字之后带标记」后查 `chat_log.message_preview` | 不含该标记 | 不含（前缀截断） | ✅ |
+| D04 | 同上 | 形如 `hash#长度#前20字` | `92bd3c56-1af02fe#27#开头二十个字之外的哨兵标记TAILMAR` | ✅ |
+| D05 | 同上 | `message_len` 记原长（脱敏不等于丢统计） | 27 = 原长 | ✅ |
+| D06 | `CHAR_LENGTH(answer_preview)` | 有截断（≤80） | ≤80 | ✅ |
+| D07 | `session_message` | 会话消息落库（重启不丢上下文的前提） | 本次会话 ≥2 条 | ✅ |
+| D08 | `uncovered_question` | 闸门拦下的原始提问进表（运营补知识用） | 命中原话 | ✅ |
+
+**这里有一条要说清的取舍**：`uncovered_question.question` 存的是**原始提问**（不是 hash），
+因为运营拿这张表就是为了知道「访客问了什么、我们没答上来」。`session_message.content` 同样是完整对话
+（多轮上下文与重启恢复都靠它）。也就是说「不落原话」只保证 `chat_log` 与 JSONL 事件日志；
+不想留未覆盖问题就设 `UNCOVERED_LOG_SIZE=0`（该表与 `GET /api/admin/uncovered` 一起关闭）。
 
 ## 本轮发现并修掉的问题
 

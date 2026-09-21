@@ -11,9 +11,11 @@
     BASE=http://127.0.0.1:9900 python tools/security.py
     SECOND_BASE=http://192.168.1.5:8799 python tools/security.py   # 追加「非回环 + 有口令」的越权用例
 
-SECOND_BASE 指向**另一个实例**（建议 HOST=0.0.0.0 + ADMIN_TOKEN=<口令>，端口与主实例错开），
-并且要用本机的**非回环地址**访问，才能验到 AdminGuard 的 fail-closed 分支；
-不设该变量时，S02/S03/S16 会标 SKIP（不是通过）。
+SECOND_BASE / MISCONFIG_BASE 指向**另外的实例**，都要用本机的**非回环地址**访问才能验到
+AdminGuard 的 fail-closed 分支：
+- SECOND_BASE  —— `HOST=0.0.0.0` + 配好 `ADMIN_TOKEN`（把同一个值放进 ADMIN_TOKEN 环境变量，才能验「对口令放行」）
+- MISCONFIG_BASE —— `HOST=0.0.0.0` 但**故意不配口令**（验误配置下是拒绝，而不是把管理接口交给局域网）
+不设这些变量时，S16–S18 与 M01–M03 会标 SKIP（不是通过）。
 
 设计约束（照着改的时候别破坏）：
 - 不打印任何密钥：断言用 server/.env 里的密钥片段做子串比对，失败也只说「疑似泄漏」。
@@ -36,6 +38,8 @@ import uuid
 
 BASE = os.environ.get("BASE", "http://127.0.0.1:8787").rstrip("/")
 SECOND_BASE = os.environ.get("SECOND_BASE", "").rstrip("/")
+# 第二种第二实例：绑 0.0.0.0 但**忘配口令**（展厅最容易踩的误配置）——验 fail-closed 不是 fail-open
+MISCONFIG_BASE = os.environ.get("MISCONFIG_BASE", "").rstrip("/")
 REPO = pathlib.Path(__file__).resolve().parent.parent
 ENV_FILE = REPO / "server/.env"
 DATA_DIR = pathlib.Path(os.environ.get("DATA_DIR", REPO / "server/data"))
@@ -168,39 +172,42 @@ def chat_raw(path, raw_body):
     return status, body, headers
 
 
-def log_size():
-    return LOG_FILE.stat().st_size if LOG_FILE.exists() else -1
-
-
-def record_after(size_before, timeout=10.0):
-    """等事件日志长出新记录再读最后一条（写日志比响应慢一拍，直接读会错读上一条）。"""
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        if LOG_FILE.exists() and LOG_FILE.stat().st_size > size_before:
-            rec = last_log_record()
-            if rec is not None:
-                return rec
-        time.sleep(0.25)
-    return None
-
-
-def last_log_record():
-    """读最后一条 JSONL 事件日志（脱敏用例用）。"""
+def recent_records(limit=60):
+    """最近若干条事件日志（从后往前），只返回能解析成 JSON 的行。"""
     try:
         lines = LOG_FILE.read_text(encoding="utf-8", errors="replace").strip().splitlines()
-        for line in reversed(lines):
-            rec = as_json(line)
-            if isinstance(rec, dict):
-                return rec
     except OSError:
-        return None
+        return []
+    out = []
+    for line in reversed(lines[-limit:]):
+        rec = as_json(line)
+        if isinstance(rec, dict):
+            out.append(rec)
+    return out
+
+
+def wait_record(predicate, timeout=10.0):
+    """等一条满足 predicate 的事件日志记录。
+
+    为什么不能直接读「最后一条」：JsonlStore 把写盘放在**单线程队列**里（不拖慢回答），
+    所以 HTTP 响应返回时日志可能还没落盘，读到的是上一条请求的记录——这个竞态让 B08 假失败过一次。
+    用「请求开始时间戳 + messageLen」定位自己的那条，才与写盘时机无关。
+    """
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        for rec in recent_records():
+            if predicate(rec):
+                return rec
+        time.sleep(0.25)
     return None
 
 
 print(f"目标：{BASE}")
 if SECOND_BASE:
     print(f"第二实例（非回环/口令用例）：{SECOND_BASE}")
-else:
+if MISCONFIG_BASE:
+    print(f"误配置实例（0.0.0.0 + 未配口令，fail-closed 用例）：{MISCONFIG_BASE}")
+if not SECOND_BASE or not MISCONFIG_BASE:
     try:
         lan = [ip for ip in socket.gethostbyname_ex(socket.gethostname())[2] if not ip.startswith("127.")]
     except OSError:
@@ -233,25 +240,25 @@ check("B06 空 body 之外的正常路径仍 200（对照）", status == 200, f"
 
 # message 长度边界：2000 通过、2001 截断（用事件日志里的 messageLen 判，响应体不回显问题）
 long_2000 = "光" * 2000
-size0 = log_size()
+t0 = int(time.time() * 1000)
 status, body, _ = chat("/api/chat", {"message": long_2000})
-rec = record_after(size0)
+rec = wait_record(lambda r: r.get("at", 0) >= t0 and r.get("messageLen") == 2000)
 check("B07 message=2000 字 → 200", status == 200, f"{status} {body[:80]}")
 if rec is not None:
     check("B08 2000 字不被截断（日志 messageLen=2000）", rec.get("messageLen") == 2000,
           f"messageLen={rec.get('messageLen')}")
 else:
-    skip("B08 2000 字不被截断", "事件日志不可读")
+    skip("B08 2000 字不被截断", "事件日志里没等到本次记录")
 
-size0 = log_size()
+t0 = int(time.time() * 1000)
 status, body, _ = chat("/api/chat", {"message": "光" * 2001})
-rec = record_after(size0)
+rec = wait_record(lambda r: r.get("at", 0) >= t0 and r.get("messageLen") == 2000)
 check("B09 message=2001 字 → 200（截断而不报错）", status == 200, f"{status} {body[:80]}")
 if rec is not None:
     check("B10 2001 字被截断到 2000（日志 messageLen=2000）", rec.get("messageLen") == 2000,
           f"messageLen={rec.get('messageLen')}")
 else:
-    skip("B10 2001 字被截断", "事件日志不可读")
+    skip("B10 2001 字被截断", "事件日志里没等到本次记录")
 
 # 超大 body：不该 5xx，服务不该被打挂
 big = "啊" * (4 * 1024 * 1024)
@@ -404,28 +411,20 @@ print("\n== C 组：脱敏（提问原话不落日志/库）")
 # 所以「20 字之后仍然出现」才算泄漏。把标记放在开头会被前 20 字前缀命中，那是设计内的保留。
 TAIL_MARK = "TAILMARK9c1f"
 sentinel_msg = "开头二十个字之外的哨兵标记" + TAIL_MARK + "结束"
-before = log_size()
+t0 = int(time.time() * 1000)
 status, body, _ = chat("/api/chat", {"message": sentinel_msg})
-rec = record_after(before)
-try:
-    # 必须按字节切片再解码：log_size() 给的是字节数，而 read_text() 的切片下标是字符数，
-    # 中文一行 3 字节，用字节偏移去切字符串会得到空串（这个坑自己踩过一次）。
-    tail = LOG_FILE.read_bytes()[max(before, 0):].decode("utf-8", "replace")
-except OSError:
-    tail = ""
-after = log_size()
+rec = wait_record(lambda r: r.get("at", 0) >= t0 and r.get("messageLen") == len(sentinel_msg))
 if status == 429:
     skip("S10 日志只留前 20 字、不落原话", "本次请求被限流，未产生日志记录")
-elif rec is None or not tail:
-    # 排查提示：日志长度与「本次增长」都打出来，避免把脚本自己的读法错误当成服务问题
-    skip("S10 日志只留前 20 字、不落原话",
-         f"未取到增量（{before}→{after} 字节，末条 messageLen={None if rec is None else rec.get('messageLen')}）")
+elif rec is None:
+    skip("S10 日志只留前 20 字、不落原话", "事件日志里没等到本次记录")
 else:
-    check("S10 日志里不含「前 20 字之后」的原话", TAIL_MARK not in tail and sentinel_msg not in tail,
+    preview = str(rec.get("messagePreview", ""))
+    check("S10 日志里不含「前 20 字之后」的原话", TAIL_MARK not in preview and sentinel_msg not in preview,
           "日志里出现完整提问——检查 LOG_MESSAGE_MODE 是否被改成 preview")
     check("S11 日志只留 hash+长度+20 字前缀（长度记全）",
-          "messagePreview" in rec and "message" not in rec and rec.get("messageLen") == len(sentinel_msg),
-          f"字段={sorted(rec.keys())[:8]} messageLen={rec.get('messageLen')} 期望 {len(sentinel_msg)}")
+          "#" in preview and preview.split("#")[-1] == sentinel_msg[:20] and rec.get("messageLen") == len(sentinel_msg),
+          f"preview={preview[:60]} messageLen={rec.get('messageLen')}")
 
 # ─────────────────────────────────────────────────────────────────────────────
 print("\n== D 组：CORS / 安全响应头")
@@ -481,6 +480,27 @@ chat("/api/chat", {"message": FILLER, "sessionId": sid})
 status, _, _ = request("DELETE", f"/api/sessions/{sid}")
 check("S19 已知 sessionId 可被任意客户端删除（当前设计如此，见 docs/security-testing.md）", status == 200,
       f"{status}")
+
+# ─────────────────────────────────────────────────────────────────────────────
+print("\n== H 组：误配置 fail-closed（绑 0.0.0.0 但忘配 ADMIN_TOKEN）")
+# ─────────────────────────────────────────────────────────────────────────────
+if not MISCONFIG_BASE:
+    for name in ("M01 非回环访问管理接口必须 401（忘配口令时 fail closed）",
+                 "M02 health 对该来源如实报 adminTokenRequired=true",
+                 "M03 展厅前台接口仍可用（fail-closed 不误伤讲解）"):
+        skip(name, "未设 MISCONFIG_BASE")
+else:
+    statuses = [request("GET", p, base=MISCONFIG_BASE)[0] for p in ADMIN_PATHS]
+    check("M01 非回环访问管理接口必须 401（忘配口令时 fail closed）",
+          all(s == 401 for s in statuses), f"状态码={statuses}")
+    status, body, _ = request("GET", "/api/health", base=MISCONFIG_BASE)
+    mis = as_json(body) or {}
+    check("M02 health 对该来源如实报 adminTokenRequired=true（避免「接口 401、health 说不需要口令」）",
+          status == 200 and mis.get("adminTokenRequired") is True,
+          f"{status} adminTokenRequired={mis.get('adminTokenRequired')}")
+    statuses = [request("GET", p, base=MISCONFIG_BASE)[0] for p in ("/api/zones", "/api/suggestions")]
+    check("M03 展厅前台接口（zones/suggestions）仍可用（fail-closed 不误伤讲解）",
+          all(s == 200 for s in statuses), f"状态码={statuses}")
 
 # ─────────────────────────────────────────────────────────────────────────────
 print("\n== G 组：SSE 流式边界（坏 body / 事件序列 / 中途断开）")
@@ -552,6 +572,17 @@ else:
     print("  （本次未触发 429，跳过 S21：窗口可能刚好重置）")
 status, body, _ = request("GET", "/api/health")
 check("S22 限流期间的只读接口不受影响", status == 200, f"{status}")
+
+# F 组故意把限流窗口打满，若就这么退出，紧接着跑 smoke.py / 手工验证都会收到 429（踩过：
+# smoke 连红 20 项，看着像服务挂了，其实是限流）。这里等窗口滑过去再收工。
+if 429 in codes and not os.environ.get("SKIP_RATE_WAIT"):
+    # 只探测一次是不够的：滑动窗口里还留着这一组的命中，单次 200 只说明空出了一个名额，
+    # 紧接着 smoke.py 那种 20 连发照样会被拦（实测：smoke 连红 20 项，看着像服务挂了）。
+    # 直接等满一个窗口，把「限流中的服务」交出去这件事从根上避免。
+    print("\n== 收尾：等限流窗口（60s）滑过去，免得把限流中的服务留给下一个用例集 ==")
+    print("  （本组刻意打满了每 IP 30 次/分钟；设 SKIP_RATE_WAIT=1 可跳过这段等待）")
+    time.sleep(62)
+    print("  窗口已过，服务可正常接受请求")
 
 print("\n== 汇总 ==")
 print(f"通过 {passed} 项，失败 {len(failed)} 项，跳过 {len(skipped)} 项")
