@@ -1,10 +1,9 @@
 ---
 title: 光伏组件积灰的影响与清洗方式
 tags: 积灰,清洗,发电量,组件,电站
+source: http://www.solarenpv.com/news/show.php?itemid=3683
+demo: true
 ---
-
-> 演示资料（自动抓取自公开网页，仅用于跑通链路，待替换为公司真实正文）
-> 来源：http://www.solarenpv.com/news/show.php?itemid=3683
 
 # 光伏组件积灰的影响与清洗方式
 

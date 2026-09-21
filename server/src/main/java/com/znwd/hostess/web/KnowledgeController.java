@@ -147,6 +147,7 @@ public class KnowledgeController {
         out.put("reason", d.reason());
         out.put("semantic", d.semantic());
         out.put("degraded", d.degraded());
+        out.put("keywordGateScore", d.keywordGateScore());
         out.put("keywordBestScore", d.keywordBestScore());
         out.put("vectorBestCosine", d.vectorBestCosine());
         out.put("candidates", d.candidates());

@@ -1,10 +1,9 @@
 ---
 title: 风机叶片无人机自动巡检作业流程
 tags: 叶片,巡检,航线,缺陷识别,流程
+source: https://enterprise.dji.com/cn/news/detail/matrice-4-series-wind-turbine-inspection
+demo: true
 ---
-
-> 演示资料（自动抓取自公开网页，仅用于跑通链路，待替换为公司真实正文）
-> 来源：https://enterprise.dji.com/cn/news/detail/matrice-4-series-wind-turbine-inspection
 
 # 风机叶片无人机自动巡检作业流程
 

@@ -1,10 +1,9 @@
 ---
 title: 风机叶片检测的停机与不停机方案
 tags: 停机,不停机,安全距离,叶片,检测
+source: https://www.cpem.org.cn/list68/21293.html
+demo: true
 ---
-
-> 演示资料（自动抓取自公开网页，仅用于跑通链路，待替换为公司真实正文）
-> 来源：https://www.cpem.org.cn/list68/21293.html
 
 # 风机叶片检测的停机与不停机方案
 

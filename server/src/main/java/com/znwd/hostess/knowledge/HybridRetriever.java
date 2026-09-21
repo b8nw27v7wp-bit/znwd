@@ -15,12 +15,15 @@ import java.util.Map;
 public class HybridRetriever {
 
     /**
-     * 由标定工具在现有知识库上得出（{@code mvn exec:java@calibrate}）：在域用例最低 8.93 / 域外问题最高 3.65，
-     * 区间中点即 6.3。评测在 6.3 下闸门漏答为 0，因此把它作为默认值（早期 23 块语料时代是 3.8）。
+     * 由标定工具在现有知识库上得出（{@code mvn exec:java@calibrate}）：在域用例最低 8.933 / 域外问题最高 7.311，
+     * 区间中点即 8.1。评测在 8.1 下闸门漏答为 0，因此把它作为默认值。
+     *
+     * <p>历史：23 块语料时代 3.8；8 篇演示资料入库后 6.3；修掉「话题枢纽式同义词」与跨标点 bigram 后
+     * （域外最高分从 10.96 掉到 7.31）重标为 8.1。
      *
      * <p>改语料、改同义词表之后重跑标定再动这个数，不要凭手感调。
      */
-    public static final double DEFAULT_MIN_KEYWORD_SCORE = 6.3;
+    public static final double DEFAULT_MIN_KEYWORD_SCORE = 8.1;
     public static final double DEFAULT_MIN_VECTOR_SCORE = 0.35;
 
     private static final int RRF_K = 60;
@@ -96,6 +99,12 @@ public class HybridRetriever {
         }
 
         double keywordBestScore = kw.isEmpty() ? 0 : kw.get(0).score();
+        // 闸门仍用排序分（含同义词扩展）。为什么不是只用原查询词的 gateScore：扩展在做真事——
+        // 「检测报告包含哪些内容？」这类问题的原词 IDF 很低（检测/报告在语料里到处都是），只有
+        // 「报告 → 检测报告/巡检报告/作业报告」这种同域复合词才把它救过阈值（实测 8.93 vs 2.64）。
+        // 域外漏答的根因不在闸门口径，而在同义词表里混进了「话题枢纽」（“光伏 → 清洗/积灰/电站”），
+        // 那是靠改表修的（见 Synonyms 的说明），不是靠抬阈值硬压。
+        double keywordGateScore = kw.isEmpty() ? 0 : kw.get(0).gateScore();
         double vectorBestCosine = vec.isEmpty() ? 0 : vec.get(0).score();
         boolean keywordPass = !kw.isEmpty() && keywordBestScore >= minKeywordScore;
         boolean vectorPass = semantic && !vec.isEmpty() && vectorBestCosine >= minVectorScore;
@@ -133,6 +142,7 @@ public class HybridRetriever {
                 !semantic,
                 gated,
                 reason,
+                round(keywordGateScore, 4),
                 round(keywordBestScore, 4),
                 round(vectorBestCosine, 4),
                 candidates,

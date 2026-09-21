@@ -10,10 +10,11 @@ import org.junit.jupiter.api.Test;
 class RetrievalVerdictTest {
 
     private static RetrievalDiagnostics diag(RetrievalMode mode, boolean semantic, boolean gated,
-                                            RetrievalReason reason, double keywordBest, double vectorBest,
+                                            RetrievalReason reason, double gateScore, double vectorBest,
                                             double minKeyword, double minVector) {
-        return new RetrievalDiagnostics(mode, semantic, !semantic, gated, reason, keywordBest, vectorBest, 5,
-                new RetrievalDiagnostics.Thresholds(minKeyword, minVector));
+        // 第 6 个参数是闸门分、第 7 个是排序分：闸门只认前者，这里让两者相等把差异隔离掉
+        return new RetrievalDiagnostics(mode, semantic, !semantic, gated, reason, gateScore, gateScore,
+                vectorBest, 5, new RetrievalDiagnostics.Thresholds(minKeyword, minVector));
     }
 
     @Test
@@ -42,6 +43,19 @@ class RetrievalVerdictTest {
         String vector = RetrievalVerdict.describe(diag(RetrievalMode.HYBRID, true, false,
                 RetrievalReason.VECTOR_HIT, 1.2, 0.62, 3.8, 0.35));
         assertTrue(vector.contains("语义向量救回"), vector);
+    }
+
+    @Test
+    @DisplayName("两个分数不一致时，人话结论报的是闸门实际比较的那个分")
+    void reportsComparedScore() {
+        // 排序分 12.0 过线、只算用户原话的分 7.0：闸门比较的是 12.0，文案必须报 12.0 并附上 7.0
+        RetrievalDiagnostics d = new RetrievalDiagnostics(RetrievalMode.KEYWORD, false, true, false,
+                RetrievalReason.KEYWORD_HIT, 7.0, 12.0, 0.0, 5,
+                new RetrievalDiagnostics.Thresholds(3.8, 0.35));
+        String text = RetrievalVerdict.describe(d);
+        assertTrue(text.contains("12.00"), text);
+        assertTrue(text.contains("7.00"), text);
+        assertEquals(-8.2, RetrievalVerdict.distanceToGate(d), 1e-9);
     }
 
     @Test

@@ -86,19 +86,28 @@ public final class Calibrate {
             double maxOod = ood.isEmpty() ? 0 : ood.get(0).keywordBest();
             int minCovIn = inDomain.isEmpty() ? 0 : inDomain.stream().mapToInt(Sample::matchedTokens).min().orElse(0);
             int maxCovOod = ood.isEmpty() ? 0 : ood.stream().mapToInt(Sample::matchedTokens).max().orElse(0);
+            double minInRanking = inDomain.isEmpty() ? 0
+                    : inDomain.stream().mapToDouble(Sample::rankingBest).min().orElse(0);
+            double maxOodRanking = ood.isEmpty() ? 0
+                    : ood.stream().mapToDouble(Sample::rankingBest).max().orElse(0);
 
-            System.out.printf("%n关键词分：在域最低=%.3f  域外最高=%.3f  比阈值%s%n",
+            System.out.printf("%n闸门分（只算用户原话词条）：在域最低=%.3f  域外最高=%.3f  比阈值%s%n",
                     minIn, maxOod, marginNote(minIn, maxOod, effective));
+            System.out.printf("参考·排序分（含同义词扩展，不参与闸门）：在域最低=%.3f 域外最高=%.3f%n",
+                    minInRanking, maxOodRanking);
 
             Map<String, Object> report = new LinkedHashMap<>();
             report.put("chunks", knowledge.chunks().size());
             report.put("mode", String.valueOf(retriever.stats().mode()));
             report.put("semantic", retriever.stats().semantic());
             report.put("effectiveThreshold", effective);
+            report.put("gateMetric", "keywordGateScore（只由用户原话词条贡献，与闸门同一口径）");
             report.put("inDomainWeakest", rows(inDomain));
             report.put("outOfDomain", rows(ood));
             report.put("minInDomain", EvalSupport.round(minIn, 4));
             report.put("maxOutOfDomain", EvalSupport.round(maxOod, 4));
+            report.put("minInDomainRanking", EvalSupport.round(minInRanking, 4));
+            report.put("maxOutOfDomainRanking", EvalSupport.round(maxOodRanking, 4));
             report.put("minMatchedTokensInDomain", minCovIn);
             report.put("maxMatchedTokensOutOfDomain", maxCovOod);
 
@@ -224,6 +233,7 @@ public final class Calibrate {
         return new Sample(
                 id,
                 question,
+                outcome.diagnostics().keywordGateScore(),
                 outcome.diagnostics().keywordBestScore(),
                 top == null ? "-" : top.chunk().title(),
                 top == null ? 0 : top.matchedTokens(),
@@ -231,12 +241,12 @@ public final class Calibrate {
                 outcome.diagnostics().vectorBestCosine());
     }
 
-    private record Sample(String id, String question, double keywordBest, String topTitle, int matchedTokens,
-                          List<String> matched, double vectorBest) {
+    private record Sample(String id, String question, double keywordBest, double rankingBest, String topTitle,
+                          int matchedTokens, List<String> matched, double vectorBest) {
 
         private String line() {
-            return String.format("kw=%.3f cos=%.4f cov=%d  %s  %s → %s  [%s]",
-                    keywordBest, vectorBest, matchedTokens, id, question, topTitle,
+            return String.format("kw=%.3f(rank %.3f) cos=%.4f cov=%d  %s  %s → %s  [%s]",
+                    keywordBest, rankingBest, vectorBest, matchedTokens, id, question, topTitle,
                     String.join("/", matched.size() > 6 ? matched.subList(0, 6) : matched));
         }
     }

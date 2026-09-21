@@ -18,7 +18,7 @@ function score(source: Source): string {
 
 <template>
   <p v-if="!props.sources.length" class="snippet">回答引用到的资料会显示在这里。</p>
-  <div v-for="source in props.sources" :key="source.sourcePath + source.title" class="card">
+  <div v-for="(source, index) in props.sources" :key="`${source.sourcePath}#${index}`" class="card">
     <div class="title">{{ source.title }}</div>
     <div class="snippet">{{ source.snippet }}</div>
     <div class="meta">

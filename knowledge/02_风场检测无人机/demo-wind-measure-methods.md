@@ -1,10 +1,9 @@
 ---
 title: 测风方式对比：激光雷达、气象观测无人机与测风塔
 tags: 测风,雷达,无人机,测风塔,对比
+source: http://www.zoglab.com/Academic/Detail?primary=12000&secondary=12400&articleCode=13
+demo: true
 ---
-
-> 演示资料（自动抓取自公开网页，仅用于跑通链路，待替换为公司真实正文）
-> 来源：http://www.zoglab.com/Academic/Detail?primary=12000&secondary=12400&articleCode=13
 
 # 测风方式对比：激光雷达、气象观测无人机与测风塔
 
@@ -197,10 +196,8 @@ English
 
 &#x9996;&#x9875;
 
->
 &#x5B66;&#x672F;&#x8BBA;&#x6587;
 
->
 &#x6D4B;&#x98CE;&#x96F7;&#x8FBE;&#x3001;&#x6C14;&#x8C61;&#x63A2;&#x6D4B;&#x65E0;&#x4EBA;&#x673A;&#x4E0E;&#x98CE;&#x5854;&#x6BD4;&#x5BF9;&#x5206;&#x6790;
 
 ### &#x6D4B;&#x98CE;&#x96F7;&#x8FBE;&#x3001;&#x6C14;&#x8C61;&#x63A2;&#x6D4B;&#x65E0;&#x4EBA;&#x673A;&#x4E0E;&#x98CE;&#x5854;&#x6BD4;&#x5BF9;&#x5206;&#x6790;

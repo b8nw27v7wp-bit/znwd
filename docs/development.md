@@ -28,8 +28,8 @@ cd server && ../tools/mvn -B test        # 等价于 mvn -B test
 | --- | --- | --- |
 | 起后端 | `cd server && ../tools/mvn spring-boot:run` | `Tomcat started on port 8787` / `Started HostessApplication` |
 | 单测 | `cd server && ../tools/mvn -B test` | `Tests run: 44, Failures: 0, Errors: 0` |
-| 检索评测 | `cd server && ../tools/mvn -B test-compile exec:java@eval -Dexec.args="--no-write"` | `top1Rate = 0.9333`、`top3Rate = 0.9667`、`gateBlockedCount = 0`、`minKeywordScore = 6.3` |
-| 阈值标定 | `cd server && ../tools/mvn -B test-compile exec:java@calibrate` | 在域最弱 8 条、域外降序、"建议 minKeywordScore=6.3"；`--grid` 再加 36 组参数网格；报告落 `docs/eval/calibration-*.json` |
+| 检索评测 | `cd server && ../tools/mvn -B test-compile exec:java@eval -Dexec.args="--no-write"` | `top1Rate = 0.9333`、`top3Rate = 0.9667`、`gateBlockedCount = 0`、`minKeywordScore = 8.1` |
+| 阈值标定 | `cd server && ../tools/mvn -B test-compile exec:java@calibrate` | 在域最弱 8 条、域外降序、"建议 minKeywordScore=8.1"；`--grid` 再加 36 组参数网格；报告落 `docs/eval/calibration-*.json` |
 | 接口冒烟 | `python tools/smoke.py`（需服务在跑，`BASE=http://…` 可改目标） | `通过 56 项，失败 0 项` |
 | 前端 dev | `cd web && npm install && npm run dev` | `VITE v6 ready`，`:5173`，`/api` 代理到 8787 |
 | 前端构建 | `cd web && npm run build` | `vue-tsc -b` 类型检查 + `vite build`，产物 `web/dist` |
@@ -91,7 +91,7 @@ python tools/smoke.py                                  # 56 项契约（需服�
 
 CI（`.github/workflows/ci.yml`，push/PR 都跑）：
 
-- **backend**：`mvn test` → `exec:java@eval --no-write` → `package` → 起 jar 跑 `python3 tools/smoke.py`（`LLM_PROVIDER=mock`，`MIN_RELEVANCE_SCORE=6.3` 显式给出，失败时打印服务日志）
+- **backend**：`mvn test` → `exec:java@eval --no-write` → `package` → 起 jar 跑 `python3 tools/smoke.py`（`LLM_PROVIDER=mock`，`MIN_RELEVANCE_SCORE=8.1` 显式给出，失败时打印服务日志）
 - **frontend**：`npm ci` → `npm run build` → `npm test`
 
 失败时的判断顺序：先在本地复现对应命令；契约类失败（smoke）先看 `docs/api.md` 的字段表，检索类失败（eval）先跑 `calibrate` 看阈值区间是否还成立。

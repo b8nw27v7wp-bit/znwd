@@ -1,10 +1,9 @@
 ---
 title: 地面激光雷达在风资源评估中的应用
 tags: 测风,雷达,风资源,选址,功率曲线
+source: https://mt168.com/windcube
+demo: true
 ---
-
-> 演示资料（自动抓取自公开网页，仅用于跑通链路，待替换为公司真实正文）
-> 来源：https://mt168.com/windcube
 
 # 地面激光雷达在风资源评估中的应用
 

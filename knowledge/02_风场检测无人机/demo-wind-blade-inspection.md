@@ -1,10 +1,9 @@
 ---
 title: 风机叶片巡检的常规方式与无人机实践
 tags: 叶片,巡检,吊篮,停机,风电
+source: http://www.qinghai.gov.cn/zwgk/system/2022/10/19/010420076.shtml
+demo: true
 ---
-
-> 演示资料（自动抓取自公开网页，仅用于跑通链路，待替换为公司真实正文）
-> 来源：http://www.qinghai.gov.cn/zwgk/system/2022/10/19/010420076.shtml
 
 # 风机叶片巡检的常规方式与无人机实践
 

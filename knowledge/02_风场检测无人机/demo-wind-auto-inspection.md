@@ -1,10 +1,9 @@
 ---
 title: 风机全自动巡检方案与缺陷识别
 tags: 巡检,自动飞行,激光雷达定位,缺陷,报告
+source: https://www.foiadrone.com/fangan/nengyuan/66
+demo: true
 ---
-
-> 演示资料（自动抓取自公开网页，仅用于跑通链路，待替换为公司真实正文）
-> 来源：https://www.foiadrone.com/fangan/nengyuan/66
 
 # 风机全自动巡检方案与缺陷识别
 
@@ -468,10 +467,8 @@ DaaS低空智网服务
 相关案例
 
 首页
->
 
 行业解决方案
->
 能源设施巡检方案 >
 智慧风机无人机全自动巡检方案
 

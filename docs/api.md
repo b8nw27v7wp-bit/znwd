@@ -87,6 +87,9 @@
 | `zone` / `zoneTitle` | string | 展区 id / 展区名（可为空） |
 | `vectorScore` / `keywordScore` | number | 两路原始分（无向量路时 `vectorScore=0`） |
 
+**按资料文件去重**：同一份资料的多个命中片段只保留最高分的那条，所以 `sources.length` 是「引了几份资料」，
+不是「命中几块」。不去重时来源面板会挂出多张同名卡片、前端 `:key` 也会撞（见 `RagPipeline.toSources`）。
+
 `rewrite.reason`：`none`（未改写）、`no_history`、`prev_weak`（上一轮检索偏弱）、`ellipsis_merged`（省略/追问被合并补全）。
 
 **闸门拒答**：`noHit=true`、`sources=[]`、`provider="gate"`、`mode="llm_only"`，正文为固定文案（`RagPipeline.NO_HIT_REPLY`），**不调用大模型**。要让模型自己组织拒答文案，设 `NO_HIT_LLM=true`。
@@ -193,10 +196,10 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 
 ```json
 {
-  "mode": "keyword", "keywordChunks": 134, "indexReady": true, "generation": 2, "semantic": false,
-  "vector": { "provider": "bag", "semantic": false, "dims": 512, "vectors": 134, "fingerprint": "…", "indexFile": "…" },
+  "mode": "keyword", "keywordChunks": 126, "indexReady": true, "generation": 2, "semantic": false,
+  "vector": { "provider": "bag", "semantic": false, "dims": 512, "vectors": 126, "fingerprint": "…", "indexFile": "…" },
   "degradedReason": "EMBED_PROVIDER=bag（特征哈希，非语义向量）",
-  "thresholds": { "minKeywordScore": 6.3, "minVectorScore": 0.35 }
+  "thresholds": { "minKeywordScore": 8.1, "minVectorScore": 0.35 }
 }
 ```
 
@@ -237,27 +240,28 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 | `mode` | `keyword` / `hybrid` |
 | `reason` | `keyword_hit` / `vector_hit` / `no_candidates` / `below_threshold` |
 | `semantic` / `degraded` | 语义向量是否可用 / 是否降级 |
-| `keywordBestScore` / `vectorBestCosine` | 两路最高分（原始分，未过闸门） |
+| `keywordBestScore` / `vectorBestCosine` | 两路最高分（原始分，未过闸门）。`keywordBestScore` 就是闸门实际比较的那个数 |
+| `keywordGateScore` | 只由用户原话词条贡献的分（不含同义词扩展）。比 `keywordBestScore` 低得多 = 这次是同义词扩展把候选抬上来的 |
 | `candidates` | 候选条数 |
 | `thresholds` | `{ minKeywordScore, minVectorScore }` |
 | `distanceToGate` | **>0 表示还差多少分才够阈值**（负数=已超出） |
 | `verdict` | 一句人话结论 |
 | `hits[]` | `title`、`sourcePath`、`zone`、`zoneTitle`、`fuseScore`、`keywordScore`、`vectorScore`、`matchedTokens`、`matched[]`、`snippet` |
 
-实测样例（当前 134 块语料、阈值 6.3）：
+实测样例（当前 126 块语料、阈值 8.1）：
 
 ```json
 // GET /api/admin/diagnostics?q=帮我写一首关于夏天的诗
 {
   "gated": true, "mode": "keyword", "reason": "below_threshold", "semantic": false, "degraded": true,
-  "keywordBestScore": 2.218, "vectorBestCosine": 0.0, "candidates": 16,
-  "thresholds": { "minKeywordScore": 6.3, "minVectorScore": 0.35 },
-  "distanceToGate": 4.082, "hits": [],
-  "verdict": "闸门拦下：有候选但相关度不够（关键词最高 2.22 / 阈值 6.30；语义向量不可用（当前为降级模式），只剩关键词路）"
+  "keywordGateScore": 2.17, "keywordBestScore": 2.17, "vectorBestCosine": 0.2134, "candidates": 16,
+  "thresholds": { "minKeywordScore": 8.1, "minVectorScore": 0.35 },
+  "distanceToGate": 5.93, "hits": [],
+  "verdict": "闸门拦下：有候选但相关度不够（关键词最高 2.17 / 阈值 8.10；语义向量不可用（当前为降级模式），只剩关键词路）"
 }
 ```
 
-在域问题应看到 `gated=false`、`verdict` 里带余量（例：「叶片检测要停机吗？」关键词 24.33 / 余量 18.03；「光伏清洁无人机是做什么的？」关键词 22.42）。
+在域问题应看到 `gated=false`、`verdict` 里带余量（例：「叶片检测要停机吗？」关键词 21.61 / 余量 13.51；「光伏清洁无人机是做什么的？」关键词 21.07、其中只算用户原话的分 19.85——差值是同义词扩展补上来的）。
 
 > curl 手拼中文 `q` 时注意：GBK 控制台下会编码成乱码，表现为「什么都被拦」。用 Python 的 `urllib.parse.quote`，或直接跑 `python tools/smoke.py`（内部已正确编码）。
 

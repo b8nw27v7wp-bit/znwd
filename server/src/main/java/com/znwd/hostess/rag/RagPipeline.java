@@ -29,6 +29,9 @@ public class RagPipeline {
     private static final String SYSTEM_BASE =
             "你是产品展厅的 AI 虚拟讲解员，主题为光伏清洁无人机与风场检测无人机。用简体中文、礼貌、简洁地回答产品、作业流程、服务合作与展厅参观相关问题。"
                     + "优先依据提供的企业知识；知识不足时明确说明并给出可操作建议。避免编造不确定的参数与承诺。回答时可分点列出资料中的关键信息。"
+                    // 展厅里被追问最多、也最容易被编出来的就是「在哪 / 怎么联系 / 多少钱」这三类，
+                    // 知识里没有就直说没有：编出来的地址和邮箱参观者会当真，比答不上来更糟。
+                    + "资料里没有写的具体信息（地址、电话、邮箱、报价、型号参数、业绩数据）一律回答「资料中未提供」，不要推测、不要举例、不要编造联系方式或承诺。"
                     // 展厅大屏会把回答念出来、也会原样显示：Markdown 记号既上屏也进朗读，直接要纯文本
                     + "直接输出纯文本：不要使用 Markdown 记号（如 **、#、* 等），需要分点时用「1. 2. 3.」或「·」开头，句子尽量短、便于朗读。";
 
@@ -59,9 +62,21 @@ public class RagPipeline {
         this.noHitLlm = noHitLlm;
     }
 
+    /**
+     * 命中片段 → 前端「来源」列表。
+     *
+     * <p>按**资料文件**去重：同一份资料的相关片段常常一次占满 topK（实测问「光伏清洁无人机怎么清洗组件」，
+     * 4 条来源里 3 条同属一篇 demo 文件）。不去重的后果是来源面板里挂着 3 张同名卡片、前端 `:key` 撞车，
+     * 而参观者要的是「回答引了哪几份资料」。保留闸门分最高的那条，片段内容取该文件的代表片段。
+     */
     public static List<RagSource> toSources(List<HybridHit> hits) {
         List<RagSource> out = new ArrayList<>(hits.size());
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
         for (HybridHit h : hits) {
+            String key = h.sourcePath() == null || h.sourcePath().isBlank() ? h.title() : h.sourcePath();
+            if (!seen.add(key)) {
+                continue;
+            }
             out.add(new RagSource(
                     h.title(),
                     h.text().length() > 200 ? h.text().substring(0, 200) : h.text(),

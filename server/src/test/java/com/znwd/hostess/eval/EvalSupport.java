@@ -37,7 +37,14 @@ public final class EvalSupport {
             "讲个笑话",
             "你用的什么大模型",
             "会议室在哪里",
-            "洗手间怎么走");
+            "洗手间怎么走",
+            // 下面几条是实测从闸门漏出去过的「同行/商务/价格」类问题：词面全是语料里的高频词
+            // （光伏、风电、无人机、产品），关键词分会被同义词扩展抬到在域问题之上。
+            // 放进标定样本是为了让这类漏答在数字上暴露出来，而不是靠人偶然撞见。
+            "光伏和风电哪个更赚钱？",
+            "你们的产品比别的厂家贵吗？",
+            "这台无人机多少钱？",
+            "能开发票吗？");
 
     private static final DateTimeFormatter STAMP =
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH-mm-ss-SSS").withZone(ZoneId.of("Asia/Shanghai"));

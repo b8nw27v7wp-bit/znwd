@@ -78,7 +78,7 @@ znwd:
   index-dir: ${INDEX_DIR:./server/indexes}
   data-dir: ${DATA_DIR:./server/data}
   watch-knowledge: ${KNOWLEDGE_WATCH:false}
-  min-relevance-score: ${MIN_RELEVANCE_SCORE:6.3}
+  min-relevance-score: ${MIN_RELEVANCE_SCORE:8.1}
   min-vector-score: ${MIN_VECTOR_SCORE:0.35}
   chat-rate-per-min: ${CHAT_RATE_PER_MIN:30}
   answer-cache-size: ${ANSWER_CACHE_SIZE:200}

@@ -11,10 +11,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
-      # CI 里没有 server/.env。6.3 现在同时也是代码默认值（application.yml 的 MIN_RELEVANCE_SCORE
+      # CI 里没有 server/.env。8.1 现在同时也是代码默认值（application.yml 的 MIN_RELEVANCE_SCORE
       # 与 HybridRetriever.DEFAULT_MIN_KEYWORD_SCORE），显式写出来是为了让"CI 通过的阈值"可见可改；
       # 重新标定后这三处要一起改。
-      MIN_RELEVANCE_SCORE: '6.3'
+      MIN_RELEVANCE_SCORE: '8.1'
     steps:
       - uses: actions/checkout@v4
 

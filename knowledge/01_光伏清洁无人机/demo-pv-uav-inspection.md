@@ -1,10 +1,9 @@
 ---
 title: 无人机巡检与清洁预警：从盲目清洗到精准运维
 tags: 巡检,清洁预警,热斑,无人机,运维
+source: https://www.kingtangdata.com/news/977.html
+demo: true
 ---
-
-> 演示资料（自动抓取自公开网页，仅用于跑通链路，待替换为公司真实正文）
-> 来源：https://www.kingtangdata.com/news/977.html
 
 # 无人机巡检与清洁预警：从盲目清洗到精准运维
 

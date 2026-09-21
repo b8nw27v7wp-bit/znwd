@@ -36,7 +36,7 @@ cd server
 | `followUpRawTop1Rate` | 多轮追问**不改写**直接检索的 top1 | 0.3333 |
 | `followUpRewrittenTop1Rate` | 改写后 top1 | **1.0** |
 | `followUpRewriteTriggered` | 触发改写的次数 | 见实跑输出 |
-| `minKeywordScore` | 当次运行实际生效的闸门阈值 | 6.3 |
+| `minKeywordScore` | 当次运行实际生效的闸门阈值 | 8.1 |
 
 报告 JSON 除 summary 外还带逐例明细（`id`、`question`、`expectZone`、`top1`、`top1Path`、`hit1`、`hit3`、`gated`、`reason`、`keywordBestScore`）与多轮明细（`rawTop1`/`rwTop1`/`rawHit1`/`rwHit1`/`rwHit3`）——定位"哪条用例退化"靠这个。
 
@@ -44,7 +44,7 @@ cd server
 
 基线文件：
 
-- `docs/eval/baseline-java.json` —— 当前实现（Spring Boot）的基线，阈值 6.3，可直接 `--baseline=` 对比。
+- `docs/eval/baseline-java.json` —— 当前实现（Spring Boot）的基线，阈值 8.1，可直接 `--baseline=` 对比。
 - `docs/eval/baseline.json` —— **历史文件**（23 块语料时代，Node 实现）。语料规模不同，`top1/top3` **不可直接比**，只作为证据留存。
 - `docs/eval/retrieval-*.json` —— 历史实跑报告（按时间戳）。
 
@@ -72,13 +72,13 @@ cd server
 | 项 | 值 |
 | --- | --- |
 | 在域用例最低关键词分 | 8.933 |
-| 域外问题最高关键词分 | 3.654 |
-| 区间 | 3.654 ~ 8.933（成立） |
-| 建议阈值 | **6.3**（区间中点） |
-| 实际生效阈值 | 6.3（`.env`、`application.yml` 默认值、`HybridRetriever` 默认常量、CI 四处一致） |
+| 域外问题最高关键词分 | 7.272 |
+| 区间 | 7.272 ~ 8.856（成立） |
+| 建议阈值 | **8.1**（区间中点） |
+| 实际生效阈值 | 8.1（`.env`、`application.yml` 默认值、`HybridRetriever` 默认常量、CI 四处一致） |
 | 参数网格 | 36 组**没有一组超过当前默认值**（top1 0.9333 / top3 0.9667），默认参数保持不动 |
 
-阈值演进：`3.8`（23 块语料时代的中点）→ `6.3`（当前语料中点，评测在 6.3 下闸门漏答为 0）。
+阈值演进：`3.8`（23 块语料时代的中点）→ `6.3`（8 篇演示资料入库后）→ `8.1`（修掉跨标点 bigram 与「话题枢纽式同义词」后，域外最高分从 10.96 压到 7.272；评测在 8.1 下闸门漏答为 0）。
 **阈值是相对量**：语料一变，IDF 随之变化、分数整体平移，不重标就可能把该答的问题拦掉。
 
 ## 5. 改语料后的标准流程
@@ -99,7 +99,7 @@ python tools/smoke.py
 
 ## 6. CI 里怎么跑
 
-`.github/workflows/ci.yml` 的 backend 作业：`mvn test` → `exec:java@eval --no-write` → `package` → 起 jar 跑 `python3 tools/smoke.py`，并显式给出 `MIN_RELEVANCE_SCORE=6.3`（CI 里没有 `server/.env`，不显式给就会退回代码默认值——"CI 通过"必须验的是线上那套阈值）。
+`.github/workflows/ci.yml` 的 backend 作业：`mvn test` → `exec:java@eval --no-write` → `package` → 起 jar 跑 `python3 tools/smoke.py`，并显式给出 `MIN_RELEVANCE_SCORE=8.1`（CI 里没有 `server/.env`，不显式给就会退回代码默认值——"CI 通过"必须验的是线上那套阈值）。
 
 失败该往哪修：
 

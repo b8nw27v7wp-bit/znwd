@@ -86,8 +86,9 @@ public class Retriever {
             matched.addAll(zone.matched());
             matched.addAll(body.matched());
             double score = title.score() + zone.score() + body.score() / lenNorm;
+            double gateScore = title.gateScore() + zone.gateScore() + body.gateScore() / lenNorm;
             if (score > 0) {
-                scored.add(new RetrievedChunk(c, score, matched.size(), List.copyOf(matched)));
+                scored.add(new RetrievedChunk(c, score, matched.size(), List.copyOf(matched), gateScore));
             }
         }
         scored.sort(Comparator.comparingDouble(RetrievedChunk::score).reversed());
@@ -118,25 +119,32 @@ public class Retriever {
         Map<String, Integer> freq = precomputedFreq != null ? precomputedFreq : docTokens(text);
         List<WeightedToken> matched = new ArrayList<>();
         double hit = 0;
+        // 只算原查询词条（扩展词权重 < 1）的那份分：闸门判定用，见 RetrievedChunk#gateScore
+        double hitOriginal = 0;
         for (WeightedToken token : tokens) {
             Integer f = freq.get(token.token());
             if (f == null || f == 0) {
                 continue;
             }
-            double w = idf.getOrDefault(token.token(), 1.0) * token.weight();
-            hit += w * Math.min(1 + Math.log(1 + f), opts.maxTfBoost());
+            double rawIdf = idf.getOrDefault(token.token(), 1.0);
+            double tfGain = Math.min(1 + Math.log(1 + f), opts.maxTfBoost());
+            double w = rawIdf * token.weight();
+            hit += w * tfGain;
+            if (token.weight() >= 1) {
+                hitOriginal += rawIdf * tfGain;
+            }
             matched.add(new WeightedToken(token.token(), w));
         }
         matched.sort(Comparator.comparingDouble(WeightedToken::weight).reversed());
         // 归一化按**原查询词条数**（不含扩展）：分数回答的是「这段文字有多贴合用户真正问的」，
         // 否则同义词表一改，所有分数整体平移，阈值也跟着漂。
         long base = Math.max(1, tokens.stream().filter(t -> t.weight() >= 1).count());
-        double score = hit * boost / Math.sqrt(base + 1);
+        double norm = boost / Math.sqrt(base + 1);
         List<String> matchedNames = new ArrayList<>(matched.size());
         for (WeightedToken m : matched) {
             matchedNames.add(m.token());
         }
-        return new Scored(score, matchedNames);
+        return new Scored(hit * norm, matchedNames, hitOriginal * norm);
     }
 
     public static Map<String, Double> buildIdf(List<KnowledgeChunk> chunks) {
@@ -165,14 +173,15 @@ public class Retriever {
                 out.add(t);
             }
         }
-        List<String> chars = cjkChars(lower);
-        for (int i = 0; i + 1 < chars.size(); i++) {
-            String a = chars.get(i);
-            String b = chars.get(i + 1);
-            if (STOPWORDS.contains(a) || STOPWORDS.contains(b)) {
-                continue;
+        for (List<String> run : cjkRuns(lower)) {
+            for (int i = 0; i + 1 < run.size(); i++) {
+                String a = run.get(i);
+                String b = run.get(i + 1);
+                if (STOPWORDS.contains(a) || STOPWORDS.contains(b)) {
+                    continue;
+                }
+                out.add(a + b);
             }
-            out.add(a + b);
         }
         return out;
     }
@@ -185,22 +194,38 @@ public class Retriever {
         while (latin.find()) {
             freq.merge(latin.group(), 1, Integer::sum);
         }
-        List<String> chars = cjkChars(lower);
-        for (int i = 0; i + 1 < chars.size(); i++) {
-            freq.merge(chars.get(i) + chars.get(i + 1), 1, Integer::sum);
+        for (List<String> run : cjkRuns(lower)) {
+            for (int i = 0; i + 1 < run.size(); i++) {
+                freq.merge(run.get(i) + run.get(i + 1), 1, Integer::sum);
+            }
         }
         return freq;
     }
 
-    private static List<String> cjkChars(String text) {
-        List<String> out = new ArrayList<>();
+    /**
+     * 连续 CJK 串：标点、空白、拉丁词都算边界。
+     *
+     * <p>不跨边界取 bigram 是刻意的：以前把整段文字的单字抽出来连成一条链，会在标点处
+     * 造出「测外」（「叶片检测？外观…」）这种不存在的词；更糟的是同义词扩展把备选词拼成
+     * 一个字符串再切，造出「件电」「灰清」（「组件 电站 清洗 积灰」），这些垃圾词条带着真实
+     * IDF 参与打分，是「域外问题也被放行」的直接来源之一。
+     */
+    private static List<List<String>> cjkRuns(String text) {
+        List<List<String>> runs = new ArrayList<>();
+        List<String> cur = new ArrayList<>();
         for (int i = 0; i < text.length(); i++) {
-            String ch = String.valueOf(text.charAt(i));
-            if (isCjk(text.charAt(i))) {
-                out.add(ch);
+            char ch = text.charAt(i);
+            if (isCjk(ch)) {
+                cur.add(String.valueOf(ch));
+            } else if (!cur.isEmpty()) {
+                runs.add(cur);
+                cur = new ArrayList<>();
             }
         }
-        return out;
+        if (!cur.isEmpty()) {
+            runs.add(cur);
+        }
+        return runs;
     }
 
     static boolean isCjk(char c) {
@@ -210,6 +235,6 @@ public class Retriever {
     private record WeightedToken(String token, double weight) {
     }
 
-    private record Scored(double score, List<String> matched) {
+    private record Scored(double score, List<String> matched, double gateScore) {
     }
 }
