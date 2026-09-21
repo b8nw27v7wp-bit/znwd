@@ -6,6 +6,7 @@
 
     python tools/db-check.py                     # 用 server/.env 里的 DB_* 连本机库
     MYSQL_BIN="/d/MySQL/MySQL Server9.7/bin/mysql.exe" python tools/db-check.py
+    DB_HOST=127.0.0.1 DB_USER=znwd DB_PASSWORD=… python tools/db-check.py   # 环境变量优先（CI 用）
 
 没有 mysql 客户端、或库连不上时，用例标 SKIP（不是通过）。口令通过临时 option 文件传给客户端，
 **不出现在命令行参数里**（Windows 上命令行对同机其他进程可见）。
@@ -53,6 +54,12 @@ def skip(name, why):
 
 
 def env_value(key, default=""):
+    """取值顺序与后端一致：系统环境变量 > server/.env > 默认值。
+
+    CI 里没有 server/.env，库信息全部来自 job 的环境变量；本地则读 .env。
+    """
+    if os.environ.get(key):
+        return os.environ[key].strip()
     try:
         for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
             if line.startswith(key + "="):

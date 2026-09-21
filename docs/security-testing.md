@@ -20,6 +20,11 @@ BASE=http://127.0.0.1:9900 python tools/security.py
 `SECOND_BASE` 指向第二个实例（`HOST=0.0.0.0` + 非回环地址访问）时，才会跑 S16–S18 这组越权用例；
 不设该变量时它们标 `SKIP`，**SKIP 不等于通过**。
 
+> CI 里这套是自动跑的：backend 作业带一个 MySQL 8.4 service 容器，用 root 执行 `server/db/init.sql`
+> （`sed` 注入口令、`@'localhost'` 改成 `@'%'` —— 容器里 MySQL 看到的来源是 docker 网关 IP，镜像还需
+> `MYSQL_ROOT_HOST='%'` 才允许远程 root 登录），冒烟前先断言 `storageAvailable:true`，然后依次跑
+> smoke → security（三个实例）→ db-check。也就是说**落库路径与库层脱敏现在都有 CI 兜着**。
+
 ```bash
 # 第二实例（8799）：绑所有网卡 + 管理口令 —— 验「非回环请求必须带对口令」（S16–S18）
 cd server && HOST=0.0.0.0 PORT=8799 ADMIN_TOKEN=<口令> ../tools/mvn -B spring-boot:run

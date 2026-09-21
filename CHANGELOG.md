@@ -63,6 +63,11 @@
   文本被转义成实体。断言刻意写成「查载荷那个元素」而不是「整页有没有 img」——页面上本来就有一个合法的形象图。
 - CI backend 作业改为起三个实例（主 / 带口令的第二实例 / 忘配口令的误配置实例），
   一次跑完边界与安全 57 项；三个实例各用各的 `DATA_DIR`，避免事件日志互相插队。
+- **CI 挂上 MySQL service 容器**（`mysql:8.4`）：以前 CI 里没有库，落库路径（会话恢复、`chat_log` 脱敏、
+  未覆盖问题、最小权限账号）全都不被覆盖。现在按 `docs/deployment.md` 那两步建库——用 root 执行
+  `server/db/init.sql`（`sed` 注入口令、`@'localhost'` → `@'%'`，并用 `MYSQL_ROOT_HOST='%'` 让容器内 root 能连），
+  冒烟前先断言 `/api/health` 的 `storageAvailable:true`（库没连上就直接失败，免得「看起来在跑其实没落库」），
+  再依次跑 smoke → security → `tools/db-check.py`。顺带把这份部署脚本本身也纳入了回归。
 
 ### Changed
 

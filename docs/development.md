@@ -93,7 +93,7 @@ python tools/smoke.py                                  # 56 项契约（需服�
 
 CI（`.github/workflows/ci.yml`，push/PR 都跑）：
 
-- **backend**：`mvn test` → `exec:java@eval --no-write` → `package` → 起 jar 跑 `python3 tools/smoke.py` → `python3 tools/security.py`（`LLM_PROVIDER=mock`，`MIN_RELEVANCE_SCORE=8.1` 显式给出，失败时打印服务日志）
+- **backend**：起一个 MySQL 8.4 service 容器 → 用 root 执行 `server/db/init.sql`（`sed` 注入口令、`@'localhost'` 换成 `@'%'`，因为容器里来源是 docker 网关 IP）→ `mvn test` → `exec:java@eval --no-write` → `package` → 起 jar 跑 `python3 tools/smoke.py`（先断言 `storageAvailable:true`，库没连上就直接失败）→ 再起两个实例跑 `python3 tools/security.py`（`SECOND_BASE`/`MISCONFIG_BASE`）→ `python3 tools/db-check.py`。`LLM_PROVIDER=mock`、`MIN_RELEVANCE_SCORE=8.1` 显式给出，失败时打印三个实例的日志。
 - **frontend**：`npm ci` → `npm run build` → `npm test`
 
 失败时的判断顺序：先在本地复现对应命令；契约类失败（smoke）先看 `docs/api.md` 的字段表，检索类失败（eval）先跑 `calibrate` 看阈值区间是否还成立，边界/安全类失败（security）先看 `docs/security-testing.md` 里该编号的期望与「已接受的风险」两节，别急着改代码。

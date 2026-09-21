@@ -7,14 +7,38 @@ on:
 
 jobs:
   backend:
-    name: 后端（编译 + 单测 + 检索评测 + 接口冒烟）
+    name: 后端（编译 + 单测 + 检索评测 + 接口冒烟 + 边界安全 + 库层）
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
+    # MySQL 服务容器：以前 CI 里没有库，落库路径（会话恢复、chat_log 脱敏、未覆盖问题）全都不被覆盖。
+    # 这里**不**用镜像自带的 MYSQL_DATABASE/MYSQL_USER 建库，而是照 docs/deployment.md 的两步来：
+    # 先执行 server/db/init.sql 建库建最小权限账号，再把它写进 DB_PASSWORD —— 顺带把这份部署脚本也测了。
+    # MYSQL_ROOT_HOST='%' 是必须的：job 容器连的是映射端口，MySQL 看到的来源是 docker 网关 IP，
+    # 镜像默认只建 root@localhost，不加这个会连不上。
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-root-pw-not-a-secret
+          MYSQL_ROOT_HOST: '%'
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pci-root-pw-not-a-secret"
+          --health-interval=5s --health-timeout=5s --health-retries=30
     env:
       # CI 里没有 server/.env。8.1 现在同时也是代码默认值（application.yml 的 MIN_RELEVANCE_SCORE
       # 与 HybridRetriever.DEFAULT_MIN_KEYWORD_SCORE），显式写出来是为了让"CI 通过的阈值"可见可改；
       # 重新标定后这三处要一起改。
       MIN_RELEVANCE_SCORE: '8.1'
+      # 都是 CI 专用的一次性口令（不是密钥）：root 只用来执行 init.sql，应用用最小权限账号。
+      MYSQL_ROOT_PASSWORD: ci-root-pw-not-a-secret
+      APP_DB_PASSWORD: ci-app-pw-not-a-secret
+      DB_HOST: 127.0.0.1
+      DB_PORT: '3306'
+      DB_NAME: znwd
+      DB_USER: znwd
+      DB_PASSWORD: ci-app-pw-not-a-secret
     steps:
       - uses: actions/checkout@v4
 
@@ -24,7 +48,15 @@ jobs:
           java-version: '21'
           cache: maven
 
-      - name: 单元测试（不需要 MySQL）
+      - name: 建库（执行 server/db/init.sql，只给最小权限）
+        run: |
+          # init.sql 里 @'localhost' 在容器里匹配不上（来源是 docker 网关 IP），换成 @'%'——
+          # 这是 CI 与单机部署的唯一差异，其余（权限集合、口令注入方式）与生产一致。
+          sed -e "s/CHANGE_ME_znwd/$APP_DB_PASSWORD/g" -e "s/@'localhost'/@'%'/g" server/db/init.sql \
+            | mysql -h 127.0.0.1 -uroot -p"$MYSQL_ROOT_PASSWORD"
+          mysql -h 127.0.0.1 -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SHOW GRANTS FOR 'znwd'@'%'"
+
+      - name: 单元测试
         run: mvn -B -f server/pom.xml test
 
       - name: 检索评测（同一批用例，不写报告）
@@ -33,19 +65,21 @@ jobs:
       - name: 打包
         run: mvn -B -f server/pom.xml -DskipTests package
 
-      - name: 起服务并跑接口冒烟
+      - name: 起服务并跑接口冒烟（此时库可用，落库路径一起跑）
         run: |
           java -jar server/target/hostess-server.jar --spring.main.banner-mode=off > /tmp/server.log 2>&1 &
           for i in $(seq 1 60); do
             curl -sf http://127.0.0.1:8787/api/health >/dev/null && break
             sleep 1
           done
+          curl -s http://127.0.0.1:8787/api/health | tee /tmp/health.json
+          grep -q '"storageAvailable":true' /tmp/health.json || { echo "库没连上，落库用例没意义"; exit 1; }
           python3 tools/smoke.py
         env:
           LLM_PROVIDER: mock
           HOST: 127.0.0.1
           PORT: '8787'
-          # 固定事件日志目录：下一步的安全用例要按同一路径核对「提问原话没落盘」
+          # 固定事件日志目录：下面两步要按同一路径核对「提问原话没落盘」
           DATA_DIR: /tmp/data-a
 
       # 边界与安全用例。非回环那几组要另外两个实例，都用本机的非回环地址访问：
@@ -72,6 +106,11 @@ jobs:
           LLM_PROVIDER: mock
           DATA_DIR: /tmp/data-a
           ADMIN_TOKEN: ci-only-token-not-a-secret
+
+      # 库层核查：落库之后到底存了什么。放在安全用例之后——那一步收尾会等限流窗口滑过去，
+      # 这里再发提问不会被 429 挡住。
+      - name: 库层核查（脱敏形态与最小权限）
+        run: python3 tools/db-check.py
 
       - name: 失败时打印三个实例的日志
         if: failure()
@@ -101,6 +140,6 @@ jobs:
         working-directory: web
         run: npm run build
 
-      - name: 单测（SSE 解析、问答状态机、朗读切片、播报接线）
+      - name: 单测（SSE 解析、问答状态机、朗读切片、播报接线、注入面）
         working-directory: web
         run: npm test
