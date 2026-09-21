@@ -68,12 +68,20 @@ jobs:
       - name: 起服务并跑接口冒烟（此时库可用，落库路径一起跑）
         run: |
           java -jar server/target/hostess-server.jar --spring.main.banner-mode=off > /tmp/server.log 2>&1 &
+          # 等「就绪」，不要只等「端口通」：端口在 ApplicationReadyEvent 之前就已经在监听，
+          # 而知识库加载与数据库探活都在那个事件里做。实测过一次探测打在初始化之前——
+          # health 回 knowledgeChunks=0、storageAvailable=false，冒烟当场挂，还报成「库没连上」。
           for i in $(seq 1 60); do
-            curl -sf http://127.0.0.1:8787/api/health >/dev/null && break
+            if curl -sf http://127.0.0.1:8787/api/health -o /tmp/health.json \
+              && grep -q '"storageAvailable":true' /tmp/health.json \
+              && ! grep -q '"knowledgeChunks":0' /tmp/health.json; then
+              break
+            fi
             sleep 1
           done
-          curl -s http://127.0.0.1:8787/api/health | tee /tmp/health.json
+          cat /tmp/health.json; echo
           grep -q '"storageAvailable":true' /tmp/health.json || { echo "库没连上，落库用例没意义"; exit 1; }
+          if grep -q '"knowledgeChunks":0' /tmp/health.json; then echo "知识库没加载（0 块），检索用例没意义"; exit 1; fi
           python3 tools/smoke.py
         env:
           LLM_PROVIDER: mock
@@ -95,7 +103,11 @@ jobs:
             java -jar server/target/hostess-server.jar --spring.main.banner-mode=off > /tmp/server-c.log 2>&1 &
           for port in 8799 8798; do
             for i in $(seq 1 60); do
-              curl -sf "http://127.0.0.1:$port/api/health" >/dev/null && break
+              # 同样等「就绪」：这两个实例也要加载知识库，探测未就绪时 security.py 的问答案例会失败
+              if curl -sf "http://127.0.0.1:$port/api/health" -o "/tmp/health-$port.json" \
+                && ! grep -q '"knowledgeChunks":0' "/tmp/health-$port.json"; then
+                break
+              fi
               sleep 1
             done
           done

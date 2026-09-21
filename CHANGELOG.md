@@ -36,6 +36,11 @@
   **一次「关页面」= 3 个 ERROR + 上百行堆栈**。展厅里关页面与闲置复位是高频动作，日志被刷爆会把真问题埋掉。
   现由 `handleClientGone`（`IOException` / `AsyncRequestNotUsableException`）只记一行 INFO，且不带响应体。
 - **缺 `x-content-type-options: nosniff`**：`CorsAndIdFilter` 给所有响应（含错误与 SSE）统一补上。
+- **CI 的「等就绪」条件太弱，第一次真跑到 CI 上就挂了**：push 后 GitHub Actions 跑起后端作业，
+  倒在「起服务并跑接口冒烟」——端口那时已经在监听，但 `ApplicationReadyEvent` 里的知识库加载与数据库探活还没做完，
+  探测打在这一秒之间：`/api/health` 回 `knowledgeChunks:0`、`storageAvailable:false`，断言把原因报成「库没连上」（库其实是好的）。
+  等待循环改成等「两个字段都正常」（最多 60 秒），断言里分开报「库没连上」与「知识库没加载（0 块）」；
+  另两个实例（0.0.0.0 越权组与误配置组）的等待循环同样处理——它们也要加载知识库，未就绪时问答案例会失败。
 
 ### Added
 
