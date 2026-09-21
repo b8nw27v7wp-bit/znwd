@@ -173,25 +173,50 @@ python tools/smoke.py
 
 ## 8. 资料入库（PDF / Word / txt）
 
-**新栈尚未移植入库工具**：旧 Node 版有 `npm run ingest`（`pdftotext -layout` 转 PDF、python-docx 保留标题层级与表格、统一规范化去页码/合并断行），Java 侧目前没有对应实现，仓库里也没有 `inbox/` 目录。这条挂在 `docs/optimization-backlog.md` 的待做清单里。
-
-当前可行做法：**用外部工具转成 Markdown，再按展区目录落盘**：
+工具：`exec:java@ingest`（旧 Node 版 `server/scripts/ingest-docs.ts` 的 Java 版）。
 
 ```bash
-# PDF（需系统有 poppler）
-pdftotext -layout 资料.pdf 资料.txt
-# Word：用 Word 另存为 .docx 后，用 pandoc 或 python-docx 转 md
-pandoc -t gfm --extract-media=. 资料.docx -o 资料.md
+# 把 ./inbox 下的 PDF / docx / txt / md 收进「风场检测无人机」展区；先 dry-run 看目标路径
+cd server && ../tools/mvn -B -q test-compile exec:java@ingest \
+    -Dexec.args="--src ./inbox --zone wind-inspect --dry-run"
+# 确认无误后去掉 --dry-run 真入库（目标已存在时默认报错，--force 才覆盖）
+cd server && ../tools/mvn -B -q exec:java@ingest -Dexec.args="--src ./inbox --zone wind-inspect"
 ```
 
-落盘后自检清单：
+| 参数 | 说明 |
+| --- | --- |
+| `--src` | 源目录（默认 `./inbox`，递归；仓库里没有 `inbox/` 就自己建一个） |
+| `--zone` | 展区 id 或目录名（见 `knowledge/_meta/zones.json`），未知值会列可选项 |
+| `--knowledge` | 知识库目录（默认 `./knowledge`），验证时指向临时目录用 |
+| `--force` | 覆盖已存在的目标文件 |
+| `--dry-run` | 只打印将写入的路径与字数，不写盘 |
+
+转换方式：**PDF** 走 `pdftotext -layout -enc UTF-8`（**没有文字层的扫描件会明确报错**，不会产出空文件，请先 OCR）；
+**DOCX** 由内置解析器读 `word/document.xml`（保留标题层级、列表、表格，不需要 python 或 Office）；
+**txt/md** 直接读；旧版 `.doc` 明确拒绝（先另存为 .docx/.txt）。
+三个来源都要过同一套规范化：丢页码与分隔线、合并 PDF 逐行断行（英文补空格、中文直连）、短行升级为 `##` 标题、表格行贴在一起。
+
+产出落在 `knowledge/<展区目录>/<文件名>.md`，frontmatter 由工具生成：
+
+```yaml
+---
+title: 作业手册
+zone: wind-inspect
+zoneTitle: 风场检测无人机
+tags: wind-inspect,ingest
+source: 作业手册.docx
+ingestedAt: 2026-09-21
+---
+```
+
+入库后自检清单：
 
 1. **标题层级**：主题用 `##`；确认转换没有把标题降级成加粗文本（那会导致整篇被当成一个大段落滑窗切碎）。
-2. **去掉噪声**：页眉页脚、页码、PDF 断行造成的碎行、分隔线；英文/数字之间补空格。
+2. **去掉噪声**：页眉页脚、页码、PDF 断行造成的碎行、分隔线；英文/数字之间补空格。工具已做一遍，抽一眼产物。
 3. **表格**：转成 Markdown 表格（纯文本列的表格会被当正文，检索仍能命中，但人看着差）。
-4. **编码**：UTF-8；中文文件名可用，但**块 id 含相对路径**，避免在文件名里放空格与特殊符号。
-5. **frontmatter**：补 `title` / `zone` / `tags`（`zone` 不写就靠目录名推断，目录名必须与 `zones.json` 的 `dir` 一致）。
-6. **扫描件**：没有文字层的 PDF 转换会得到空文件——先 OCR（见技能 `ocr-and-documents`）。
+4. **编码**：UTF-8；中文文件名可用（`title` 用文件名，注意**块 id 含相对路径**，别在文件名里放空格与特殊符号）。
+5. **frontmatter**：`title` / `zone` / `tags` 工具已填；手工落盘的文件 `zone` 不写就靠目录名推断，目录名必须与 `zones.json` 的 `dir` 一致。
+6. **扫描件**：没有文字层的 PDF 会被工具拒绝——先 OCR（见技能 `ocr-and-documents`）。
 7. **正文里不留「待替换/示例/来源」这类说明**：正文每一行都会被切块、被检索、被当资料展示在「来源」面板上，
    也会被模型念出来（实测把「（示例：bd@example-drone.local）」当真实联系方式答给参观者）。来源、演示标记、
    待办说明一律放 frontmatter（`source:` / `demo:`）或 `knowledge/_meta/` 下的说明文件里。

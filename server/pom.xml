@@ -92,6 +92,14 @@
               <cleanupDaemonThreads>false</cleanupDaemonThreads>
             </configuration>
           </execution>
+          <execution>
+            <id>ingest</id>
+            <configuration>
+              <mainClass>com.znwd.hostess.cli.IngestDocs</mainClass>
+              <classpathScope>test</classpathScope>
+              <cleanupDaemonThreads>false</cleanupDaemonThreads>
+            </configuration>
+          </execution>
         </executions>
       </plugin>
     </plugins>

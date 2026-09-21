@@ -27,9 +27,10 @@ cd server && ../tools/mvn -B test        # 等价于 mvn -B test
 | 目的 | 命令（工作目录） | 预期输出 |
 | --- | --- | --- |
 | 起后端 | `cd server && ../tools/mvn spring-boot:run` | `Tomcat started on port 8787` / `Started HostessApplication` |
-| 单测 | `cd server && ../tools/mvn -B test` | `Tests run: 44, Failures: 0, Errors: 0` |
+| 单测 | `cd server && ../tools/mvn -B test` | `Tests run: 60, Failures: 0, Errors: 0` |
 | 检索评测 | `cd server && ../tools/mvn -B test-compile exec:java@eval -Dexec.args="--no-write"` | `top1Rate = 0.9333`、`top3Rate = 0.9667`、`gateBlockedCount = 0`、`minKeywordScore = 8.1` |
 | 阈值标定 | `cd server && ../tools/mvn -B test-compile exec:java@calibrate` | 在域最弱 8 条、域外降序、"建议 minKeywordScore=8.1"；`--grid` 再加 36 组参数网格；报告落 `docs/eval/calibration-*.json` |
+| 资料入库 | `cd server && ../tools/mvn -B -q test-compile exec:java@ingest -Dexec.args="--src ./inbox --zone <展区id>"`（`--dry-run` 先看目标路径） | `完成：N/M 入库`；扫描件 PDF 与 `.doc` 明确报错；用法见 `docs/knowledge.md` §8 |
 | 接口冒烟 | `python tools/smoke.py`（需服务在跑，`BASE=http://…` 可改目标） | `通过 56 项，失败 0 项` |
 | 边界与安全 | `python tools/security.py`（同上；非回环越权与误配置组见 `docs/security-testing.md`） | `通过 49 项，失败 0 项`（只跑主实例）／`57 项`（另起两个实例时） |
 | 库层核查 | `python tools/db-check.py`（需本机 mysql 客户端；缺客户端整组 SKIP） | `通过 8 项，失败 0 项` |
@@ -80,6 +81,7 @@ MySQL 首次使用：把 `server/db/init.sql` 里两处 `CHANGE_ME_znwd` 改成�
 | --- | --- | --- |
 | `curl --get --data-urlencode "q=中文"` 返回的诊断"什么都被拦" | GBK 控制台把中文参数编坏，后端收到乱码 | 用 Python 发（`urllib.parse.quote`），或直接 `python tools/smoke.py` |
 | `mvn` 报「找不到主类 Launcher」 | MSYS 路径转换 | 用 `tools/mvn` |
+| 从 Java 里用 `ProcessBuilder` 起 `python -c "长脚本"` 转换 Word | 实测这条命令一直不返回（本机 `python` 是 venv 里的解释器），只能等超时强杀；`pdftotext` 同样写法正常 | 不要外挂 python：`.docx` 就是 zip + `word/document.xml`，`IngestDocs.parseDocx` 用 JDK 自带 XML 解析读（保留标题层级/列表/表格），同时省掉 python-docx 这个依赖 |
 | 8787 端口被占 | 上一次 `spring-boot:run` 没退干净 | `netstat -ano \| grep :8787` 找 PID，再 `MSYS_NO_PATHCONV=1 taskkill /PID <pid> /F`（不加 `MSYS_NO_PATHCONV=1` 时 `/PID` 会被 MSYS 当路径转换） |
 | native 程序报「cannot change to /c/…」 | MSYS 路径不转换 | 给 native 程序传 `C:/…` 正斜杠路径，或用 `cygpath -w` |
 | 临时脚本被 native 程序读不到 | `/tmp` 在 MSYS 里 | 写到 `$LOCALAPPDATA/Temp` |
@@ -87,8 +89,8 @@ MySQL 首次使用：把 `server/db/init.sql` 里两处 `CHANGE_ME_znwd` 改成�
 ## 7. 测试与 CI
 
 ```bash
-cd server && ../tools/mvn -B test                     # 44 项：检索/HTTP/统计会话/同义词/诊断文案/配置接线/管理口令/降级写路径与裁剪
-cd web && npm test                                     # 31 项：SSE 解析、问答状态机、朗读切片、回答排版、展区下拉、界面入口与播报接线（jsdom）
+cd server && ../tools/mvn -B test                     # 60 项：检索/HTTP/统计会话/同义词/诊断文案/配置接线/管理口令/降级写路径与裁剪/资料入库
+cd web && npm test                                     # 37 项：SSE 解析、问答状态机、朗读切片、回答排版、展区下拉、界面入口与播报接线（jsdom）
 python tools/smoke.py                                  # 56 项契约（需服务在跑）
 ```
 
@@ -102,5 +104,6 @@ CI（`.github/workflows/ci.yml`，push/PR 都跑）：
 ## 8. 提交约定
 
 - **不要提交**：`server/.env`、`server/indexes/`、`server/data/`、`web/dist/`、`node_modules/`、日志文件。
-- 仓库当前**没有远端**，提交只落本地；不要擅自 push 或改写历史。
-- 提交信息用中文简述「为什么改」（例：`fix(retrieval): 修非语义向量污染排序`），一个提交只做一件事。
+- 远端：`origin` = `git@github.com:b8nw27v7wp-bit/znwd.git`（私有），主开发分支 `feature/virtual-receptionist`。
+  **CI 只在 push 后才跑**（本地 `mvn test` / `npm test` 不能替代）：要用 GitHub Actions 的结果说话，就得 push。
+  提交信息用中文简述「为什么改」（例：`fix(retrieval): 修非语义向量污染排序`），一个提交只做一件事。

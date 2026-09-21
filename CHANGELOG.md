@@ -79,6 +79,17 @@
   `server/db/init.sql`（`sed` 注入口令、`@'localhost'` → `@'%'`，并用 `MYSQL_ROOT_HOST='%'` 让容器内 root 能连），
   冒烟前先断言 `/api/health` 的 `storageAvailable:true`（库没连上就直接失败，免得「看起来在跑其实没落库」），
   再依次跑 smoke → security → `tools/db-check.py`。顺带把这份部署脚本本身也纳入了回归。
+- **资料入库工具移植到新栈**（`exec:java@ingest`，旧 Node 版 `server/scripts/ingest-docs.ts`）：
+  `../tools/mvn -B -q test-compile exec:java@ingest -Dexec.args="--src ./inbox --zone wind-inspect [--force] [--dry-run]"`。
+  PDF 走 `pdftotext -layout -enc UTF-8`（没有文字层时明确报错、不产出空文件），txt/md 直接读，三种来源过同一套规范化
+  （丢页码与分隔线、合并 PDF 逐行断行、短行升级 `##` 标题、表格行贴在一起），按 `_meta/zones.json` 落到 `knowledge/<展区目录>/`，
+  自动带 `title/zone/zoneTitle/tags/source/ingestedAt` frontmatter；目标已存在默认报错、`--force` 才覆盖。
+  **DOCX 改为内置解析**（zip + `word/document.xml`：标题样式与 `w:outlineLvl`、编号段落、表格），不再依赖 python 与 python-docx——
+  少一个「现场机器没装 python-docx」的失败点，也让这条路径进了 CI 单测（解析前关掉 DTD 与外部实体）。
+  实测：中文 DOCX（Heading 1/2 + 列表 + 表格）→ 标题层级、列表项、Markdown 表格全部正确；带文字层的 PDF 合并成段且丢掉页脚页码；
+  扫描件 PDF 与旧版 `.doc` 按预期失败并给出下一步；生成的文件被 `KnowledgeLoader` 正常加载（`[knowledge] 已加载 6 个片段`）。
+  入库后仍必须 reload → `exec:java@calibrate` → `exec:java@eval`（语料一变 IDF 就变，工具结尾会把这三步打出来）。
+- `docs/knowledge.md` §8 从「新栈尚未移植」改写为实际用法：参数表、产出的 frontmatter 形态、自检清单。
 
 ### Changed
 
@@ -87,7 +98,7 @@
 
 ### Verified
 
-- 后端单测 50/50、前端 **37/37**、契约冒烟 56/56、边界与安全 **57/57**（主实例 + 带口令的第二实例 + 忘配口令的误配置实例）、库层核查 **8/8**；
+- 后端单测 **60/60**（新增 `IngestDocsTest` 10 项：规范化、目标命名、写盘与覆盖策略、DOCX 解析与 XXE 拒收）、前端 **37/37**、契约冒烟 56/56、边界与安全 **57/57**（主实例 + 带口令的第二实例 + 忘配口令的误配置实例）、库层核查 **8/8**；
   检索评测 top1 **0.9333** / top3 **0.9667** / 闸门漏答 **0**（与基线一致）。
 - 手工另验一组最危险的误配置：`HOST=0.0.0.0` + 忘配 `ADMIN_TOKEN` → 回环放行、内网地址访问管理接口 **401**，
   且 `/api/health` 对该来源如实上报 `adminTokenRequired=true`（不会出现「接口 401、health 说不需要口令」）。

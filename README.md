@@ -66,9 +66,10 @@ znwd/
 ## 校验命令
 
 ```bash
-cd server && ../tools/mvn -B test                                        # 单测（42 项）
+cd server && ../tools/mvn -B test                                        # 单测（60 项）
 cd server && ../tools/mvn -B test-compile exec:java@eval -Dexec.args="--no-write"   # 检索评测
 cd server && ../tools/mvn -B test-compile exec:java@calibrate            # 阈值标定（改语料后必跑）
+cd server && ../tools/mvn -B -q test-compile exec:java@ingest -Dexec.args="--src ./inbox --zone <展区id>"   # 资料入库（PDF/Word/txt）
 python tools/smoke.py                                                    # 接口契约冒烟（需服务在跑，56 项）
 cd web && npm run build && npm test                                      # 前端类型检查+构建、单测
 ```

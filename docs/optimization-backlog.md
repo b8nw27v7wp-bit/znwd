@@ -36,12 +36,10 @@
 
 ## 待做
 
-1. **资料入库工具**（旧 Node 版的 `npm run ingest`）**尚未移植**：PDF/Word/txt → markdown 的转换链路（`pdftotext -layout`、python-docx 保留标题层级与表格、规范化去页码/合并断行）在新栈里没有对应实现。当前只能外部转换后按展区目录手工落盘。仓库里也没有 `inbox/` 目录与相关依赖，按需再补。
-2. **前端组件测试只覆盖了 App 的播报接线**：已加 `@vue/test-utils` + `jsdom` 并写了 `App.spec.ts`（朗读接线三条），但 `AdminPanel.vue` 与对话主流程的回归仍靠人工点；要继续补可直接沿用这套环境。
-3. **（可选）指标暴露**：已带 `spring-boot-starter-actuator`（只暴露 `health,info`）；接多屏/后台要 Prometheus 指标时再接 `micrometer-registry-prometheus`。单机展厅当前 `/api/health` + `/api/stats` 够用。
-4. **（可选）把标定挂进 CI**：区间塌了要早知道；但语料换成正式资料期间可能误报红，等资料稳定再加。
-5. **本机 MySQL 还没初始化**：3306 上有 MySQL 在跑，但 `server/db/init.sql` 没执行过、`server/.env` 里也没有 `DB_*` 口令，所以 `/api/health` 报 `storageAvailable=false`（会话/统计/反馈不落库，重启即清零）。**链路已在临时实例（3307）上验通**：init.sql 的新权限能建表、问答与反馈各落一行、重启后会话与统计恢复；只剩「在你的正式实例上执行一次 init.sql 并填 DB_PASSWORD」这一步（需要你的管理员口令）。
-6. **（可选）请求体大小上限**：消息正文会被截到 2000 字，但超大 JSON 仍会先进内存。建议反代加 `client_max_body_size 64k`，或加一个读 `Content-Length` 的过滤器。
+1. **前端组件测试只覆盖了 App 的播报接线**：已加 `@vue/test-utils` + `jsdom` 并写了 `App.spec.ts`（朗读接线三条），但 `AdminPanel.vue` 与对话主流程的回归仍靠人工点；要继续补可直接沿用这套环境。
+2. **（可选）指标暴露**：已带 `spring-boot-starter-actuator`（只暴露 `health,info`）；接多屏/后台要 Prometheus 指标时再接 `micrometer-registry-prometheus`。单机展厅当前 `/api/health` + `/api/stats` 够用。
+3. **（可选）把标定挂进 CI**：区间塌了要早知道；但语料换成正式资料期间可能误报红，等资料稳定再加。
+4. **（可选）请求体大小上限**：消息正文会被截到 2000 字，但超大 JSON 仍会先进内存。建议反代加 `client_max_body_size 64k`，或加一个读 `Content-Length` 的过滤器。
 
 ## 已完成（第三轮：文档与配置换成新栈）
 
@@ -89,6 +87,14 @@
 | MySQL 最小权限 | `ALL PRIVILEGES` → `SELECT, INSERT, UPDATE, DELETE, CREATE`（仅 `znwd` 库） | 临时实例实测：建出 5 张表、问答 1 行 + 反馈 1 行、重启后恢复 |
 | **降级模式写库白等 3 秒 + 日志刷屏** | 库挂掉时每次问答/反馈/定时裁剪都要等 Hikari `connection-timeout`（实测 3.0s/次），且 Hikari 每 65 秒刷一条建连 WARN + 16 行堆栈（同一根因反复刷，把真日志淹掉）。三层一起改：① 写路径与 `trimStorage` 都先问 `DatabaseStatus.shouldAttempt()`，已知不可用直接跳过；② `minimum-idle: 0` 去掉连接池的后台反复建连，另加每 60 秒的静默探活（恢复后无需重启即续写，health 也跟着变）；③ 压掉 `PoolBase` 每次重探的 WARN 堆栈（根因启动已报一次、health 如实上报） | 实测：反馈 3.0s → **0.019s**；降级静置 70 秒日志只有 **1 条 WARN、0 行堆栈**（原来约 3 段 ×16 行）；建库后**未重启**第 50 秒自动恢复落库，随后问答/反馈各落 1 行；单测 7 条 |
 | 全仓安全核查 | 凭据、注入、XSS、管理面、日志、异常、Actuator 七项逐条核查（含命令） | 见 `docs/security.md` 第二、三节 |
+
+## 已完成（第八轮：资料入库工具 + 本机 MySQL 初始化）
+
+| 项 | 内容 | 验证 |
+| --- | --- | --- |
+| **资料入库工具移植**（旧 Node 版 `server/scripts/ingest-docs.ts`） | `mvn -q test-compile exec:java@ingest -Dexec.args="--src <目录> --zone <展区id> [--force] [--dry-run]"`：PDF 走 `pdftotext -layout -enc UTF-8`、txt/md 直接读、DOCX 内置解析（zip + `word/document.xml`，认得标题样式与 `w:outlineLvl`、编号段落、表格），三种来源过同一套规范化（丢页码与分隔线、合并断行、短行升级标题、表格行贴合）；按 `zones.json` 落 `knowledge/<展区目录>/` 并写 frontmatter；目标已存在默认报错 | 本机实测 6 个素材：中文 DOCX（标题层级/列表/表格）、中文 txt、子目录 md、带文字层 PDF 全部正确入库；扫描件 PDF 与旧版 `.doc` 按预期失败并给出下一步；dry-run 不写盘、`--force` 才覆盖；生成的文件被 `KnowledgeLoader` 正常加载（`[knowledge] 已加载 6 个片段`）；新增单测 **10 项** |
+| **本机 MySQL 初始化完成**（原先挂在待做清单里） | `server/.env` 已配 `DB_*`，`server/db/init.sql` 已在正式实例执行过（应用账号只有 `SELECT/INSERT/UPDATE/DELETE/CREATE`） | 直连核查：`znwd` 库 5 张表齐全（`chat_log`/`feedback`/`session`/`session_message`/`uncovered_question`），`chat_log` **453** 行、`uncovered_question` **50** 行 |
+
 
 ## 已知取舍（不是 bug）
 
