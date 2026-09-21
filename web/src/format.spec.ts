@@ -54,3 +54,33 @@ describe('回答排版', () => {
     expect(formatAnswer('   \n\n  ')).toEqual([]);
   });
 });
+
+/**
+ * 注入面：模型输出（以及被注入的提问）最终会上大屏，排版函数的产出只允许是
+ * 「结构 + 文本」，任何能让浏览器当 HTML/JS 解析的东西都不该在这里出现。
+ * 这批用例是安全测试的一部分（见 tools/security.py 的 S 组与 docs/security-testing.md）。
+ */
+describe('回答排版的注入面', () => {
+  it('HTML 标签与事件属性原样当文字，结构里没有 HTML 字段', () => {
+    const blocks = formatAnswer('结果 <img src=x onerror=alert(1)> 如下');
+    const segs = blocks.flatMap((b) => b.segments);
+    expect(segs.map((s) => s.text).join('')).toContain('<img src=x onerror=alert(1)>');
+    // 唯一允许的字段就是 text/bold：模板外没有任何地方能塞 href/src/onerror
+    expect(segs.every((s) => Object.keys(s).sort().join() === 'bold,text')).toBe(true);
+    expect(JSON.stringify(blocks)).not.toContain('onerror":');
+  });
+
+  it('链接语法不产生可点击节点（没有 href/url 字段）', () => {
+    const blocks = formatAnswer('[点我](javascript:alert(1)) 与 [x](https://evil.example)');
+    expect(JSON.stringify(blocks)).not.toContain('"href"');
+    expect(JSON.stringify(blocks)).not.toContain('"url"');
+    expect(blocks[0]?.segments.map((s) => s.text).join('')).toContain('javascript:alert(1)');
+  });
+
+  it('用粗体记号闭合属性也逃不出文本段', () => {
+    const blocks = formatAnswer('**"><img src=x onerror=alert(1)>**');
+    const bold = blocks.flatMap((b) => b.segments).filter((s) => s.bold).map((s) => s.text).join('');
+    expect(bold).toContain('<img src=x onerror=alert(1)>');
+    expect(Object.keys(blocks.flatMap((b) => b.segments)[0]!).sort().join()).toBe('bold,text');
+  });
+});

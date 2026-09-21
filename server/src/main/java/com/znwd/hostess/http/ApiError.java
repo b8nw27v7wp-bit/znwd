@@ -13,6 +13,8 @@ public final class ApiError {
 
     public static final String VALIDATION_ERROR = "validation_error";
     public static final String NOT_FOUND = "not_found";
+    public static final String METHOD_NOT_ALLOWED = "method_not_allowed";
+    public static final String UNSUPPORTED_MEDIA_TYPE = "unsupported_media_type";
     public static final String UNAUTHORIZED = "unauthorized";
     public static final String RATE_LIMITED = "rate_limited";
     public static final String INTERNAL_ERROR = "internal_error";

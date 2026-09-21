@@ -38,6 +38,9 @@ public class CorsAndIdFilter extends OncePerRequestFilter {
         String requestId = UUID.randomUUID().toString().substring(0, 8);
         request.setAttribute(RequestId.ATTRIBUTE, requestId);
         response.setHeader("x-request-id", requestId);
+        // 让浏览器不要"猜"内容类型：JSON 就只当 JSON。所有响应（含错误与 SSE）统一带上，
+        // 万一将来某条响应被拼进了 HTML 片段，浏览器也不会把它当页面解析。
+        response.setHeader("x-content-type-options", "nosniff");
 
         String origin = request.getHeader("origin");
         String allowed = CorsPolicy.allowedOrigin(origin, allowOrigins);

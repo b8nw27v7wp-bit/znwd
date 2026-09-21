@@ -46,6 +46,14 @@ jobs:
           HOST: 127.0.0.1
           PORT: '8787'
 
+      # 边界与安全用例（同一份脚本、同一个跑着的服务）。S16–S18 那组非回环越权需要第二个实例，
+      # 这里不设 SECOND_BASE 会标 SKIP——CI 只保证「不该崩、不该漏、不该越权」这批常驻断言不回归。
+      - name: 边界与安全用例
+        run: python3 tools/security.py
+        env:
+          HOST: 127.0.0.1
+          PORT: '8787'
+
       - name: 失败时打印服务日志
         if: failure()
         run: tail -80 /tmp/server.log

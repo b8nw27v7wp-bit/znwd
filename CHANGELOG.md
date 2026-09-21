@@ -27,6 +27,15 @@
   （`source:` + `demo: true`）。正文每一行都会被切块、被检索、被展示在来源面板上，少 8 个纯说明块（134 → 126 块）。
 - **诊断文案与判定口径不一致**：`RetrievalVerdict` 报的「关键词最高」改为闸门真正比较的那个分（排序分），
   只用原话的分另附一句；`distanceToGate` 同步。报一个数、判另一个数是最难排查的那类问题。
+- **畸形参数被报成 500**：`GET /api/admin/diagnostics?topK=abc`（`MethodArgumentTypeMismatchException`）
+  与 `PUT /api/chat`（`HttpRequestMethodNotSupportedException`）原先都掉进兜底 `Exception` handler，
+  于是「参数写错」「用错方法」都变成 500「服务内部错误」——监控和客户端会当成宕机，运维还得翻日志才知道是自己发错了。
+  现分别映射为 400 与 405（附 `allowed` 方法列表），另补 415；这三条是 `tools/security.py` 的 B16/B22 打出来的。
+- **访客中途断开刷爆服务日志**：SSE 响应头已是 `text/event-stream`，客户端关页面/切屏时的 `IOException`
+  被兜底 handler 接住后又要写 JSON 错误信封 → 再抛 `HttpMessageNotWritableException`，容器跟着再记两条 ERROR：
+  **一次「关页面」= 3 个 ERROR + 上百行堆栈**。展厅里关页面与闲置复位是高频动作，日志被刷爆会把真问题埋掉。
+  现由 `handleClientGone`（`IOException` / `AsyncRequestNotUsableException`）只记一行 INFO，且不带响应体。
+- **缺 `x-content-type-options: nosniff`**：`CorsAndIdFilter` 给所有响应（含错误与 SSE）统一补上。
 
 ### Added
 
@@ -35,6 +44,13 @@
 - 标定样本补 4 条实测漏过的域外问题（同行盈利/竞品价格/报价/发票）；标定报告同时给闸门分与排序分，并在输出里标明哪个才是判定用的。
 - 单测 **44 → 50 项**：bigram 边界、扩展词不连词、诊断文案口径。
 - 知识写作自检清单补一条「正文里不留待替换/示例/来源说明」。
+- **`tools/security.py`：边界与安全用例**（黑盒、只用标准库，与 `smoke.py` 同风格）：54 项覆盖输入边界
+  （畸形 body、2000/2001 字截断、4MB body、控制字符与 4 字节 emoji、`sessionId` 清洗、`topK` 越界、并发）、
+  注入与密钥泄漏（SQL 注入串、路径穿越、提示注入、XSS 载荷、全端点密钥片段扫描）、日志脱敏（标记放在第 20 字之后才断言）、
+  CORS 与安全头、越权（回环放行 / 非回环 fail-closed / 错口令 401）、SSE 边界（事件序列、中途断开）、限流（429 与重试提示）。
+  CI 在冒烟之后跑一遍；用例编号、输入、期望与「已接受的风险」见 `docs/security-testing.md`。
+- 前端 `format.spec.ts` 增「排版注入面」3 条：HTML 标签与事件属性、`javascript:` 链接语法、用粗体记号闭合属性，
+  断言产出只有 `text/bold` 两个字段（没有 `href`/`src`/`onerror` 可塞）。
 
 ### Changed
 
@@ -43,7 +59,10 @@
 
 ### Verified
 
-- 后端单测 50/50、前端 31/31、契约冒烟 56/56；检索评测 top1 **0.9333** / top3 **0.9667** / 闸门漏答 **0**（与基线一致）。
+- 后端单测 50/50、前端 34/34、契约冒烟 56/56、边界与安全 **54/54**（含第二实例的非回环越权组）；
+  检索评测 top1 **0.9333** / top3 **0.9667** / 闸门漏答 **0**（与基线一致）。
+- 手工另验一组最危险的误配置：`HOST=0.0.0.0` + 忘配 `ADMIN_TOKEN` → 回环放行、内网地址访问管理接口 **401**，
+  且 `/api/health` 对该来源如实上报 `adminTokenRequired=true`（不会出现「接口 401、health 说不需要口令」）。
 
 ## [1.2.0] — 2026-09-20
 
