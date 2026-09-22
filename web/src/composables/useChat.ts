@@ -130,8 +130,7 @@ export function useChat() {
       if (!assistant.content) assistant.content = '这条问题暂时没能回答，请再试一次。';
       assistant.error = message;
       error.value = message;
-      errors.value.unshift({ at: Date.now(), question: text, message });
-      if (errors.value.length > ERROR_LOG_SIZE) errors.value.length = ERROR_LOG_SIZE;
+      logError(text, message);
     } finally {
       assistant.pending = false;
       if (!assistant.content) assistant.content = '（没有返回内容）';
@@ -143,6 +142,17 @@ export function useChat() {
 
   function cancel(): void {
     controller?.abort();
+  }
+
+  /**
+   * 记一条技术问题（只在运营视图里显示）。
+   *
+   * 回答失败与**语音播报失败**共用这一条通道：展厅大屏上不给参观者看技术信息，
+   * 但运营必须能看到「为什么没声音 / 没回答」——否则现场只会表现为「坏了」。
+   */
+  function logError(question: string, message: string): void {
+    errors.value.unshift({ at: Date.now(), question, message });
+    if (errors.value.length > ERROR_LOG_SIZE) errors.value.length = ERROR_LOG_SIZE;
   }
 
   /** 运营处理完就清掉，避免越堆越多 */
@@ -188,6 +198,7 @@ export function useChat() {
     ask,
     cancel,
     clearErrors,
+    logError,
     rate,
     startOver,
   };

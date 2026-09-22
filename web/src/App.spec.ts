@@ -21,20 +21,25 @@ class FakeUtterance {
   rate = 1;
   pitch = 1;
   voice: unknown = null;
+  volume = 1;
   onend: (() => void) | null = null;
-  onerror: (() => void) | null = null;
+  onerror: ((ev?: { error?: string }) => void) | null = null;
   constructor(text: string) {
     this.text = text;
   }
 }
 
-function installSpeech() {
+/** reject=true 时模拟浏览器的自动播放策略：speak 立刻回 not-allowed（plan.md 的机理 1） */
+function installSpeech(options: { reject?: boolean } = {}) {
   const spoken: string[] = [];
+  const utterances: FakeUtterance[] = [];
   const synth = {
     speaking: false,
     speak(u: FakeUtterance) {
+      utterances.push(u);
       spoken.push(u.text);
       synth.speaking = true;
+      if (options.reject) u.onerror?.({ error: 'not-allowed' });
     },
     cancel() {
       synth.speaking = false;
@@ -44,7 +49,7 @@ function installSpeech() {
   };
   Object.defineProperty(window, 'speechSynthesis', { value: synth, configurable: true });
   Object.defineProperty(window, 'SpeechSynthesisUtterance', { value: FakeUtterance, configurable: true });
-  return { spoken, synth };
+  return { spoken, synth, utterances };
 }
 
 function sse(...frames: string[]): Response {
@@ -89,6 +94,7 @@ function stubFetch(storageAvailable = true, streamFails = false, answer = ANSWER
           `event:done\ndata:{"mode":"rag","provider":"mock","retrieval":"keyword","noHit":false,"cached":false,"sources":${src},"answer":${JSON.stringify(answer)},"latencyMs":42}\n\n`,
         );
       }
+      if (url.includes('/api/feedback')) return new Response(JSON.stringify({ ok: true }), { status: 200 });
       if (url.includes('/api/sessions/')) return new Response(JSON.stringify({ ok: true }), { status: 200 });
       throw new Error(`unexpected fetch: ${url}`);
     }),
@@ -364,6 +370,133 @@ describe('展厅页面：回答与片段里的 HTML 不上屏', () => {
     expect(wrapper.find('.sources-block').element.querySelector('img, script, iframe')).toBeNull();
     expect(wrapper.find('.sources-block').element.querySelector('[onerror]')).toBeNull();
     expect(wrapper.find('.sources-block .snippet').text()).toContain(XSS);
+    wrapper.unmount();
+  });
+});
+
+
+/**
+ * 对话主流程接线：除了「提问 → 出答案」之外的那几条路径——反馈上报、追问复用会话、
+ * 点推荐问题、空输入与 Shift+Enter。这些以前全靠人工点，出问题只会表现为「点了没反应」。
+ */
+function fetchCalls(): Array<[string, RequestInit | undefined]> {
+  return (fetch as unknown as { mock: { calls: Array<[string, RequestInit | undefined]> } }).mock.calls;
+}
+
+describe('展厅页面：对话主流程接线', () => {
+  it('点「有帮助」把反馈连同上一轮问题一起上报', async () => {
+    installSpeech();
+    const wrapper = mount(App);
+    await flushPromises();
+    await askAndWait(wrapper);
+
+    const up = wrapper.findAll('.msg-foot button').find((b) => b.text() === '有帮助')!;
+    await up.trigger('click');
+    await flushPromises();
+
+    const call = fetchCalls().find((c) => String(c[0]).includes('/api/feedback'));
+    expect(call).toBeTruthy();
+    const body = JSON.parse(String(call![1]!.body));
+    expect(body.rating).toBe('up');
+    expect(body.question).toBe('叶片检测要停机吗？');
+    expect(body.sessionId).toBeTruthy();
+    expect(wrapper.find('.msg-foot button.on').text()).toBe('有帮助');
+    wrapper.unmount();
+  });
+
+  it('连续追问复用同一个会话，上下文不丢', async () => {
+    installSpeech();
+    const wrapper = mount(App);
+    await flushPromises();
+    await askAndWait(wrapper);
+
+    await wrapper.find('textarea').setValue('那要多久？');
+    await wrapper.find('textarea').trigger('keydown', { key: 'Enter' });
+    await flushPromises();
+    await vi.waitFor(() => {
+      expect(fetchCalls().filter((c) => String(c[0]).includes('/api/chat/stream')).length).toBe(2);
+    });
+
+    const ids = fetchCalls()
+      .filter((c) => String(c[0]).includes('/api/chat/stream'))
+      .map((c) => JSON.parse(String(c[1]!.body)).sessionId);
+    expect(ids[0]).toBe(ids[1]);
+    expect(ids[0]).toBe(localStorage.getItem('znwd.sessionId'));
+    wrapper.unmount();
+  });
+
+  it('点推荐问题直接提问', async () => {
+    installSpeech();
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const chip = wrapper.find('.chip');
+    expect(chip.text()).toBe('叶片检测要停机吗？');
+    await chip.trigger('click');
+    await flushPromises();
+    await vi.waitFor(() => {
+      expect(wrapper.find('.msg.assistant .answer').text()).toContain('不需要停机');
+    });
+
+    expect(wrapper.find('.msg.user .bubble').text()).toBe('叶片检测要停机吗？');
+    wrapper.unmount();
+  });
+
+  it('空白输入不发请求，Shift+Enter 也不发', async () => {
+    installSpeech();
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const box = wrapper.find('textarea');
+    await box.setValue('   ');
+    await box.trigger('keydown', { key: 'Enter' });
+    await flushPromises();
+    expect(fetchCalls().some((c) => String(c[0]).includes('/api/chat'))).toBe(false);
+    expect(wrapper.findAll('.msg').length).toBe(0);
+
+    await box.setValue('叶片检测要停机吗？');
+    await box.trigger('keydown', { key: 'Enter', shiftKey: true });
+    await flushPromises();
+    expect(fetchCalls().some((c) => String(c[0]).includes('/api/chat'))).toBe(false);
+    wrapper.unmount();
+  });
+});
+
+/**
+ * 语音的两条现场行为（plan.md 的 P0/P1）：
+ * 1) 被浏览器策略拦下时必须进「最近的技术问题」——大屏上不提示，但运营要能查到「为什么没声音」；
+ * 2) 第一次真实手势要把语音解锁（空 utterance 暖机），且只解一次。
+ */
+describe('展厅页面：语音失败可见与手势解锁', () => {
+  it('播报被浏览器拦下时进技术问题列表，大屏上不显示', async () => {
+    installSpeech({ reject: true });
+    const wrapper = mountWithAdmin();
+    await flushPromises();
+    await askAndWait(wrapper);
+
+    const log = wrapper.find('.tech-log');
+    expect(log.exists()).toBe(true);
+    expect(log.text()).toContain('浏览器拦下了自动播报');
+    expect(log.text()).toContain('not-allowed');
+    // 参观者不该在大屏上看到技术信息
+    expect(wrapper.find('.main').text()).not.toContain('浏览器拦下了');
+    wrapper.unmount();
+  });
+
+  it('第一次真实手势解锁语音（静音空 utterance），且只解一次', async () => {
+    const engine = installSpeech();
+    const wrapper = mount(App);
+    await flushPromises();
+    expect(engine.utterances.length).toBe(0);
+
+    window.dispatchEvent(new Event('pointerdown'));
+    expect(engine.utterances.length, '首次手势应当暖机一次').toBe(1);
+    expect(engine.utterances[0]!.text).toBe('');
+    expect(engine.utterances[0]!.volume, '暖机不能真的出声').toBe(0);
+    expect(wrapper.find('.local-set').exists()).toBe(false);
+
+    window.dispatchEvent(new Event('pointerdown'));
+    expect(engine.utterances.length, '解锁只做一次').toBe(1);
     wrapper.unmount();
   });
 });

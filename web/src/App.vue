@@ -6,12 +6,17 @@ import { formatAnswer, type Block } from './format';
 import SourcePanel from './components/SourcePanel.vue';
 import AdminPanel from './components/AdminPanel.vue';
 import AvatarPortrait from './components/AvatarPortrait.vue';
+import StageDiagram from './components/StageDiagram.vue';
 
 /** 展厅闲置自动回到欢迎态：下一位参观者不该看到上一个人的对话 */
 const IDLE_RESET_MS = 180_000;
 
 const chat = useChat();
-const speech = useSpeech();
+const speech = useSpeech({
+  // 播报被浏览器拦下（not-allowed）时进「最近的技术问题」：展厅大屏不提示，运营视图能看到原因
+  onError: (reason) =>
+    chat.logError('（语音播报）', `浏览器拦下了自动播报（${reason}）：页面需要一次真实点击/触摸`),
+});
 const draft = ref('');
 /** 展厅大屏上不放运营入口：加 ?admin=1 打开（运营视图里的统计接口本来就要口令） */
 const showAdmin = ref(typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('admin'));
@@ -27,12 +32,23 @@ function bumpActivity(): void {
   }, IDLE_RESET_MS);
 }
 
+/** 只解一次锁，之后自己摘掉监听 */
+function unlockSpeechOnce(): void {
+  speech.unlock();
+  window.removeEventListener('pointerdown', unlockSpeechOnce);
+  window.removeEventListener('keydown', unlockSpeechOnce);
+}
+
 onMounted(() => {
   void chat.bootstrap();
   composer.value?.focus();
   for (const type of ['pointerdown', 'keydown', 'wheel', 'touchstart']) {
     window.addEventListener(type, bumpActivity, { passive: true });
   }
+  // 第一次真实手势顺手解锁语音（空 utterance 暖机 + 预热中文音色）：之后即使播报由脚本触发，
+  // 也不会被浏览器的自动播放策略拒掉。展厅的常态本来就有手势，这一步只是把配额提前备好。
+  window.addEventListener('pointerdown', unlockSpeechOnce, { passive: true });
+  window.addEventListener('keydown', unlockSpeechOnce);
   bumpActivity();
 });
 
@@ -42,6 +58,8 @@ onUnmounted(() => {
   for (const type of ['pointerdown', 'keydown', 'wheel', 'touchstart']) {
     window.removeEventListener(type, bumpActivity);
   }
+  window.removeEventListener('pointerdown', unlockSpeechOnce);
+  window.removeEventListener('keydown', unlockSpeechOnce);
 });
 
 // 流式回答期间自动跟到底部：大屏前的人不用自己滚
@@ -320,8 +338,10 @@ function assistantSourceLabel(mode?: string, provider?: string): string {
       </div>
     </section>
 
-    <!-- 右 2/3：暂时留白，留给后续展项内容 -->
-    <div class="stage-rest" aria-hidden="true"></div>
+    <!-- 右 2/3：项目讲解图（一次问答的链路 + 技术栈与实测数据） -->
+    <div class="stage-rest">
+      <StageDiagram />
+    </div>
 
     <div v-if="showAdmin" class="drawer">
       <div class="drawer-head">
@@ -343,6 +363,14 @@ function assistantSourceLabel(mode?: string, provider?: string): string {
           </button>
           <span v-else class="muted">浏览器不支持</span>
         </div>
+        <!-- 开关藏在 ?admin=1 抽屉里，大屏上看不出状态；被浏览器拦下时在这行标出来 -->
+        <p class="muted" :style="speech.lastError.value ? { color: 'var(--warn)' } : undefined">
+          {{
+            speech.lastError.value
+              ? `上次播报被浏览器拦下（${speech.lastError.value}）：页面需要一次真实点击/触摸`
+              : '本机设置；浏览器可能拦截自动播报'
+          }}
+        </p>
         <div class="row">
           <span>数据留存</span>
           <span class="muted">{{ storageLabel }}</span>

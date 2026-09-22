@@ -14,7 +14,9 @@ class FakeUtterance {
   pitch = 1;
   voice: unknown = null;
   onend: (() => void) | null = null;
-  onerror: (() => void) | null = null;
+  /** 浏览器错误事件的形状（真实实现里是 SpeechSynthesisErrorEvent） */
+  onerror: ((ev?: { error?: string }) => void) | null = null;
+  volume = 1;
   constructor(text: string) {
     this.text = text;
   }
@@ -189,5 +191,74 @@ describe('播报状态机', () => {
     speech.speak('甲'.repeat(MAX_SPEAK_CHARS * 2));
     expect(engine.spoken.join('').length).toBeLessThanOrEqual(MAX_SPEAK_CHARS);
     speech.stop();
+  });
+});
+
+/**
+ * 播报失败的可见性（plan.md 的 P0）。
+ *
+ * 现场最糟的表现是「一声不响」：应用照常调 speak、浏览器按自动播放策略拒掉、页面上什么都不显示。
+ * 所以失败必须能被上报到运营视图，而**主动停读**（interrupted / canceled）不能混进来——
+ * 那是换问题、点停读的正常语义，报出来只会把真故障淹掉。
+ */
+describe('播报失败的可见性', () => {
+  it('not-allowed 会上报原因并复位状态', () => {
+    const engine = stubEngine();
+    const seen: string[] = [];
+    const speech = useSpeech({ onError: (reason) => seen.push(reason) });
+
+    speech.speak('一段回答。');
+    expect(speech.speaking.value).toBe(true);
+
+    engine.utterances[engine.utterances.length - 1]!.onerror?.({ error: 'not-allowed' });
+
+    expect(seen).toEqual(['not-allowed']);
+    expect(speech.lastError.value).toBe('not-allowed');
+    expect(speech.speaking.value, '失败后要把「正在朗读」复位').toBe(false);
+    expect(speech.enabled.value, '被浏览器拒掉不等于用户关了开关').toBe(true);
+  });
+
+  it('主动停读的 interrupted / canceled 不算失败', () => {
+    const engine = stubEngine();
+    const seen: string[] = [];
+    const speech = useSpeech({ onError: (reason) => seen.push(reason) });
+
+    speech.speak('一段回答。');
+    engine.utterances[engine.utterances.length - 1]!.onerror?.({ error: 'interrupted' });
+    expect(seen).toEqual([]);
+    expect(speech.lastError.value).toBe('');
+
+    speech.speak('另一段回答。');
+    engine.utterances[engine.utterances.length - 1]!.onerror?.({ error: 'canceled' });
+    expect(seen).toEqual([]);
+    expect(speech.lastError.value).toBe('');
+  });
+
+  it('下一次成功播报会清掉上一次的失败标记', () => {
+    const engine = stubEngine();
+    const speech = useSpeech();
+    speech.speak('第一段。');
+    engine.utterances[engine.utterances.length - 1]!.onerror?.({ error: 'not-allowed' });
+    expect(speech.lastError.value).toBe('not-allowed');
+
+    speech.speak('第二段。');
+    expect(speech.lastError.value).toBe('');
+  });
+
+  it('unlock() 播一段静音空 utterance 用来暖机，不改状态', () => {
+    const engine = stubEngine();
+    const speech = useSpeech();
+
+    speech.unlock();
+
+    expect(engine.utterances.length).toBe(1);
+    expect(engine.utterances[0]!.text).toBe('');
+    expect(engine.utterances[0]!.volume).toBe(0);
+    expect(speech.speaking.value, '暖机不该把界面切成「正在朗读」').toBe(false);
+    expect(speech.lastError.value).toBe('');
+
+    // 环境不支持时也不能抛
+    vi.stubGlobal('window', {});
+    expect(() => useSpeech().unlock()).not.toThrow();
   });
 });

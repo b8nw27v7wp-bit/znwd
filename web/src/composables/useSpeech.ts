@@ -139,11 +139,21 @@ function warmVoice(synth: SpeechSynthesis): SpeechSynthesisVoice | null {
   return voiceCache.get(synth) ?? found;
 }
 
-export function useSpeech() {
+export type SpeechOptions = {
+  /**
+   * 播报失败回调（**只报真失败**：not-allowed 这类被浏览器策略拒掉的情况）。
+   * interrupted / canceled 是「我们自己停读」的正常语义（换问题、点停读、开新对话），不在这里报。
+   */
+  onError?: (reason: string) => void;
+};
+
+export function useSpeech(options: SpeechOptions = {}) {
   const synth = engine();
   const supported = synth !== null;
   const enabled = ref(supported && readEnabled());
   const speaking = ref(false);
+  /** 最近一次播报失败的原因（空串 = 没失败过）；运营视图拿它做「被浏览器拦下了」的标记 */
+  const lastError = ref('');
   let resumeTimer: number | undefined;
 
   function readEnabled(): boolean {
@@ -185,6 +195,7 @@ export function useSpeech() {
     const Ctor = (window as SpeechWindow).SpeechSynthesisUtterance!;
     const voice = warmVoice(synth);
     speaking.value = true;
+    lastError.value = ''; // 这一轮开始前先清掉上一轮的失败标记
 
     parts.forEach((part, index) => {
       const utter = new Ctor(part);
@@ -198,7 +209,15 @@ export function useSpeech() {
           speaking.value = false;
           clearTimer();
         };
-        utter.onerror = () => {
+        utter.onerror = (event) => {
+          // not-allowed = 浏览器自动播放策略拒了（要求先有一次用户激活）；interrupted / canceled
+          // 是我们主动停读的正常语义，报出来只会让运营视图被噪声淹掉。
+          const reason = String((event as SpeechSynthesisErrorEvent | undefined)?.error ?? 'error');
+          if (reason !== 'interrupted' && reason !== 'canceled') {
+            lastError.value = reason;
+            options.onError?.(reason);
+            console.warn('[speech] 播报失败：', reason);
+          }
           speaking.value = false;
           clearTimer();
         };
@@ -212,6 +231,25 @@ export function useSpeech() {
     }, RESUME_INTERVAL_MS);
   }
 
+  /**
+   * 首次真实手势时暖机：播一段空 utterance，把「用户激活」配额与音色列表提前拿到。
+   *
+   * 浏览器要求语音合成先有一次用户手势。展厅的交互本来就有手势（参观者点问题），
+   * 这里只是把配额提前备好——后续即便播报由脚本触发（运营演示、自动化检查）也不会被 not-allowed 拒掉。
+   */
+  function unlock(): void {
+    if (!synth) return;
+    try {
+      warmVoice(synth);
+      const Ctor = (window as SpeechWindow).SpeechSynthesisUtterance!;
+      const utter = new Ctor('');
+      utter.volume = 0; // 只为解锁，不出声
+      synth.speak(utter);
+    } catch {
+      // 某些实现会拒绝空 utterance：忽略即可，正常朗读时还会再试
+    }
+  }
+
   /** 切换朗读开关并持久化；关掉时立即闭嘴 */
   function toggle(): void {
     enabled.value = !enabled.value;
@@ -223,6 +261,6 @@ export function useSpeech() {
     if (!enabled.value) stop();
   }
 
-  return { supported, enabled, speaking, speak, stop, toggle };
+  return { supported, enabled, speaking, lastError, speak, stop, toggle, unlock };
 }
 
