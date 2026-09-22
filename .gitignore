@@ -16,3 +16,5 @@ dev.err.log
 server/indexes/
 server/data/
 server/target/
+.run/
+.vscode/
