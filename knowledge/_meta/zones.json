@@ -32,24 +32,6 @@
         "有哪些落地案例？",
         "团队和专利情况如何？"
       ]
-    },
-    {
-      "id": "wind-inspect",
-      "dir": "04_风场检测无人机",
-      "title": "风场检测无人机",
-      "aliases": ["风场", "风电", "叶片", "检测", "巡检"],
-      "suggestions": [
-        "风场检测无人机是做什么的？",
-        "叶片检测要停机吗？",
-        "风场展区展示什么？"
-      ]
-    },
-    {
-      "id": "safety",
-      "dir": "90_通识",
-      "title": "展厅须知",
-      "aliases": ["安全", "须知", "参观", "拍照"],
-      "suggestions": ["展厅有哪些安全注意事项？"]
     }
   ],
   "media": [
@@ -57,11 +39,6 @@
       "mediaId": "exhibit-pv-clean",
       "title": "光伏清洁机器人展项",
       "zoneId": "pv-clean"
-    },
-    {
-      "mediaId": "exhibit-wind-inspect",
-      "title": "风场检测无人机展项",
-      "zoneId": "wind-inspect"
     }
   ]
 }

@@ -167,8 +167,8 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 
 ```json
 {
-  "zones": [ { "id": "wind-inspect", "dir": "04_风场检测无人机", "title": "风场检测", "aliases": ["…"], "suggestions": ["…"] } ],
-  "media": [ { "mediaId": "exhibit-pv-clean", "title": "光伏展项", "zoneId": "pv-clean" } ]
+  "zones": [ { "id": "pv-doctor", "dir": "02_光伏医生运维系统", "title": "光伏医生智慧运维", "aliases": ["…"], "suggestions": ["…"] } ],
+  "media": [ { "mediaId": "exhibit-pv-clean", "title": "光伏清洁机器人展项", "zoneId": "pv-clean" } ]
 }
 ```
 
@@ -248,7 +248,7 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 | `verdict` | 一句人话结论 |
 | `hits[]` | `title`、`sourcePath`、`zone`、`zoneTitle`、`fuseScore`、`keywordScore`、`vectorScore`、`matchedTokens`、`matched[]`、`snippet` |
 
-实测样例（当前 111 块语料、阈值 8.1）：
+实测样例（当前 119 块语料、阈值 8.1）：
 
 ```json
 // GET /api/admin/diagnostics?q=帮我写一首关于夏天的诗
@@ -311,11 +311,11 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 ```json
 {
   "knowledgeDir": "E:\\znwd\\knowledge",
-  "fileCount": 17, "chunkCount": 111,
+  "fileCount": 14, "chunkCount": 119,
   "retrieval": { "…同 /api/health 的 retrieval…": "" },
   "zones": ["…"],
   "synonyms": { "count": 23, "source": "builtin", "file": "…synonyms.tsv" },
-  "docs": [ { "path": "01_光伏清洁机器人/产品概述.md", "title": "两栖光伏清洁机器人产品概述", "zone": "pv-clean", "zoneTitle": "光伏清洁机器人", "chunks": 8 } ]
+  "docs": [ { "path": "01_光伏清洁机器人/产品概述.md", "title": "两栖光伏清洁机器人产品概述", "zone": "pv-clean", "zoneTitle": "光伏清洁机器人", "chunks": 9 } ]
 }
 ```
 
@@ -323,7 +323,7 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 
 重载知识、重建关键词与向量索引，并清空答案缓存。
 
-`{ "ok": true, "knowledgeChunks": 111, "generation": 2, "retrieval": {…}, "synonyms": {…}, "files": [ {"sourcePath":"…","chunks":5} ] }`
+`{ "ok": true, "knowledgeChunks": 119, "generation": 2, "retrieval": {…}, "synonyms": {…}, "files": [ {"sourcePath":"…","chunks":5} ] }`
 
 ### GET /api/openapi.json（无鉴权）
 

@@ -1,13 +1,13 @@
 {
-  "version": 2,
-  "description": "Hybrid 检索评测集：question → 期望 zone / sourcePath 片段（v2：语料换成公司自有材料）",
+  "version": 3,
+  "description": "Hybrid 检索评测集：question → 期望 zone / sourcePath 片段（v3：语料只剩三份申报/大赛/概述材料，只保留 3 个展区）",
   "cases": [
     { "id": "pv-01", "question": "光伏清洁机器人是做什么的？", "zone": "pv-clean", "sourcePathIncludes": "01_光伏清洁机器人" },
     { "id": "pv-02", "question": "太阳能组件怎么清洗？", "zone": "pv-clean", "sourcePathIncludes": "清洁作业流程" },
     { "id": "pv-03", "question": "清洁作业流程是怎样的？", "zone": "pv-clean", "sourcePathIncludes": "清洁作业流程" },
     { "id": "pv-04", "question": "光伏电站组件积灰怎么处理？", "zone": "pv-clean", "sourcePathIncludes": "01_光伏清洁机器人" },
     { "id": "pv-05", "question": "清洁机器人适用哪些场景？", "zone": "pv-clean", "sourcePathIncludes": "01_光伏清洁机器人" },
-    { "id": "pv-06", "question": "光伏展区展示什么？", "zone": "pv-clean", "sourcePathIncludes": "01_光伏清洁机器人", "note": "展板说明文件待补，暂由产品概述承接" },
+    { "id": "pv-06", "question": "光伏展区展示什么？", "zone": "pv-clean", "sourcePathIncludes": "01_光伏清洁机器人", "note": "展板说明待补，暂由产品概述承接" },
     { "id": "pv-07", "question": "组件表面鸟粪如何清理？", "zone": "pv-clean", "sourcePathIncludes": "清洁作业流程" },
     { "id": "pv-08", "question": "屋顶光伏能用无人机清洗吗？", "zone": "pv-clean", "sourcePathIncludes": "01_光伏清洁机器人" },
     { "id": "pv-09", "question": "清洁机器人有多重？", "zone": "pv-clean", "sourcePathIncludes": "结构与材料创新" },
@@ -24,6 +24,7 @@
     { "id": "doc-08", "question": "运维方案能自动生成吗？", "zone": "pv-doctor", "sourcePathIncludes": "平台功能与应用场景" },
     { "id": "doc-09", "question": "巡检数据会不会拍到居民区？", "zone": "pv-doctor", "sourcePathIncludes": "数据基础与数据治理" },
     { "id": "doc-10", "question": "清洁和检测是不是同一套系统？", "zone": "pv-doctor", "sourcePathIncludes": "系统总览" },
+    { "id": "doc-11", "question": "故障识别模型还能用在哪？", "zone": "pv-doctor", "sourcePathIncludes": "系统总览" },
 
     { "id": "proj-01", "question": "项目背景是什么？", "zone": "project", "sourcePathIncludes": "项目背景与需求" },
     { "id": "proj-02", "question": "有哪些落地案例？", "zone": "project", "sourcePathIncludes": "应用成效与案例" },
@@ -34,35 +35,26 @@
     { "id": "proj-07", "question": "有没有售后技术支持？", "zone": "project", "sourcePathIncludes": "服务与合作" },
     { "id": "proj-08", "question": "可以做区域运维伙伴吗？", "zone": "project", "sourcePathIncludes": "服务与合作" },
     { "id": "proj-09", "question": "设备操作培训包括什么？", "zone": "project", "sourcePathIncludes": "服务与合作" },
-
-    { "id": "wind-01", "question": "风场检测无人机是做什么的？", "zone": "wind-inspect", "sourcePathIncludes": "04_风场" },
-    { "id": "wind-02", "question": "叶片检测要停机吗？", "zone": "wind-inspect", "sourcePathIncludes": "叶片检测" },
-    { "id": "wind-03", "question": "风机叶片裂纹怎么发现？", "zone": "wind-inspect", "sourcePathIncludes": "04_风场" },
-    { "id": "wind-04", "question": "风电场如何做巡检？", "zone": "wind-inspect", "sourcePathIncludes": "04_风场" },
-    { "id": "wind-05", "question": "雷击痕迹能检测到吗？", "zone": "wind-inspect", "sourcePathIncludes": "04_风场" },
-    { "id": "wind-06", "question": "风场展区展示什么？", "zone": "wind-inspect", "sourcePathIncludes": "展览_风场" },
-    { "id": "wind-07", "question": "海上风电能用无人机检测吗？", "zone": "wind-inspect", "sourcePathIncludes": "04_风场" },
-    { "id": "wind-08", "question": "检测报告包含哪些内容？", "zone": "wind-inspect", "sourcePathIncludes": "04_风场" },
-
-    { "id": "safe-01", "question": "展厅有哪些安全注意事项？", "zone": "safety", "sourcePathIncludes": "通识" },
-    { "id": "safe-02", "question": "可以摸无人机吗？", "zone": "safety", "sourcePathIncludes": "参观须知" },
-    { "id": "safe-03", "question": "拍照能开闪光灯吗？", "zone": "safety", "sourcePathIncludes": "参观须知" },
-    { "id": "safe-04", "question": "参观需要预约吗？", "zone": "safety", "sourcePathIncludes": "通识" },
-    { "id": "safe-05", "question": "展厅内可以吸烟吗？", "zone": "safety", "sourcePathIncludes": "参观须知" },
-    { "id": "safe-06", "question": "儿童可以单独参观吗？", "zone": "safety", "sourcePathIncludes": "参观须知" },
+    { "id": "proj-10", "question": "项目参加的是什么比赛？", "zone": "project", "sourcePathIncludes": "项目基本信息" },
+    { "id": "proj-11", "question": "项目目前有客户和收入吗？", "zone": "project", "sourcePathIncludes": "项目基本信息" },
+    { "id": "proj-12", "question": "有哪些代表性论文？", "zone": "project", "sourcePathIncludes": "团队与资质" },
+    { "id": "proj-13", "question": "数据来源和更新频率是怎样的？", "zone": "project", "sourcePathIncludes": "项目基本信息" },
+    { "id": "proj-14", "question": "融资情况如何？", "zone": "project", "sourcePathIncludes": "商业模式与定价" },
+    { "id": "proj-15", "question": "发电效率能提升多少？", "zone": "project", "sourcePathIncludes": "应用成效与案例" },
+    { "id": "proj-16", "question": "清洁机器人怎么收费？", "zone": "pv-clean", "sourcePathIncludes": "01_光伏清洁机器人", "note": "机器人家族问题：头条价格放在机器人篇，完整定价表在商业模式与定价" },
+    { "id": "proj-17", "question": "项目总投入多少资金？", "zone": "project", "sourcePathIncludes": "商业模式与定价" },
+    { "id": "proj-18", "question": "运维服务怎么收费？", "zone": "project", "sourcePathIncludes": "商业模式与定价" },
 
     { "id": "mix-01", "question": "太阳能电站清洗后发电会提升吗？", "sourcePathIncludes": "应用成效与案例" },
-    { "id": "mix-02", "question": "无人机巡检比人工爬塔更安全吗？", "zone": "pv-doctor", "sourcePathIncludes": "巡检与缺陷诊断", "note": "语料里「无人机替代人工高处巡检的安全优势」落在光伏医生侧；风场侧现有语料较薄" },
+    { "id": "mix-02", "question": "无人机巡检比人工爬塔更安全吗？", "zone": "pv-doctor", "sourcePathIncludes": "巡检与缺陷诊断" },
     { "id": "mix-03", "question": "你们和别的厂家比有什么不一样？", "zone": null, "sourcePathIncludes": null, "note": "开放问（语料只有自家口径，允许不完全命中）" },
     { "id": "mix-04", "question": "研究院主要做哪些方向？", "zone": null, "sourcePathIncludes": null, "note": "开放问" }
   ],
   "followUps": [
     { "id": "fu-01", "context": "光伏清洁机器人是做什么的？", "question": "那清洗哪些场景？", "zone": "pv-clean", "sourcePathIncludes": "01_光伏清洁机器人", "note": "省略式追问：改写应补上「光伏/清洁」主题词" },
-    { "id": "fu-02", "context": "叶片检测要停机吗？", "question": "那要多久？", "zone": "wind-inspect", "sourcePathIncludes": "04_风场", "note": "省略式追问：应继承风场检测主题" },
+    { "id": "fu-02", "context": "光伏医生系统是什么？", "question": "那数据集有多大？", "zone": "pv-doctor", "sourcePathIncludes": "数据基础与数据治理", "note": "省略式追问：应继承运维系统主题" },
     { "id": "fu-03", "context": "提供培训吗？", "question": "那怎么报名？", "zone": "project", "sourcePathIncludes": "服务与合作", "note": "省略式追问：应继承服务合作主题" },
-    { "id": "fu-04", "context": "风场检测无人机是做什么的？", "question": "那海上能用吗？", "zone": "wind-inspect", "sourcePathIncludes": "04_风场", "note": "含实义词，改写可不动" },
-    { "id": "fu-05", "context": "展厅有哪些安全注意事项？", "question": "那能拍照吗？", "zone": "safety", "sourcePathIncludes": "参观须知", "note": "本轮自身可检索（拍照），不应依赖改写" },
-    { "id": "fu-06", "context": "光伏清洁机器人是做什么的？", "question": "它会不会压坏光伏板？", "zone": "pv-clean", "sourcePathIncludes": "结构与材料创新", "note": "省略式追问，主题继承" },
-    { "id": "fu-07", "context": "光伏医生系统是什么？", "question": "那数据集有多大？", "zone": "pv-doctor", "sourcePathIncludes": "数据基础与数据治理", "note": "省略式追问：应继承运维系统主题" }
+    { "id": "fu-04", "context": "光伏清洁机器人是做什么的？", "question": "它会不会压坏光伏板？", "zone": "pv-clean", "sourcePathIncludes": "结构与材料创新", "note": "省略式追问，主题继承" },
+    { "id": "fu-05", "context": "光伏医生系统是什么？", "question": "那海上能用吗？", "zone": "pv-doctor", "sourcePathIncludes": "系统总览", "note": "含实义词，改写可不动" }
   ]
 }
