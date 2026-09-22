@@ -27,6 +27,7 @@ BASE = os.environ.get("BASE", "http://127.0.0.1:8787").rstrip("/")
 
 CANDIDATE_CLIENTS = [
     os.environ.get("MYSQL_BIN", ""),
+    r"D:/mysql-cli/mysql-8.4.0-winx64/bin/mysql.exe",
     r"D:/MySQL/MySQL Server9.7/bin/mysql.exe",
     r"C:/Program Files/MySQL/MySQL Server 8.0/bin/mysql.exe",
     "/usr/bin/mysql",

@@ -27,13 +27,13 @@ cd server && ../tools/mvn -B test        # 等价于 mvn -B test
 | 目的 | 命令（工作目录） | 预期输出 |
 | --- | --- | --- |
 | 起后端 | `cd server && ../tools/mvn spring-boot:run` | `Tomcat started on port 8787` / `Started HostessApplication` |
-| 单测 | `cd server && ../tools/mvn -B test` | `Tests run: 60, Failures: 0, Errors: 0` |
+| 单测 | `cd server && ../tools/mvn -B test` | `Tests run: 77, Failures: 0, Errors: 0` |
 | 检索评测 | `cd server && ../tools/mvn -B test-compile exec:java@eval -Dexec.args="--no-write"` | `top1Rate = 1.0`、`top3Rate = 1.0`、`gateBlockedCount = 2`（两条已知弱问句）、`minKeywordScore = 6.3` |
-| 阈值标定 | `cd server && ../tools/mvn -B test-compile exec:java@calibrate` | 在域最弱 8 条、域外降序、区间与建议；**区间判据与闸门口径不一致，先读 `docs/eval.md` 的说明**；`--grid` 再加 36 组参数网格；报告落 `docs/eval/calibration-*.json` |
+| 阈值标定 | `cd server && ../tools/mvn -B test-compile exec:java@calibrate` | 在域最弱 8 条、域外降序、区间与建议；**区间判据与闸门口径不一致，先读 `docs/eval.md` 的说明**；`--grid` 再加 36 组参数网格；`--gate-check` 只判闸门余量（域外最高分不得越线，越线退出码 3，CI 用的就是这条）；报告落 `docs/eval/calibration-*.json` |
 | 资料入库 | `cd server && ../tools/mvn -B -q test-compile exec:java@ingest -Dexec.args="--src ./inbox --zone <展区id>"`（`--dry-run` 先看目标路径） | `完成：N/M 入库`；扫描件 PDF 与 `.doc` 明确报错；用法见 `docs/knowledge.md` §8 |
 | 接口冒烟 | `python tools/smoke.py`（需服务在跑，`BASE=http://…` 可改目标） | `通过 56 项，失败 0 项` |
 | 边界与安全 | `python tools/security.py`（同上；非回环越权与误配置组见 `docs/security-testing.md`） | `通过 49 项，失败 0 项`（只跑主实例）／`57 项`（另起两个实例时） |
-| 库层核查 | `python tools/db-check.py`（需本机 mysql 客户端；缺客户端整组 SKIP） | `通过 8 项，失败 0 项` |
+| 库层核查 | `python tools/db-check.py`（需本机 mysql 客户端：`MYSQL_BIN` 或候选路径 `D:/mysql-cli/mysql-8.4.0-winx64/bin/mysql.exe`；缺客户端整组 SKIP） | `通过 8 项，失败 0 项` |
 | 本地化不变量 | `python tools/offline-check.py`（`--runtime` 追加运行期核查） | `通过 5 项，失败 0 项` |
 | 前端 dev | `cd web && npm install && npm run dev` | `VITE v6 ready`，`:5173`，`/api` 代理到 8787 |
 | 前端构建 | `cd web && npm run build` | `vue-tsc -b` 类型检查 + `vite build`，产物 `web/dist` |
@@ -89,8 +89,8 @@ MySQL 首次使用：把 `server/db/init.sql` 里两处 `CHANGE_ME_znwd` 改成�
 ## 7. 测试与 CI
 
 ```bash
-cd server && ../tools/mvn -B test                     # 60 项：检索/HTTP/统计会话/同义词/诊断文案/配置接线/管理口令/降级写路径与裁剪/资料入库
-cd web && npm test                                     # 37 项：SSE 解析、问答状态机、朗读切片、回答排版、展区下拉、界面入口与播报接线（jsdom）
+cd server && ../tools/mvn -B test                     # 77 项：检索/HTTP/统计会话/同义词/诊断文案/配置接线/管理口令/降级写路径与裁剪/资料入库/请求体上限/来源面板规则/落库截断/限流键取值
+cd web && npm test                                     # 55 项：SSE 解析、问答状态机、朗读切片、回答排版、展区下拉、界面入口与播报接线、运营视图、对话主流程、来源面板、讲解图（jsdom）
 python tools/smoke.py                                  # 56 项契约（需服务在跑）
 ```
 

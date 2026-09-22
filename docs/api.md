@@ -29,6 +29,7 @@
 | 400 | `validation_error` | 请求体不是合法 JSON（文案固定「请求体不是合法 JSON 对象」，**不会**复用 chat 的文案把排查方向指错） |
 | 401 | `unauthorized` | 管理接口口令不对；或生产未配 `ADMIN_TOKEN` |
 | 404 | `not_found` | 路由不存在（「接口不存在」）、会话不存在或已过期 |
+| 413 | `payload_too_large` | 请求体超过 64KB；或写请求没有 `Content-Length`（无法判定大小，一律按超限处理） |
 | 429 | `rate_limited` | 超出 `CHAT_RATE_PER_MIN`，额外带 `retryAfterSec` |
 | 500 | `internal_error` | 未预期异常；对外固定「服务内部错误」 |
 
@@ -248,7 +249,7 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 | `verdict` | 一句人话结论 |
 | `hits[]` | `title`、`sourcePath`、`zone`、`zoneTitle`、`fuseScore`、`keywordScore`、`vectorScore`、`matchedTokens`、`matched[]`、`snippet` |
 
-实测样例（当前 194 块语料、阈值 6.3）：
+实测样例（当前 209 块语料、阈值 6.3）：
 
 ```json
 // GET /api/admin/diagnostics?q=帮我写一首关于夏天的诗
@@ -261,7 +262,7 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 }
 ```
 
-在域问题应看到 `gated=false`、`verdict` 里带余量（例：「清洁作业流程是怎样的？」→ `01_光伏清洁机器人/清洁作业流程.md`，关键词 27.61 / 余量 19.51，其中只算用户原话的分 26.45——差值是同义词扩展补上来的）。
+在域问题应看到 `gated=false`、`verdict` 里带余量（例：「清洁作业流程是怎样的？」→ `01_光伏清洁机器人/清洁作业流程.md`，关键词 32.89 / 余量 26.59，其中只算用户原话的分 31.58——差值是同义词扩展补上来的）。
 
 > curl 手拼中文 `q` 时注意：GBK 控制台下会编码成乱码，表现为「什么都被拦」。用 Python 的 `urllib.parse.quote`，或直接跑 `python tools/smoke.py`（内部已正确编码）。
 
@@ -311,11 +312,11 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 ```json
 {
   "knowledgeDir": "E:\\znwd\\knowledge",
-  "fileCount": 17, "chunkCount": 194,
+  "fileCount": 17, "chunkCount": 209,
   "retrieval": { "…同 /api/health 的 retrieval…": "" },
   "zones": ["…"],
   "synonyms": { "count": 23, "source": "builtin", "file": "…synonyms.tsv" },
-  "docs": [ { "path": "01_光伏清洁机器人/产品概述.md", "title": "两栖光伏清洁机器人产品概述", "zone": "pv-clean", "zoneTitle": "光伏清洁机器人", "chunks": 9 } ]
+  "docs": [ { "path": "01_光伏清洁机器人/产品概述.md", "title": "两栖光伏清洁机器人产品概述", "zone": "pv-clean", "zoneTitle": "光伏清洁机器人", "chunks": 11 } ]
 }
 ```
 
@@ -323,7 +324,7 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 
 重载知识、重建关键词与向量索引，并清空答案缓存。
 
-`{ "ok": true, "knowledgeChunks": 194, "generation": 2, "retrieval": {…}, "synonyms": {…}, "files": [ {"sourcePath":"…","chunks":5} ] }`
+`{ "ok": true, "knowledgeChunks": 209, "generation": 2, "retrieval": {…}, "synonyms": {…}, "files": [ {"sourcePath":"…","chunks":5} ] }`
 
 ### GET /api/openapi.json（无鉴权）
 
