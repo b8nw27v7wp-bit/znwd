@@ -25,6 +25,8 @@ public class RagPipeline {
 
     public static final int DEFAULT_TOP_K = 4;
     public static final int MAX_HISTORY_MESSAGES = 12;
+    /** 来源面板的入选门槛：关键词分低于「本次最高分 × 该比例」的块不展示（0 = 不过滤） */
+    public static final double SOURCE_KEEP_RATIO = 0.5;
 
     private static final String SYSTEM_BASE =
             "你是本项目的 AI 虚拟讲解员，主题为两栖光伏清洁机器人、“光伏医生”智慧运维系统与项目的研发团队。用简体中文、礼貌、简洁地回答项目、产品、技术方案、作业流程与合作相关问题。"
@@ -72,11 +74,21 @@ public class RagPipeline {
      * <p>按**资料文件**去重：同一份资料的相关片段常常一次占满 topK（实测问「光伏清洁无人机怎么清洗组件」，
      * 4 条来源里 3 条同属一篇 demo 文件）。不去重的后果是来源面板里挂着 3 张同名卡片、前端 `:key` 撞车，
      * 而参观者要的是「回答引了哪几份资料」。保留闸门分最高的那条，片段内容取该文件的代表片段。
+     *
+     * <p>再按**量级**过滤：topK 里的尾部块常常与问题无关（实测「多久能回本」的 top2/top3 是
+     * 关键词 3.89 的无关资料，而 top1 是 8.44），挂上去只会让人怀疑回答的依据。
+     * 门槛用**关键词分**而不是融合分——RRF 融合分在相邻名次间几乎没有差别（0.0164 / 0.0161 / 0.0159），
+     * 拿它做判据等于没有判据。
      */
     public static List<RagSource> toSources(List<HybridHit> hits) {
+        double bestKeyword = hits.stream().mapToDouble(HybridHit::keywordScore).max().orElse(0);
+        double floor = bestKeyword * SOURCE_KEEP_RATIO;
         List<RagSource> out = new ArrayList<>(hits.size());
         java.util.Set<String> seen = new java.util.LinkedHashSet<>();
         for (HybridHit h : hits) {
+            if (bestKeyword > 0 && h.keywordScore() < floor) {
+                continue;
+            }
             String key = h.sourcePath() == null || h.sourcePath().isBlank() ? h.title() : h.sourcePath();
             if (!seen.add(key)) {
                 continue;
