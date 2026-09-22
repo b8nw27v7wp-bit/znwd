@@ -248,7 +248,7 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 | `verdict` | 一句人话结论 |
 | `hits[]` | `title`、`sourcePath`、`zone`、`zoneTitle`、`fuseScore`、`keywordScore`、`vectorScore`、`matchedTokens`、`matched[]`、`snippet` |
 
-实测样例（当前 119 块语料、阈值 8.1）：
+实测样例（当前 194 块语料、阈值 8.1）：
 
 ```json
 // GET /api/admin/diagnostics?q=帮我写一首关于夏天的诗
@@ -311,7 +311,7 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 ```json
 {
   "knowledgeDir": "E:\\znwd\\knowledge",
-  "fileCount": 14, "chunkCount": 119,
+  "fileCount": 17, "chunkCount": 194,
   "retrieval": { "…同 /api/health 的 retrieval…": "" },
   "zones": ["…"],
   "synonyms": { "count": 23, "source": "builtin", "file": "…synonyms.tsv" },
@@ -323,7 +323,7 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 
 重载知识、重建关键词与向量索引，并清空答案缓存。
 
-`{ "ok": true, "knowledgeChunks": 119, "generation": 2, "retrieval": {…}, "synonyms": {…}, "files": [ {"sourcePath":"…","chunks":5} ] }`
+`{ "ok": true, "knowledgeChunks": 194, "generation": 2, "retrieval": {…}, "synonyms": {…}, "files": [ {"sourcePath":"…","chunks":5} ] }`
 
 ### GET /api/openapi.json（无鉴权）
 

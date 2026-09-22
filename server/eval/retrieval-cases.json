@@ -1,60 +1,885 @@
 {
-  "version": 3,
-  "description": "Hybrid 检索评测集：question → 期望 zone / sourcePath 片段（v3：语料只剩三份申报/大赛/概述材料，只保留 3 个展区）",
+  "version": 4,
+  "description": "Hybrid 检索评测集 v4：核心用例 + 真实访客问句（probe 集，含常见问题层），覆盖 3 个展区",
   "cases": [
-    { "id": "pv-01", "question": "光伏清洁机器人是做什么的？", "zone": "pv-clean", "sourcePathIncludes": "01_光伏清洁机器人" },
-    { "id": "pv-02", "question": "太阳能组件怎么清洗？", "zone": "pv-clean", "sourcePathIncludes": "清洁作业流程" },
-    { "id": "pv-03", "question": "清洁作业流程是怎样的？", "zone": "pv-clean", "sourcePathIncludes": "清洁作业流程" },
-    { "id": "pv-04", "question": "光伏电站组件积灰怎么处理？", "zone": "pv-clean", "sourcePathIncludes": "01_光伏清洁机器人" },
-    { "id": "pv-05", "question": "清洁机器人适用哪些场景？", "zone": "pv-clean", "sourcePathIncludes": "01_光伏清洁机器人" },
-    { "id": "pv-06", "question": "清洁机器人和光伏医生是什么关系？", "zone": "pv-clean", "sourcePathIncludes": "产品概述" },
-    { "id": "pv-07", "question": "组件表面鸟粪如何清理？", "zone": "pv-clean", "sourcePathIncludes": "清洁作业流程" },
-    { "id": "pv-08", "question": "屋顶光伏能用无人机清洗吗？", "zone": "pv-clean", "sourcePathIncludes": "01_光伏清洁机器人" },
-    { "id": "pv-09", "question": "清洁机器人有多重？", "zone": "pv-clean", "sourcePathIncludes": "结构与材料创新" },
-    { "id": "pv-10", "question": "履带在湿滑条件下会打滑吗？", "zone": "pv-clean", "sourcePathIncludes": "结构与材料创新" },
-    { "id": "pv-11", "question": "两栖是什么意思？", "zone": "pv-clean", "sourcePathIncludes": "产品概述" },
-
-    { "id": "doc-01", "question": "光伏医生系统是什么？", "zone": "pv-doctor", "sourcePathIncludes": "系统总览" },
-    { "id": "doc-02", "question": "无人机巡检能发现哪些故障？", "zone": "pv-doctor", "sourcePathIncludes": "巡检与缺陷诊断" },
-    { "id": "doc-03", "question": "巡检图像的采集参数有什么要求？", "zone": "pv-doctor", "sourcePathIncludes": "数据基础与数据治理" },
-    { "id": "doc-04", "question": "热红外数据集有多大？", "zone": "pv-doctor", "sourcePathIncludes": "数据基础与数据治理" },
-    { "id": "doc-05", "question": "污渍识别用的什么算法？", "zone": "pv-doctor", "sourcePathIncludes": "智能算法与模型" },
-    { "id": "doc-06", "question": "平台有哪些功能？", "zone": "pv-doctor", "sourcePathIncludes": "平台功能与应用场景" },
-    { "id": "doc-07", "question": "海上光伏能用无人机巡检吗？", "zone": "pv-doctor", "sourcePathIncludes": "系统总览" },
-    { "id": "doc-08", "question": "运维方案能自动生成吗？", "zone": "pv-doctor", "sourcePathIncludes": "平台功能与应用场景" },
-    { "id": "doc-09", "question": "巡检数据会不会拍到居民区？", "zone": "pv-doctor", "sourcePathIncludes": "数据基础与数据治理" },
-    { "id": "doc-10", "question": "清洁和检测是不是同一套系统？", "zone": "pv-doctor", "sourcePathIncludes": "系统总览" },
-    { "id": "doc-11", "question": "故障识别模型还能用在哪？", "zone": "pv-doctor", "sourcePathIncludes": "系统总览" },
-
-    { "id": "proj-01", "question": "项目背景是什么？", "zone": "project", "sourcePathIncludes": "项目背景与需求" },
-    { "id": "proj-02", "question": "有哪些落地案例？", "zone": "project", "sourcePathIncludes": "应用成效与案例" },
-    { "id": "proj-03", "question": "团队和专利情况如何？", "zone": "project", "sourcePathIncludes": "团队与资质" },
-    { "id": "proj-04", "question": "项目能降低多少运维成本？", "zone": "project", "sourcePathIncludes": "应用成效与案例" },
-    { "id": "proj-05", "question": "提供培训吗？", "zone": "project", "sourcePathIncludes": "服务与合作" },
-    { "id": "proj-06", "question": "如何联系合作？", "zone": "project", "sourcePathIncludes": "服务与合作", "note": "对外联系口径待补，当前靠「合作方式」一节承接" },
-    { "id": "proj-07", "question": "有没有售后技术支持？", "zone": "project", "sourcePathIncludes": "服务与合作" },
-    { "id": "proj-08", "question": "可以发展本地服务商吗？", "zone": "project", "sourcePathIncludes": "服务与合作" },
-    { "id": "proj-09", "question": "设备操作培训包括什么？", "zone": "project", "sourcePathIncludes": "服务与合作" },
-    { "id": "proj-10", "question": "项目参加的是什么比赛？", "zone": "project", "sourcePathIncludes": "项目基本信息" },
-    { "id": "proj-11", "question": "项目目前有客户和收入吗？", "zone": "project", "sourcePathIncludes": "项目基本信息" },
-    { "id": "proj-12", "question": "有哪些代表性论文？", "zone": "project", "sourcePathIncludes": "团队与资质" },
-    { "id": "proj-13", "question": "数据来源和更新频率是怎样的？", "zone": "project", "sourcePathIncludes": "项目基本信息" },
-    { "id": "proj-14", "question": "融资情况如何？", "zone": "project", "sourcePathIncludes": "商业模式与定价" },
-    { "id": "proj-15", "question": "发电效率能提升多少？", "zone": "project", "sourcePathIncludes": "应用成效与案例" },
-    { "id": "proj-16", "question": "清洁机器人怎么收费？", "zone": "pv-clean", "sourcePathIncludes": "01_光伏清洁机器人", "note": "机器人家族问题：头条价格放在机器人篇，完整定价表在商业模式与定价" },
-    { "id": "proj-17", "question": "项目总投入多少资金？", "zone": "project", "sourcePathIncludes": "商业模式与定价" },
-    { "id": "proj-18", "question": "运维服务怎么收费？", "zone": "project", "sourcePathIncludes": "商业模式与定价" },
-
-    { "id": "mix-01", "question": "太阳能电站清洗后发电会提升吗？", "sourcePathIncludes": "应用成效与案例" },
-    { "id": "mix-02", "question": "无人机巡检比人工爬塔更安全吗？", "zone": "pv-doctor", "sourcePathIncludes": "巡检与缺陷诊断" },
-    { "id": "mix-03", "question": "你们和别的厂家比有什么不一样？", "zone": null, "sourcePathIncludes": null, "note": "开放问（语料只有自家口径，允许不完全命中）" },
-    { "id": "mix-04", "question": "研究院主要做哪些方向？", "zone": null, "sourcePathIncludes": null, "note": "开放问" }
+    {
+      "id": "pv-01",
+      "question": "光伏清洁机器人是做什么的？",
+      "zone": "pv-clean",
+      "sourcePathIncludes": "01_光伏清洁机器人"
+    },
+    {
+      "id": "pv-02",
+      "question": "太阳能组件怎么清洗？",
+      "zone": "pv-clean",
+      "sourcePathIncludes": "清洁作业流程"
+    },
+    {
+      "id": "pv-03",
+      "question": "清洁作业流程是怎样的？",
+      "zone": "pv-clean",
+      "sourcePathIncludes": "清洁作业流程"
+    },
+    {
+      "id": "pv-04",
+      "question": "光伏电站组件积灰怎么处理？",
+      "zone": "pv-clean",
+      "sourcePathIncludes": "01_光伏清洁机器人"
+    },
+    {
+      "id": "pv-05",
+      "question": "清洁机器人适用哪些场景？",
+      "zone": "pv-clean",
+      "sourcePathIncludes": "01_光伏清洁机器人"
+    },
+    {
+      "id": "pv-06",
+      "question": "清洁机器人和光伏医生是什么关系？",
+      "zone": "pv-clean",
+      "sourcePathIncludes": "产品概述"
+    },
+    {
+      "id": "pv-07",
+      "question": "组件表面鸟粪如何清理？",
+      "zone": "pv-clean",
+      "sourcePathIncludes": "清洁作业流程"
+    },
+    {
+      "id": "pv-08",
+      "question": "屋顶光伏能用无人机清洗吗？",
+      "zone": "pv-clean",
+      "sourcePathIncludes": "01_光伏清洁机器人"
+    },
+    {
+      "id": "pv-09",
+      "question": "清洁机器人有多重？",
+      "zone": "pv-clean",
+      "sourcePathIncludes": "结构与材料创新"
+    },
+    {
+      "id": "pv-10",
+      "question": "履带在湿滑条件下会打滑吗？",
+      "zone": "pv-clean",
+      "sourcePathIncludes": "结构与材料创新"
+    },
+    {
+      "id": "pv-11",
+      "question": "两栖是什么意思？",
+      "zone": "pv-clean",
+      "sourcePathIncludes": "产品概述"
+    },
+    {
+      "id": "doc-01",
+      "question": "光伏医生系统是什么？",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "系统总览"
+    },
+    {
+      "id": "doc-02",
+      "question": "无人机巡检能发现哪些故障？",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "巡检与缺陷诊断"
+    },
+    {
+      "id": "doc-03",
+      "question": "巡检图像的采集参数有什么要求？",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "数据基础与数据治理"
+    },
+    {
+      "id": "doc-04",
+      "question": "热红外数据集有多大？",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "数据基础与数据治理"
+    },
+    {
+      "id": "doc-05",
+      "question": "污渍识别用的什么算法？",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "智能算法与模型"
+    },
+    {
+      "id": "doc-06",
+      "question": "平台有哪些功能？",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "平台功能与应用场景"
+    },
+    {
+      "id": "doc-07",
+      "question": "海上光伏能用无人机巡检吗？",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "系统总览"
+    },
+    {
+      "id": "doc-08",
+      "question": "运维方案能自动生成吗？",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "平台功能与应用场景"
+    },
+    {
+      "id": "doc-09",
+      "question": "巡检数据会不会拍到居民区？",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "数据基础与数据治理"
+    },
+    {
+      "id": "doc-10",
+      "question": "清洁和检测是不是同一套系统？",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "系统总览"
+    },
+    {
+      "id": "doc-11",
+      "question": "故障识别模型还能用在哪？",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "系统总览"
+    },
+    {
+      "id": "proj-01",
+      "question": "项目背景是什么？",
+      "zone": "project",
+      "sourcePathIncludes": "项目背景与需求"
+    },
+    {
+      "id": "proj-02",
+      "question": "有哪些落地案例？",
+      "zone": "project",
+      "sourcePathIncludes": "应用成效与案例"
+    },
+    {
+      "id": "proj-03",
+      "question": "团队和专利情况如何？",
+      "zone": "project",
+      "sourcePathIncludes": "团队与资质"
+    },
+    {
+      "id": "proj-04",
+      "question": "项目能降低多少运维成本？",
+      "zone": "project",
+      "sourcePathIncludes": "应用成效与案例"
+    },
+    {
+      "id": "proj-05",
+      "question": "提供培训吗？",
+      "zone": "project",
+      "sourcePathIncludes": "服务与合作"
+    },
+    {
+      "id": "proj-06",
+      "question": "如何联系合作？",
+      "zone": "project",
+      "sourcePathIncludes": "服务与合作",
+      "note": "对外联系口径待补，当前靠「合作方式」一节承接"
+    },
+    {
+      "id": "proj-07",
+      "question": "有没有售后技术支持？",
+      "zone": "project",
+      "sourcePathIncludes": "服务与合作"
+    },
+    {
+      "id": "proj-08",
+      "question": "可以发展本地服务商吗？",
+      "zone": "project",
+      "sourcePathIncludes": "服务与合作"
+    },
+    {
+      "id": "proj-09",
+      "question": "设备操作培训包括什么？",
+      "zone": "project",
+      "sourcePathIncludes": "服务与合作"
+    },
+    {
+      "id": "proj-10",
+      "question": "项目参加的是什么比赛？",
+      "zone": "project",
+      "sourcePathIncludes": "项目基本信息"
+    },
+    {
+      "id": "proj-11",
+      "question": "项目目前有客户和收入吗？",
+      "zone": "project",
+      "sourcePathIncludes": "项目基本信息"
+    },
+    {
+      "id": "proj-12",
+      "question": "有哪些代表性论文？",
+      "zone": "project",
+      "sourcePathIncludes": "团队与资质"
+    },
+    {
+      "id": "proj-13",
+      "question": "数据来源和更新频率是怎样的？",
+      "zone": "project",
+      "sourcePathIncludes": "项目基本信息"
+    },
+    {
+      "id": "proj-14",
+      "question": "融资情况如何？",
+      "zone": "project",
+      "sourcePathIncludes": "商业模式与定价"
+    },
+    {
+      "id": "proj-15",
+      "question": "发电效率能提升多少？",
+      "zone": "project",
+      "sourcePathIncludes": "应用成效与案例"
+    },
+    {
+      "id": "proj-16",
+      "question": "清洁机器人怎么收费？",
+      "zone": "pv-clean",
+      "sourcePathIncludes": "01_光伏清洁机器人",
+      "note": "机器人家族问题：头条价格放在机器人篇，完整定价表在商业模式与定价"
+    },
+    {
+      "id": "proj-17",
+      "question": "项目总投入多少资金？",
+      "zone": "project",
+      "sourcePathIncludes": "商业模式与定价"
+    },
+    {
+      "id": "proj-18",
+      "question": "运维服务怎么收费？",
+      "zone": "project",
+      "sourcePathIncludes": "商业模式与定价"
+    },
+    {
+      "id": "mix-01",
+      "question": "太阳能电站清洗后发电会提升吗？",
+      "sourcePathIncludes": "应用成效与案例"
+    },
+    {
+      "id": "mix-02",
+      "question": "无人机巡检比人工爬塔更安全吗？",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "巡检与缺陷诊断"
+    },
+    {
+      "id": "mix-03",
+      "question": "你们和别的厂家比有什么不一样？",
+      "zone": null,
+      "sourcePathIncludes": null,
+      "note": "开放问（语料只有自家口径，允许不完全命中）"
+    },
+    {
+      "id": "mix-04",
+      "question": "研究院主要做哪些方向？",
+      "zone": null,
+      "sourcePathIncludes": null,
+      "note": "开放问"
+    },
+    {
+      "id": "probe-01",
+      "question": "两栖光伏清洁机器人是做什么的",
+      "zone": "pv-clean",
+      "sourcePathIncludes": "产品概述"
+    },
+    {
+      "id": "probe-02",
+      "question": "为什么叫两栖",
+      "zone": "pv-clean",
+      "sourcePathIncludes": "产品概述"
+    },
+    {
+      "id": "probe-03",
+      "question": "机器人对光伏板的压强是多少",
+      "zone": "pv-clean",
+      "sourcePathIncludes": "产品概述"
+    },
+    {
+      "id": "probe-04",
+      "question": "会不会压坏光伏板",
+      "zone": "pv-clean",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-05",
+      "question": "履带湿滑会不会打滑",
+      "zone": "pv-clean",
+      "sourcePathIncludes": "结构与材料创新"
+    },
+    {
+      "id": "probe-06",
+      "question": "履带用什么材料",
+      "zone": "pv-clean",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-07",
+      "question": "机器人外壳防护等级多少",
+      "zone": "pv-clean",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-08",
+      "question": "主体框架用什么材料",
+      "zone": "pv-clean",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-09",
+      "question": "CFRP 有什么优点",
+      "zone": "pv-clean",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-10",
+      "question": "机器人怎么控制",
+      "zone": "pv-clean",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-11",
+      "question": "支持二次开发吗",
+      "zone": "pv-clean",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-12",
+      "question": "有几种工作模式",
+      "zone": "pv-clean",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-13",
+      "question": "清洗流程是什么",
+      "zone": "pv-clean",
+      "sourcePathIncludes": "清洁作业流程"
+    },
+    {
+      "id": "probe-14",
+      "question": "巡检怎么发现污渍",
+      "zone": "pv-clean",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-15",
+      "question": "无人机巡检后机器人怎么知道去哪洗",
+      "zone": "pv-clean",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-16",
+      "question": "清洁机器人能替代人工吗",
+      "zone": "pv-clean",
+      "sourcePathIncludes": "产品概述"
+    },
+    {
+      "id": "probe-17",
+      "question": "适用哪些电站",
+      "zone": "pv-clean",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-18",
+      "question": "屋顶光伏能用吗",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "平台功能与应用场景"
+    },
+    {
+      "id": "probe-19",
+      "question": "海上光伏能清洗吗",
+      "zone": "pv-clean",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-20",
+      "question": "光伏医生是什么",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "系统总览"
+    },
+    {
+      "id": "probe-21",
+      "question": "光伏医生包含哪些技术",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "系统总览"
+    },
+    {
+      "id": "probe-22",
+      "question": "和只用无人机的方案有什么不同",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-23",
+      "question": "能识别热斑吗",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-24",
+      "question": "隐裂能发现吗",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "巡检与缺陷诊断"
+    },
+    {
+      "id": "probe-25",
+      "question": "积灰怎么评估",
+      "zone": "pv-clean",
+      "sourcePathIncludes": "产品概述"
+    },
+    {
+      "id": "probe-26",
+      "question": "用什么算法识别污渍",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "智能算法与模型"
+    },
+    {
+      "id": "probe-27",
+      "question": "为什么用 YOLOv8",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-28",
+      "question": "CBAM 是什么",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-29",
+      "question": "训练数据怎么来的",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-30",
+      "question": "数据集有多少张图",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-31",
+      "question": "数据从哪些电站采集",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-32",
+      "question": "图像分辨率有什么要求",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-33",
+      "question": "热成像灵敏度要求",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-34",
+      "question": "多久巡检一次",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "巡检与缺陷诊断"
+    },
+    {
+      "id": "probe-35",
+      "question": "数据采集缺失怎么办",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-36",
+      "question": "污渍标注标准是什么",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-37",
+      "question": "热斑标注标准是什么",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-38",
+      "question": "标注质量怎么保证",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-39",
+      "question": "数据涉及居民隐私怎么办",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-40",
+      "question": "数据归谁所有",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "数据基础与数据治理"
+    },
+    {
+      "id": "probe-41",
+      "question": "数据传输安全吗",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-42",
+      "question": "系统满足哪些标准",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-43",
+      "question": "数据多久更新一次",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-44",
+      "question": "病历档案是什么",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-45",
+      "question": "能自动生成运维方案吗",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "平台功能与应用场景"
+    },
+    {
+      "id": "probe-46",
+      "question": "三维可视化能看什么",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "平台功能与应用场景"
+    },
+    {
+      "id": "probe-47",
+      "question": "能预测发电量吗",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-48",
+      "question": "功率预测用什么算法",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "智能算法与模型"
+    },
+    {
+      "id": "probe-49",
+      "question": "平台怎么部署",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-50",
+      "question": "兼容别的无人机吗",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-51",
+      "question": "集中式电站怎么用",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-52",
+      "question": "分布式屋顶怎么巡检",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-53",
+      "question": "海上光伏运维怎么做",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-54",
+      "question": "农光互补能管吗",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-55",
+      "question": "循环经济用得上吗",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-56",
+      "question": "组件报废怎么判断",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-57",
+      "question": "还能用于风电吗",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-58",
+      "question": "国内光伏装机多少",
+      "zone": "project",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-59",
+      "question": "光伏运维市场多大",
+      "zone": "project",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-60",
+      "question": "宁波光伏装机多少",
+      "zone": "project",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-61",
+      "question": "传统清洗有什么问题",
+      "zone": "project",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-62",
+      "question": "人工巡检有什么问题",
+      "zone": "project",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-63",
+      "question": "项目来源哪里",
+      "zone": "project",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-64",
+      "question": "有客户了吗",
+      "zone": "project",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-65",
+      "question": "收入情况怎样",
+      "zone": "project",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-66",
+      "question": "项目投入多少钱",
+      "zone": "project",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-67",
+      "question": "收费怎么算",
+      "zone": "project",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-68",
+      "question": "一个 GW 电站一年要多少服务费",
+      "zone": "project",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-69",
+      "question": "毛利率多少",
+      "zone": "project",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-70",
+      "question": "成本结构怎样",
+      "zone": "project",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-71",
+      "question": "未来五年财务预测",
+      "zone": "project",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-72",
+      "question": "市场空间多大",
+      "zone": "project",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-73",
+      "question": "竞争格局如何",
+      "zone": "project",
+      "sourcePathIncludes": "商业模式与定价"
+    },
+    {
+      "id": "probe-74",
+      "question": "怎么推广",
+      "zone": "project",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-75",
+      "question": "融资了吗",
+      "zone": "project",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-76",
+      "question": "团队多少人",
+      "zone": "project",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-77",
+      "question": "团队背景",
+      "zone": "project",
+      "sourcePathIncludes": "团队与资质"
+    },
+    {
+      "id": "probe-78",
+      "question": "有哪些专利",
+      "zone": "project",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-79",
+      "question": "专利号是多少",
+      "zone": "project",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-80",
+      "question": "获得过什么奖",
+      "zone": "project",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-81",
+      "question": "发表过论文吗",
+      "zone": "project",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-82",
+      "question": "依托单位是谁",
+      "zone": "project",
+      "sourcePathIncludes": "团队与资质"
+    },
+    {
+      "id": "probe-83",
+      "question": "公司什么时候成立的",
+      "zone": "project",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-84",
+      "question": "研究院是做什么的",
+      "zone": "project",
+      "sourcePathIncludes": "团队与资质"
+    },
+    {
+      "id": "probe-85",
+      "question": "研究院有多少人",
+      "zone": "project",
+      "sourcePathIncludes": "团队与资质"
+    },
+    {
+      "id": "probe-86",
+      "question": "算力平台怎么样",
+      "zone": "project",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-87",
+      "question": "能提供培训吗",
+      "zone": "project",
+      "sourcePathIncludes": "服务与合作"
+    },
+    {
+      "id": "probe-88",
+      "question": "怎么合作",
+      "zone": "project",
+      "sourcePathIncludes": "服务与合作"
+    },
+    {
+      "id": "probe-89",
+      "question": "售后支持有吗",
+      "zone": "project",
+      "sourcePathIncludes": "服务与合作"
+    },
+    {
+      "id": "probe-90",
+      "question": "碳排放怎么算",
+      "zone": "project",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "probe-91",
+      "question": "运维成本能降多少",
+      "zone": "project",
+      "sourcePathIncludes": "应用成效与案例"
+    },
+    {
+      "id": "probe-92",
+      "question": "清洗后效率能到多少",
+      "zone": "project",
+      "sourcePathIncludes": "应用成效与案例"
+    },
+    {
+      "id": "probe-93",
+      "question": "落地案例有哪些",
+      "zone": "project",
+      "sourcePathIncludes": "应用成效与案例"
+    },
+    {
+      "id": "probe-94",
+      "question": "和哪些电站合作",
+      "zone": "project",
+      "sourcePathIncludes": "服务与合作"
+    },
+    {
+      "id": "probe-95",
+      "question": "社会效益如何",
+      "zone": "project",
+      "sourcePathIncludes": "常见问题"
+    }
   ],
   "followUps": [
-    { "id": "fu-01", "context": "光伏清洁机器人是做什么的？", "question": "那清洗哪些场景？", "zone": "pv-clean", "sourcePathIncludes": "01_光伏清洁机器人", "note": "省略式追问：改写应补上「光伏/清洁」主题词" },
-    { "id": "fu-02", "context": "光伏医生系统是什么？", "question": "那数据集有多大？", "zone": "pv-doctor", "sourcePathIncludes": "数据基础与数据治理", "note": "省略式追问：应继承运维系统主题" },
-    { "id": "fu-03", "context": "提供培训吗？", "question": "那怎么报名？", "zone": "project", "sourcePathIncludes": "服务与合作", "note": "省略式追问：应继承服务合作主题" },
-    { "id": "fu-04", "context": "光伏清洁机器人是做什么的？", "question": "它会不会压坏光伏板？", "zone": "pv-clean", "sourcePathIncludes": "结构与材料创新", "note": "省略式追问，主题继承" },
-    { "id": "fu-05", "context": "光伏医生系统是什么？", "question": "那海上能用吗？", "zone": "pv-doctor", "sourcePathIncludes": "系统总览", "note": "含实义词，改写可不动" }
+    {
+      "id": "fu-01",
+      "context": "光伏清洁机器人是做什么的？",
+      "question": "那清洗哪些场景？",
+      "zone": "pv-clean",
+      "sourcePathIncludes": "01_光伏清洁机器人",
+      "note": "省略式追问：改写应补上「光伏/清洁」主题词"
+    },
+    {
+      "id": "fu-02",
+      "context": "光伏医生系统是什么？",
+      "question": "那数据集有多大？",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "数据基础与数据治理",
+      "note": "省略式追问：应继承运维系统主题"
+    },
+    {
+      "id": "fu-03",
+      "context": "提供培训吗？",
+      "question": "那怎么报名？",
+      "zone": "project",
+      "sourcePathIncludes": "服务与合作",
+      "note": "省略式追问：应继承服务合作主题"
+    },
+    {
+      "id": "fu-04",
+      "context": "光伏清洁机器人是做什么的？",
+      "question": "它会不会压坏光伏板？",
+      "zone": "pv-clean",
+      "sourcePathIncludes": "结构与材料创新",
+      "note": "省略式追问，主题继承"
+    },
+    {
+      "id": "fu-05",
+      "context": "光伏医生系统是什么？",
+      "question": "那海上能用吗？",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "系统总览",
+      "note": "含实义词，改写可不动"
+    }
   ]
 }
