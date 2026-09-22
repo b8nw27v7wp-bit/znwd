@@ -167,7 +167,7 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 
 ```json
 {
-  "zones": [ { "id": "wind-inspect", "dir": "02_风场检测无人机", "title": "风场检测", "aliases": ["…"], "suggestions": ["…"] } ],
+  "zones": [ { "id": "wind-inspect", "dir": "04_风场检测无人机", "title": "风场检测", "aliases": ["…"], "suggestions": ["…"] } ],
   "media": [ { "mediaId": "exhibit-pv-clean", "title": "光伏展项", "zoneId": "pv-clean" } ]
 }
 ```
@@ -248,20 +248,20 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 | `verdict` | 一句人话结论 |
 | `hits[]` | `title`、`sourcePath`、`zone`、`zoneTitle`、`fuseScore`、`keywordScore`、`vectorScore`、`matchedTokens`、`matched[]`、`snippet` |
 
-实测样例（当前 126 块语料、阈值 8.1）：
+实测样例（当前 111 块语料、阈值 8.1）：
 
 ```json
 // GET /api/admin/diagnostics?q=帮我写一首关于夏天的诗
 {
   "gated": true, "mode": "keyword", "reason": "below_threshold", "semantic": false, "degraded": true,
-  "keywordGateScore": 2.17, "keywordBestScore": 2.17, "vectorBestCosine": 0.2134, "candidates": 16,
+  "keywordGateScore": 0.0, "keywordBestScore": 0.0, "vectorBestCosine": 0.2083, "candidates": 8,
   "thresholds": { "minKeywordScore": 8.1, "minVectorScore": 0.35 },
-  "distanceToGate": 5.93, "hits": [],
-  "verdict": "闸门拦下：有候选但相关度不够（关键词最高 2.17 / 阈值 8.10；语义向量不可用（当前为降级模式），只剩关键词路）"
+  "distanceToGate": 8.1, "hits": [],
+  "verdict": "闸门拦下：有候选但相关度不够（关键词最高 0.00 / 阈值 8.10；语义向量不可用（当前为降级模式），只剩关键词路）"
 }
 ```
 
-在域问题应看到 `gated=false`、`verdict` 里带余量（例：「叶片检测要停机吗？」关键词 21.61 / 余量 13.51；「光伏清洁无人机是做什么的？」关键词 21.07、其中只算用户原话的分 19.85——差值是同义词扩展补上来的）。
+在域问题应看到 `gated=false`、`verdict` 里带余量（例：「清洁作业流程是怎样的？」→ `01_光伏清洁机器人/清洁作业流程.md`，关键词 27.61 / 余量 19.51，其中只算用户原话的分 26.45——差值是同义词扩展补上来的）。
 
 > curl 手拼中文 `q` 时注意：GBK 控制台下会编码成乱码，表现为「什么都被拦」。用 Python 的 `urllib.parse.quote`，或直接跑 `python tools/smoke.py`（内部已正确编码）。
 
@@ -311,11 +311,11 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 ```json
 {
   "knowledgeDir": "E:\\znwd\\knowledge",
-  "fileCount": 8, "chunkCount": 134,
+  "fileCount": 17, "chunkCount": 111,
   "retrieval": { "…同 /api/health 的 retrieval…": "" },
   "zones": ["…"],
   "synonyms": { "count": 23, "source": "builtin", "file": "…synonyms.tsv" },
-  "docs": [ { "path": "01_光伏清洁无人机/产品概述.md", "title": "光伏清洁无人机", "zone": "pv-clean", "zoneTitle": "光伏清洁", "chunks": 5 } ]
+  "docs": [ { "path": "01_光伏清洁机器人/产品概述.md", "title": "两栖光伏清洁机器人产品概述", "zone": "pv-clean", "zoneTitle": "光伏清洁机器人", "chunks": 8 } ]
 }
 ```
 
@@ -323,7 +323,7 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 
 重载知识、重建关键词与向量索引，并清空答案缓存。
 
-`{ "ok": true, "knowledgeChunks": 134, "generation": 2, "retrieval": {…}, "synonyms": {…}, "files": [ {"sourcePath":"…","chunks":5} ] }`
+`{ "ok": true, "knowledgeChunks": 111, "generation": 2, "retrieval": {…}, "synonyms": {…}, "files": [ {"sourcePath":"…","chunks":5} ] }`
 
 ### GET /api/openapi.json（无鉴权）
 

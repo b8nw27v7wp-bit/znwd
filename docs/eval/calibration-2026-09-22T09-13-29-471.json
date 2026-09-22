@@ -1,0 +1,496 @@
+{
+  "chunks" : 111,
+  "mode" : "KEYWORD",
+  "semantic" : false,
+  "effectiveThreshold" : 8.1,
+  "gateMetric" : "keywordGateScore（只由用户原话词条贡献，与闸门同一口径）",
+  "inDomainWeakest" : [ {
+    "id" : "wind-04",
+    "question" : "风电场如何做巡检？",
+    "keywordBest" : 6.0432,
+    "vectorBest" : 0.2955,
+    "topTitle" : "风场检测无人机产品概述",
+    "matchedTokens" : 6,
+    "matched" : [ "检测", "风电", "电场", "复检", "检查", "巡检" ]
+  }, {
+    "id" : "wind-03",
+    "question" : "风机叶片裂纹怎么发现？",
+    "keywordBest" : 6.0702,
+    "vectorBest" : 0.3196,
+    "topTitle" : "叶片检测说明",
+    "matchedTokens" : 5,
+    "matched" : [ "叶片", "缺陷", "裂纹", "涂层", "损伤" ]
+  }, {
+    "id" : "pv-08",
+    "question" : "屋顶光伏能用无人机清洗吗？",
+    "keywordBest" : 8.0154,
+    "vectorBest" : 0.4539,
+    "topTitle" : "两栖光伏清洁机器人产品概述",
+    "matchedTokens" : 6,
+    "matched" : [ "光伏", "清洁", "清洗", "人机", "无人", "屋顶" ]
+  }, {
+    "id" : "safe-02",
+    "question" : "可以摸无人机吗？",
+    "keywordBest" : 8.4543,
+    "vectorBest" : 0.3562,
+    "topTitle" : "展厅参观须知",
+    "matchedTokens" : 10,
+    "matched" : [ "安全", "以摸", "摸无", "可以", "行器", "展品", "触摸", "飞行", "人机", "无人" ]
+  }, {
+    "id" : "proj-08",
+    "question" : "可以做区域运维伙伴吗？",
+    "keywordBest" : 8.4653,
+    "vectorBest" : 0.2476,
+    "topTitle" : "服务与合作",
+    "matchedTokens" : 5,
+    "matched" : [ "运维", "以做", "做区", "可以", "区域" ]
+  }, {
+    "id" : "wind-08",
+    "question" : "检测报告包含哪些内容？",
+    "keywordBest" : 8.5696,
+    "vectorBest" : 0.3659,
+    "topTitle" : "叶片检测说明",
+    "matchedTokens" : 4,
+    "matched" : [ "检测", "报告", "缺陷", "测报" ]
+  }, {
+    "id" : "proj-06",
+    "question" : "如何联系合作？",
+    "keywordBest" : 8.6683,
+    "vectorBest" : 0.2175,
+    "topTitle" : "服务与合作",
+    "matchedTokens" : 2,
+    "matched" : [ "合作", "运维" ]
+  }, {
+    "id" : "mix-01",
+    "question" : "太阳能电站清洗后发电会提升吗？",
+    "keywordBest" : 8.7177,
+    "vectorBest" : 0.4201,
+    "topTitle" : "应用成效与落地案例",
+    "matchedTokens" : 6,
+    "matched" : [ "发电", "洗后", "后发", "提升", "清洗", "清洁" ]
+  }, {
+    "id" : "doc-05",
+    "question" : "污渍识别用的什么算法？",
+    "keywordBest" : 8.8657,
+    "vectorBest" : 0.3319,
+    "topTitle" : "智能算法与模型",
+    "matchedTokens" : 3,
+    "matched" : [ "算法", "识别", "污渍" ]
+  }, {
+    "id" : "safe-03",
+    "question" : "拍照能开闪光灯吗？",
+    "keywordBest" : 9.1642,
+    "vectorBest" : 0.2659,
+    "topTitle" : "展厅参观须知",
+    "matchedTokens" : 4,
+    "matched" : [ "拍照", "闪光", "光灯", "拍摄" ]
+  }, {
+    "id" : "doc-03",
+    "question" : "巡检图像的采集参数有什么要求？",
+    "keywordBest" : 10.8244,
+    "vectorBest" : 0.3602,
+    "topTitle" : "无人机巡检与缺陷诊断",
+    "matchedTokens" : 6,
+    "matched" : [ "巡检", "集参", "参数", "采集", "图像", "复检" ]
+  }, {
+    "id" : "safe-01",
+    "question" : "展厅有哪些安全注意事项？",
+    "keywordBest" : 11.0261,
+    "vectorBest" : 0.3169,
+    "topTitle" : "展厅参观须知",
+    "matchedTokens" : 5,
+    "matched" : [ "展厅", "须知", "参观", "观须", "安全" ]
+  }, {
+    "id" : "proj-05",
+    "question" : "提供培训吗？",
+    "keywordBest" : 11.1142,
+    "vectorBest" : 0.2909,
+    "topTitle" : "服务与合作",
+    "matchedTokens" : 4,
+    "matched" : [ "培训", "供培", "提供", "操作" ]
+  }, {
+    "id" : "doc-08",
+    "question" : "运维方案能自动生成吗？",
+    "keywordBest" : 11.2445,
+    "vectorBest" : 0.36,
+    "topTitle" : "平台功能与应用场景",
+    "matchedTokens" : 6,
+    "matched" : [ "运维", "动生", "生成", "维方", "方案", "自动" ]
+  }, {
+    "id" : "safe-06",
+    "question" : "儿童可以单独参观吗？",
+    "keywordBest" : 11.5606,
+    "vectorBest" : 0.3338,
+    "topTitle" : "展厅参观须知",
+    "matchedTokens" : 2,
+    "matched" : [ "参观", "儿童" ]
+  }, {
+    "id" : "doc-07",
+    "question" : "海上光伏能用无人机巡检吗？",
+    "keywordBest" : 11.6225,
+    "vectorBest" : 0.5172,
+    "topTitle" : "无人机巡检与缺陷诊断",
+    "matchedTokens" : 7,
+    "matched" : [ "机巡", "巡检", "人机", "无人", "光伏", "检查", "检测" ]
+  }, {
+    "id" : "proj-03",
+    "question" : "团队和专利情况如何？",
+    "keywordBest" : 11.7933,
+    "vectorBest" : 0.4462,
+    "topTitle" : "团队、单位与知识产权",
+    "matchedTokens" : 4,
+    "matched" : [ "团队", "专利", "利情", "情况" ]
+  }, {
+    "id" : "doc-06",
+    "question" : "平台有哪些功能？",
+    "keywordBest" : 12.311,
+    "vectorBest" : 0.4312,
+    "topTitle" : "平台功能与应用场景",
+    "matchedTokens" : 3,
+    "matched" : [ "平台", "些功", "哪些" ]
+  }, {
+    "id" : "doc-09",
+    "question" : "巡检数据会不会拍到居民区？",
+    "keywordBest" : 12.3538,
+    "vectorBest" : 0.3497,
+    "topTitle" : "数据基础与数据治理",
+    "matchedTokens" : 5,
+    "matched" : [ "数据", "拍到", "到居", "民区", "居民" ]
+  }, {
+    "id" : "pv-02",
+    "question" : "太阳能组件怎么清洗？",
+    "keywordBest" : 12.3758,
+    "vectorBest" : 0.4129,
+    "topTitle" : "清洁作业流程与两栖协同",
+    "matchedTokens" : 9,
+    "matched" : [ "清洁", "清洗", "光伏", "件怎", "么清", "太阳", "怎么", "组件", "伏板" ]
+  }, {
+    "id" : "pv-05",
+    "question" : "清洁机器人适用哪些场景？",
+    "keywordBest" : 12.8514,
+    "vectorBest" : 0.5382,
+    "topTitle" : "两栖光伏清洁机器人产品概述",
+    "matchedTokens" : 6,
+    "matched" : [ "洁机", "器人", "机器", "清洁", "清洗", "积灰" ]
+  }, {
+    "id" : "wind-05",
+    "question" : "雷击痕迹能检测到吗？",
+    "keywordBest" : 12.9227,
+    "vectorBest" : 0.2744,
+    "topTitle" : "风场检测无人机产品概述",
+    "matchedTokens" : 7,
+    "matched" : [ "检测", "击痕", "痕迹", "雷击", "裂纹", "缺陷", "巡检" ]
+  }, {
+    "id" : "safe-04",
+    "question" : "参观需要预约吗？",
+    "keywordBest" : 12.9338,
+    "vectorBest" : 0.2562,
+    "topTitle" : "展厅参观须知",
+    "matchedTokens" : 1,
+    "matched" : [ "参观" ]
+  }, {
+    "id" : "pv-10",
+    "question" : "履带在湿滑条件下会打滑吗？",
+    "keywordBest" : 13.306,
+    "vectorBest" : 0.3428,
+    "topTitle" : "结构与材料创新",
+    "matchedTokens" : 6,
+    "matched" : [ "履带", "滑条", "打滑", "湿滑", "件下", "条件" ]
+  }, {
+    "id" : "doc-04",
+    "question" : "热红外数据集有多大？",
+    "keywordBest" : 13.6956,
+    "vectorBest" : 0.5263,
+    "topTitle" : "数据基础与数据治理",
+    "matchedTokens" : 5,
+    "matched" : [ "数据", "据集", "热红", "红外", "多大" ]
+  }, {
+    "id" : "wind-07",
+    "question" : "海上风电能用无人机检测吗？",
+    "keywordBest" : 13.8048,
+    "vectorBest" : 0.552,
+    "topTitle" : "风场检测无人机产品概述",
+    "matchedTokens" : 8,
+    "matched" : [ "检测", "人机", "无人", "风电", "上风", "海上", "检查", "巡检" ]
+  }, {
+    "id" : "proj-07",
+    "question" : "有没有售后技术支持？",
+    "keywordBest" : 14.2746,
+    "vectorBest" : 0.3979,
+    "topTitle" : "服务与合作",
+    "matchedTokens" : 6,
+    "matched" : [ "服务", "术支", "支持", "技术", "售后", "后技" ]
+  }, {
+    "id" : "proj-04",
+    "question" : "项目能降低多少运维成本？",
+    "keywordBest" : 14.4154,
+    "vectorBest" : 0.6019,
+    "topTitle" : "应用成效与落地案例",
+    "matchedTokens" : 8,
+    "matched" : [ "成本", "项目", "低多", "少运", "多少", "维成", "降低", "运维" ]
+  }, {
+    "id" : "wind-06",
+    "question" : "风场展区展示什么？",
+    "keywordBest" : 14.5843,
+    "vectorBest" : 0.5866,
+    "topTitle" : "展区：风场检测无人机",
+    "matchedTokens" : 4,
+    "matched" : [ "展区", "风场", "风电", "展示" ]
+  }, {
+    "id" : "pv-06",
+    "question" : "光伏展区展示什么？",
+    "keywordBest" : 14.6719,
+    "vectorBest" : 0.5488,
+    "topTitle" : "两栖光伏清洁机器人产品概述",
+    "matchedTokens" : 7,
+    "matched" : [ "光伏", "区展", "示什", "伏展", "展区", "展示", "什么" ]
+  }, {
+    "id" : "pv-11",
+    "question" : "两栖是什么意思？",
+    "keywordBest" : 15.0376,
+    "vectorBest" : 0.3125,
+    "topTitle" : "两栖光伏清洁机器人产品概述",
+    "matchedTokens" : 4,
+    "matched" : [ "两栖", "么意", "意思", "什么" ]
+  }, {
+    "id" : "doc-10",
+    "question" : "清洁和检测是不是同一套系统？",
+    "keywordBest" : 15.1027,
+    "vectorBest" : 0.4882,
+    "topTitle" : "光伏医生系统总览",
+    "matchedTokens" : 8,
+    "matched" : [ "系统", "清洁", "巡检", "套系", "同一", "一套", "检测", "缺陷" ]
+  }, {
+    "id" : "doc-02",
+    "question" : "无人机巡检能发现哪些故障？",
+    "keywordBest" : 15.2842,
+    "vectorBest" : 0.4877,
+    "topTitle" : "无人机巡检与缺陷诊断",
+    "matchedTokens" : 10,
+    "matched" : [ "机巡", "巡检", "人机", "无人", "现哪", "哪些", "发现", "故障", "复检", "检测" ]
+  }, {
+    "id" : "safe-05",
+    "question" : "展厅内可以吸烟吗？",
+    "keywordBest" : 15.4979,
+    "vectorBest" : 0.314,
+    "topTitle" : "展厅参观须知",
+    "matchedTokens" : 3,
+    "matched" : [ "展厅", "厅内", "吸烟" ]
+  }, {
+    "id" : "pv-07",
+    "question" : "组件表面鸟粪如何清理？",
+    "keywordBest" : 16.3202,
+    "vectorBest" : 0.5146,
+    "topTitle" : "清洁作业流程与两栖协同",
+    "matchedTokens" : 9,
+    "matched" : [ "光伏", "粪如", "如何", "何清", "清理", "件表", "鸟粪", "表面", "组件" ]
+  }, {
+    "id" : "proj-01",
+    "question" : "项目背景是什么？",
+    "keywordBest" : 16.5112,
+    "vectorBest" : 0.373,
+    "topTitle" : "项目背景与需求",
+    "matchedTokens" : 4,
+    "matched" : [ "目背", "背景", "项目", "什么" ]
+  }, {
+    "id" : "mix-02",
+    "question" : "无人机巡检比人工爬塔更安全吗？",
+    "keywordBest" : 16.5317,
+    "vectorBest" : 0.5949,
+    "topTitle" : "无人机巡检与缺陷诊断",
+    "matchedTokens" : 11,
+    "matched" : [ "机巡", "巡检", "人机", "无人", "检比", "比人", "更安", "安全", "人工", "检查", "检测" ]
+  }, {
+    "id" : "proj-02",
+    "question" : "有哪些落地案例？",
+    "keywordBest" : 16.6919,
+    "vectorBest" : 0.2137,
+    "topTitle" : "应用成效与落地案例",
+    "matchedTokens" : 3,
+    "matched" : [ "地案", "落地", "案例" ]
+  }, {
+    "id" : "pv-04",
+    "question" : "光伏电站组件积灰怎么处理？",
+    "keywordBest" : 17.0888,
+    "vectorBest" : 0.4672,
+    "topTitle" : "两栖光伏清洁机器人产品概述",
+    "matchedTokens" : 11,
+    "matched" : [ "光伏", "组件", "电站", "件积", "么处", "站组", "灰怎", "积灰", "怎么", "处理", "伏电" ]
+  }, {
+    "id" : "pv-09",
+    "question" : "清洁机器人有多重？",
+    "keywordBest" : 17.4009,
+    "vectorBest" : 0.5194,
+    "topTitle" : "两栖光伏清洁机器人产品概述",
+    "matchedTokens" : 6,
+    "matched" : [ "洁机", "器人", "机器", "清洁", "清洗", "积灰" ]
+  }, {
+    "id" : "doc-01",
+    "question" : "光伏医生系统是什么？",
+    "keywordBest" : 17.9707,
+    "vectorBest" : 0.5658,
+    "topTitle" : "光伏医生系统总览",
+    "matchedTokens" : 6,
+    "matched" : [ "生系", "系统", "伏医", "医生", "光伏", "什么" ]
+  }, {
+    "id" : "proj-09",
+    "question" : "设备操作培训包括什么？",
+    "keywordBest" : 18.2719,
+    "vectorBest" : 0.4998,
+    "topTitle" : "服务与合作",
+    "matchedTokens" : 9,
+    "matched" : [ "培训", "备操", "作培", "训包", "括什", "什么", "包括", "操作", "设备" ]
+  }, {
+    "id" : "wind-02",
+    "question" : "叶片检测要停机吗？",
+    "keywordBest" : 23.215,
+    "vectorBest" : 0.5489,
+    "topTitle" : "叶片检测说明",
+    "matchedTokens" : 5,
+    "matched" : [ "片检", "叶片", "检测", "缺陷", "停机" ]
+  }, {
+    "id" : "pv-01",
+    "question" : "光伏清洁机器人是做什么的？",
+    "keywordBest" : 23.9486,
+    "vectorBest" : 0.6596,
+    "topTitle" : "两栖光伏清洁机器人产品概述",
+    "matchedTokens" : 9,
+    "matched" : [ "伏清", "洁机", "器人", "机器", "清洁", "光伏", "清洗", "做什", "什么" ]
+  }, {
+    "id" : "pv-03",
+    "question" : "清洁作业流程是怎样的？",
+    "keywordBest" : 26.4497,
+    "vectorBest" : 0.4371,
+    "topTitle" : "清洁作业流程与两栖协同",
+    "matchedTokens" : 7,
+    "matched" : [ "业流", "洁作", "流程", "作业", "清洁", "清洗", "怎样" ]
+  }, {
+    "id" : "wind-01",
+    "question" : "风场检测无人机是做什么的？",
+    "keywordBest" : 30.7374,
+    "vectorBest" : 0.7987,
+    "topTitle" : "风场检测无人机产品概述",
+    "matchedTokens" : 11,
+    "matched" : [ "风场", "场检", "测无", "检测", "人机", "无人", "风电", "做什", "什么", "风机", "缺陷" ]
+  } ],
+  "outOfDomain" : [ {
+    "id" : "ood-7",
+    "question" : "你用的什么大模型",
+    "keywordBest" : 6.9835,
+    "vectorBest" : 0.2718,
+    "topTitle" : "智能算法与模型",
+    "matchedTokens" : 2,
+    "matched" : [ "模型", "什么" ]
+  }, {
+    "id" : "ood-12",
+    "question" : "这台无人机多少钱？",
+    "keywordBest" : 5.9083,
+    "vectorBest" : 0.35,
+    "topTitle" : "风场检测无人机产品概述",
+    "matchedTokens" : 2,
+    "matched" : [ "人机", "无人" ]
+  }, {
+    "id" : "ood-4",
+    "question" : "股票行情怎么样",
+    "keywordBest" : 4.3894,
+    "vectorBest" : 0.2152,
+    "topTitle" : "应用成效与落地案例",
+    "matchedTokens" : 2,
+    "matched" : [ "么样", "怎么" ]
+  }, {
+    "id" : "ood-11",
+    "question" : "你们的产品比别的厂家贵吗？",
+    "keywordBest" : 4.2778,
+    "vectorBest" : 0.2132,
+    "topTitle" : "两栖光伏清洁机器人产品概述",
+    "matchedTokens" : 1,
+    "matched" : [ "产品" ]
+  }, {
+    "id" : "ood-0",
+    "question" : "今天上海天气怎么样？",
+    "keywordBest" : 3.8711,
+    "vectorBest" : 0.1738,
+    "topTitle" : "应用成效与落地案例",
+    "matchedTokens" : 2,
+    "matched" : [ "么样", "怎么" ]
+  }, {
+    "id" : "ood-10",
+    "question" : "光伏和风电哪个更赚钱？",
+    "keywordBest" : 3.8283,
+    "vectorBest" : 0.3681,
+    "topTitle" : "展区：风场检测无人机",
+    "matchedTokens" : 2,
+    "matched" : [ "风电", "光伏" ]
+  }, {
+    "id" : "ood-13",
+    "question" : "能开发票吗？",
+    "keywordBest" : 2.8647,
+    "vectorBest" : 0.2908,
+    "topTitle" : "团队、单位与知识产权",
+    "matchedTokens" : 1,
+    "matched" : [ "开发" ]
+  }, {
+    "id" : "ood-5",
+    "question" : "帮我订一张去北京的机票",
+    "keywordBest" : 2.5817,
+    "vectorBest" : 0.1889,
+    "topTitle" : "团队、单位与知识产权",
+    "matchedTokens" : 1,
+    "matched" : [ "北京" ]
+  }, {
+    "id" : "ood-3",
+    "question" : "午饭吃什么好",
+    "keywordBest" : 2.1361,
+    "vectorBest" : 0.1726,
+    "topTitle" : "两栖光伏清洁机器人产品概述",
+    "matchedTokens" : 1,
+    "matched" : [ "什么" ]
+  }, {
+    "id" : "ood-9",
+    "question" : "洗手间怎么走",
+    "keywordBest" : 1.9526,
+    "vectorBest" : 0.1931,
+    "topTitle" : "两栖光伏清洁机器人产品概述",
+    "matchedTokens" : 1,
+    "matched" : [ "怎么" ]
+  }, {
+    "id" : "ood-1",
+    "question" : "帮我写一首诗",
+    "keywordBest" : 0.0,
+    "vectorBest" : 0.1356,
+    "topTitle" : "-",
+    "matchedTokens" : 0,
+    "matched" : [ ]
+  }, {
+    "id" : "ood-2",
+    "question" : "你是谁？",
+    "keywordBest" : 0.0,
+    "vectorBest" : 0.1507,
+    "topTitle" : "-",
+    "matchedTokens" : 0,
+    "matched" : [ ]
+  }, {
+    "id" : "ood-6",
+    "question" : "讲个笑话",
+    "keywordBest" : 0.0,
+    "vectorBest" : 0.1618,
+    "topTitle" : "-",
+    "matchedTokens" : 0,
+    "matched" : [ ]
+  }, {
+    "id" : "ood-8",
+    "question" : "会议室在哪里",
+    "keywordBest" : 0.0,
+    "vectorBest" : 0.1921,
+    "topTitle" : "-",
+    "matchedTokens" : 0,
+    "matched" : [ ]
+  } ],
+  "minInDomain" : 6.0432,
+  "maxOutOfDomain" : 6.9835,
+  "minInDomainRanking" : 8.3979,
+  "maxOutOfDomainRanking" : 6.9835,
+  "minMatchedTokensInDomain" : 1,
+  "maxMatchedTokensOutOfDomain" : 2,
+  "separated" : false
+}

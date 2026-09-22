@@ -1,273 +1,449 @@
 {
   "summary" : {
-    "at" : "2026-09-19T14:06:42.123199100Z",
+    "at" : "2026-09-22T01:12:10.080866900Z",
     "runtime" : "spring-boot/java",
     "embedProvider" : "bag",
     "semantic" : false,
     "llmProvider" : "openai_compat",
-    "knowledgeChunks" : 134,
+    "knowledgeChunks" : 111,
     "knowledgeDir" : "E:\\znwd\\knowledge",
     "generation" : 1,
-    "cases" : 30,
+    "cases" : 46,
     "openCases" : 2,
-    "top1Hit" : 28,
-    "top3Hit" : 29,
-    "top1Rate" : 0.9333,
-    "top3Rate" : 0.9667,
-    "gatedTop1Rate" : 0.9333,
-    "gatedTop3Rate" : 0.9667,
+    "top1Hit" : 46,
+    "top3Hit" : 46,
+    "top1Rate" : 1.0,
+    "top3Rate" : 1.0,
+    "gatedTop1Rate" : 1.0,
+    "gatedTop3Rate" : 1.0,
     "gateBlockedCount" : 0,
     "gateBlocked" : [ ],
-    "minKeywordScore" : 6.3,
-    "followUpCases" : 6,
-    "followUpRawTop1Rate" : 0.3333,
-    "followUpRawTop3Rate" : 0.5,
+    "minKeywordScore" : 8.1,
+    "followUpCases" : 7,
+    "followUpRawTop1Rate" : 0.5714,
+    "followUpRawTop3Rate" : 0.5714,
     "followUpRewrittenTop1Rate" : 1.0,
     "followUpRewrittenTop3Rate" : 1.0,
-    "followUpRewriteTriggered" : 5
+    "followUpRewriteTriggered" : 6
   },
   "rows" : [ {
     "id" : "pv-01",
-    "question" : "光伏清洁无人机是做什么的？",
+    "question" : "光伏清洁机器人是做什么的？",
     "expectZone" : "pv-clean",
-    "top1" : "光伏清洁无人机产品概述",
-    "top1Path" : "01_光伏清洁无人机/产品概述.md",
+    "top1" : "两栖光伏清洁机器人产品概述",
+    "top1Path" : "01_光伏清洁机器人/产品概述.md",
     "hit1" : true,
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 22.42
+    "keywordBestScore" : 24.999
   }, {
     "id" : "pv-02",
     "question" : "太阳能组件怎么清洗？",
     "expectZone" : "pv-clean",
-    "top1" : "光伏组件积灰的影响与清洗方式",
-    "top1Path" : "01_光伏清洁无人机/demo-pv-dust-cleaning.md",
+    "top1" : "清洁作业流程与两栖协同",
+    "top1Path" : "01_光伏清洁机器人/清洁作业流程.md",
     "hit1" : true,
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 15.218
+    "keywordBestScore" : 14.905
   }, {
     "id" : "pv-03",
     "question" : "清洁作业流程是怎样的？",
     "expectZone" : "pv-clean",
-    "top1" : "清洁流程与作业说明",
-    "top1Path" : "01_光伏清洁无人机/清洁流程与作业.md",
+    "top1" : "清洁作业流程与两栖协同",
+    "top1Path" : "01_光伏清洁机器人/清洁作业流程.md",
     "hit1" : true,
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 15.843
+    "keywordBestScore" : 27.61
   }, {
     "id" : "pv-04",
     "question" : "光伏电站组件积灰怎么处理？",
     "expectZone" : "pv-clean",
-    "top1" : "光伏组件积灰的影响与清洗方式",
-    "top1Path" : "01_光伏清洁无人机/demo-pv-dust-cleaning.md",
+    "top1" : "两栖光伏清洁机器人产品概述",
+    "top1Path" : "01_光伏清洁机器人/产品概述.md",
     "hit1" : true,
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 19.179
+    "keywordBestScore" : 17.089
   }, {
     "id" : "pv-05",
-    "question" : "清洁无人机适用哪些场景？",
+    "question" : "清洁机器人适用哪些场景？",
     "expectZone" : "pv-clean",
-    "top1" : "光伏清洁无人机产品概述",
-    "top1Path" : "01_光伏清洁无人机/产品概述.md",
+    "top1" : "两栖光伏清洁机器人产品概述",
+    "top1Path" : "01_光伏清洁机器人/产品概述.md",
     "hit1" : true,
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 11.524
+    "keywordBestScore" : 14.617
   }, {
     "id" : "pv-06",
     "question" : "光伏展区展示什么？",
     "expectZone" : "pv-clean",
-    "top1" : "展区：光伏清洁无人机",
-    "top1Path" : "01_光伏清洁无人机/展览_光伏清洁.md",
+    "top1" : "两栖光伏清洁机器人产品概述",
+    "top1Path" : "01_光伏清洁机器人/产品概述.md",
     "hit1" : true,
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 17.922
+    "keywordBestScore" : 14.672
   }, {
     "id" : "pv-07",
     "question" : "组件表面鸟粪如何清理？",
     "expectZone" : "pv-clean",
-    "top1" : "光伏组件积灰的影响与清洗方式",
-    "top1Path" : "01_光伏清洁无人机/demo-pv-dust-cleaning.md",
+    "top1" : "清洁作业流程与两栖协同",
+    "top1Path" : "01_光伏清洁机器人/清洁作业流程.md",
     "hit1" : true,
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 10.103
+    "keywordBestScore" : 16.514
   }, {
     "id" : "pv-08",
     "question" : "屋顶光伏能用无人机清洗吗？",
     "expectZone" : "pv-clean",
-    "top1" : "光伏组件积灰的影响与清洗方式",
-    "top1Path" : "01_光伏清洁无人机/demo-pv-dust-cleaning.md",
+    "top1" : "两栖光伏清洁机器人产品概述",
+    "top1Path" : "01_光伏清洁机器人/产品概述.md",
     "hit1" : true,
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 15.204
+    "keywordBestScore" : 9.35
+  }, {
+    "id" : "pv-09",
+    "question" : "清洁机器人有多重？",
+    "expectZone" : "pv-clean",
+    "top1" : "两栖光伏清洁机器人产品概述",
+    "top1Path" : "01_光伏清洁机器人/产品概述.md",
+    "hit1" : true,
+    "hit3" : true,
+    "gated" : false,
+    "reason" : "keyword_hit",
+    "keywordBestScore" : 19.791
+  }, {
+    "id" : "pv-10",
+    "question" : "履带在湿滑条件下会打滑吗？",
+    "expectZone" : "pv-clean",
+    "top1" : "结构与材料创新",
+    "top1Path" : "01_光伏清洁机器人/结构与材料创新.md",
+    "hit1" : true,
+    "hit3" : true,
+    "gated" : false,
+    "reason" : "keyword_hit",
+    "keywordBestScore" : 13.306
+  }, {
+    "id" : "pv-11",
+    "question" : "两栖是什么意思？",
+    "expectZone" : "pv-clean",
+    "top1" : "两栖光伏清洁机器人产品概述",
+    "top1Path" : "01_光伏清洁机器人/产品概述.md",
+    "hit1" : true,
+    "hit3" : true,
+    "gated" : false,
+    "reason" : "keyword_hit",
+    "keywordBestScore" : 15.038
+  }, {
+    "id" : "doc-01",
+    "question" : "光伏医生系统是什么？",
+    "expectZone" : "pv-doctor",
+    "top1" : "光伏医生系统总览",
+    "top1Path" : "02_光伏医生运维系统/系统总览.md",
+    "hit1" : true,
+    "hit3" : true,
+    "gated" : false,
+    "reason" : "keyword_hit",
+    "keywordBestScore" : 17.971
+  }, {
+    "id" : "doc-02",
+    "question" : "无人机巡检能发现哪些故障？",
+    "expectZone" : "pv-doctor",
+    "top1" : "无人机巡检与缺陷诊断",
+    "top1Path" : "02_光伏医生运维系统/巡检与缺陷诊断.md",
+    "hit1" : true,
+    "hit3" : true,
+    "gated" : false,
+    "reason" : "keyword_hit",
+    "keywordBestScore" : 16.512
+  }, {
+    "id" : "doc-03",
+    "question" : "巡检图像的采集参数有什么要求？",
+    "expectZone" : "pv-doctor",
+    "top1" : "无人机巡检与缺陷诊断",
+    "top1Path" : "02_光伏医生运维系统/巡检与缺陷诊断.md",
+    "hit1" : true,
+    "hit3" : true,
+    "gated" : false,
+    "reason" : "keyword_hit",
+    "keywordBestScore" : 11.671
+  }, {
+    "id" : "doc-04",
+    "question" : "热红外数据集有多大？",
+    "expectZone" : "pv-doctor",
+    "top1" : "数据基础与数据治理",
+    "top1Path" : "02_光伏医生运维系统/数据基础与数据治理.md",
+    "hit1" : true,
+    "hit3" : true,
+    "gated" : false,
+    "reason" : "keyword_hit",
+    "keywordBestScore" : 13.696
+  }, {
+    "id" : "doc-05",
+    "question" : "污渍识别用的什么算法？",
+    "expectZone" : "pv-doctor",
+    "top1" : "智能算法与模型",
+    "top1Path" : "02_光伏医生运维系统/智能算法与模型.md",
+    "hit1" : true,
+    "hit3" : true,
+    "gated" : false,
+    "reason" : "keyword_hit",
+    "keywordBestScore" : 8.866
+  }, {
+    "id" : "doc-06",
+    "question" : "平台有哪些功能？",
+    "expectZone" : "pv-doctor",
+    "top1" : "平台功能与应用场景",
+    "top1Path" : "02_光伏医生运维系统/平台功能与应用场景.md",
+    "hit1" : true,
+    "hit3" : true,
+    "gated" : false,
+    "reason" : "keyword_hit",
+    "keywordBestScore" : 12.311
+  }, {
+    "id" : "doc-07",
+    "question" : "海上光伏能用无人机巡检吗？",
+    "expectZone" : "pv-doctor",
+    "top1" : "无人机巡检与缺陷诊断",
+    "top1Path" : "02_光伏医生运维系统/巡检与缺陷诊断.md",
+    "hit1" : true,
+    "hit3" : true,
+    "gated" : false,
+    "reason" : "keyword_hit",
+    "keywordBestScore" : 12.777
+  }, {
+    "id" : "doc-08",
+    "question" : "运维方案能自动生成吗？",
+    "expectZone" : "pv-doctor",
+    "top1" : "平台功能与应用场景",
+    "top1Path" : "02_光伏医生运维系统/平台功能与应用场景.md",
+    "hit1" : true,
+    "hit3" : true,
+    "gated" : false,
+    "reason" : "keyword_hit",
+    "keywordBestScore" : 11.245
+  }, {
+    "id" : "doc-09",
+    "question" : "巡检数据会不会拍到居民区？",
+    "expectZone" : "pv-doctor",
+    "top1" : "数据基础与数据治理",
+    "top1Path" : "02_光伏医生运维系统/数据基础与数据治理.md",
+    "hit1" : true,
+    "hit3" : true,
+    "gated" : false,
+    "reason" : "keyword_hit",
+    "keywordBestScore" : 12.354
+  }, {
+    "id" : "doc-10",
+    "question" : "清洁和检测是不是同一套系统？",
+    "expectZone" : "pv-doctor",
+    "top1" : "光伏医生系统总览",
+    "top1Path" : "02_光伏医生运维系统/系统总览.md",
+    "hit1" : true,
+    "hit3" : true,
+    "gated" : false,
+    "reason" : "keyword_hit",
+    "keywordBestScore" : 16.282
+  }, {
+    "id" : "proj-01",
+    "question" : "项目背景是什么？",
+    "expectZone" : "project",
+    "top1" : "项目背景与需求",
+    "top1Path" : "03_项目与团队/项目背景与需求.md",
+    "hit1" : true,
+    "hit3" : true,
+    "gated" : false,
+    "reason" : "keyword_hit",
+    "keywordBestScore" : 16.511
+  }, {
+    "id" : "proj-02",
+    "question" : "有哪些落地案例？",
+    "expectZone" : "project",
+    "top1" : "应用成效与落地案例",
+    "top1Path" : "03_项目与团队/应用成效与案例.md",
+    "hit1" : true,
+    "hit3" : true,
+    "gated" : false,
+    "reason" : "keyword_hit",
+    "keywordBestScore" : 16.692
+  }, {
+    "id" : "proj-03",
+    "question" : "团队和专利情况如何？",
+    "expectZone" : "project",
+    "top1" : "团队、单位与知识产权",
+    "top1Path" : "03_项目与团队/团队与资质.md",
+    "hit1" : true,
+    "hit3" : true,
+    "gated" : false,
+    "reason" : "keyword_hit",
+    "keywordBestScore" : 11.793
+  }, {
+    "id" : "proj-04",
+    "question" : "项目能降低多少运维成本？",
+    "expectZone" : "project",
+    "top1" : "应用成效与落地案例",
+    "top1Path" : "03_项目与团队/应用成效与案例.md",
+    "hit1" : true,
+    "hit3" : true,
+    "gated" : false,
+    "reason" : "keyword_hit",
+    "keywordBestScore" : 14.415
+  }, {
+    "id" : "proj-05",
+    "question" : "提供培训吗？",
+    "expectZone" : "project",
+    "top1" : "服务与合作",
+    "top1Path" : "03_项目与团队/服务与合作.md",
+    "hit1" : true,
+    "hit3" : true,
+    "gated" : false,
+    "reason" : "keyword_hit",
+    "keywordBestScore" : 12.213
+  }, {
+    "id" : "proj-06",
+    "question" : "如何联系合作？",
+    "expectZone" : "project",
+    "top1" : "服务与合作",
+    "top1Path" : "03_项目与团队/服务与合作.md",
+    "hit1" : true,
+    "hit3" : true,
+    "gated" : false,
+    "reason" : "keyword_hit",
+    "keywordBestScore" : 9.318
+  }, {
+    "id" : "proj-07",
+    "question" : "有没有售后技术支持？",
+    "expectZone" : "project",
+    "top1" : "服务与合作",
+    "top1Path" : "03_项目与团队/服务与合作.md",
+    "hit1" : true,
+    "hit3" : true,
+    "gated" : false,
+    "reason" : "keyword_hit",
+    "keywordBestScore" : 16.912
+  }, {
+    "id" : "proj-08",
+    "question" : "可以做区域运维伙伴吗？",
+    "expectZone" : "project",
+    "top1" : "服务与合作",
+    "top1Path" : "03_项目与团队/服务与合作.md",
+    "hit1" : true,
+    "hit3" : true,
+    "gated" : false,
+    "reason" : "keyword_hit",
+    "keywordBestScore" : 8.465
+  }, {
+    "id" : "proj-09",
+    "question" : "设备操作培训包括什么？",
+    "expectZone" : "project",
+    "top1" : "服务与合作",
+    "top1Path" : "03_项目与团队/服务与合作.md",
+    "hit1" : true,
+    "hit3" : true,
+    "gated" : false,
+    "reason" : "keyword_hit",
+    "keywordBestScore" : 18.272
   }, {
     "id" : "wind-01",
     "question" : "风场检测无人机是做什么的？",
     "expectZone" : "wind-inspect",
     "top1" : "风场检测无人机产品概述",
-    "top1Path" : "02_风场检测无人机/产品概述.md",
+    "top1Path" : "04_风场检测无人机/产品概述.md",
     "hit1" : true,
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 19.817
+    "keywordBestScore" : 32.698
   }, {
     "id" : "wind-02",
     "question" : "叶片检测要停机吗？",
     "expectZone" : "wind-inspect",
-    "top1" : "风机叶片检测的停机与不停机方案",
-    "top1Path" : "02_风场检测无人机/demo-wind-stop-or-not.md",
+    "top1" : "叶片检测说明",
+    "top1Path" : "04_风场检测无人机/叶片检测说明.md",
     "hit1" : true,
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 24.326
+    "keywordBestScore" : 24.348
   }, {
     "id" : "wind-03",
     "question" : "风机叶片裂纹怎么发现？",
     "expectZone" : "wind-inspect",
-    "top1" : "风机叶片巡检的常规方式与无人机实践",
-    "top1Path" : "02_风场检测无人机/demo-wind-blade-inspection.md",
+    "top1" : "叶片检测说明",
+    "top1Path" : "04_风场检测无人机/叶片检测说明.md",
     "hit1" : true,
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 12.099
+    "keywordBestScore" : 8.398
   }, {
     "id" : "wind-04",
     "question" : "风电场如何做巡检？",
     "expectZone" : "wind-inspect",
-    "top1" : "风机叶片巡检的常规方式与无人机实践",
-    "top1Path" : "02_风场检测无人机/demo-wind-blade-inspection.md",
+    "top1" : "风场检测无人机产品概述",
+    "top1Path" : "04_风场检测无人机/产品概述.md",
     "hit1" : true,
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 9.747
+    "keywordBestScore" : 9.149
   }, {
     "id" : "wind-05",
     "question" : "雷击痕迹能检测到吗？",
     "expectZone" : "wind-inspect",
     "top1" : "风场检测无人机产品概述",
-    "top1Path" : "02_风场检测无人机/产品概述.md",
+    "top1Path" : "04_风场检测无人机/产品概述.md",
     "hit1" : true,
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 12.713
+    "keywordBestScore" : 14.9
   }, {
     "id" : "wind-06",
     "question" : "风场展区展示什么？",
     "expectZone" : "wind-inspect",
-    "top1" : "展区：光伏清洁无人机",
-    "top1Path" : "01_光伏清洁无人机/展览_光伏清洁.md",
-    "hit1" : false,
+    "top1" : "展区：风场检测无人机",
+    "top1Path" : "04_风场检测无人机/展览_风场检测.md",
+    "hit1" : true,
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 13.932
+    "keywordBestScore" : 15.312
   }, {
     "id" : "wind-07",
     "question" : "海上风电能用无人机检测吗？",
     "expectZone" : "wind-inspect",
-    "top1" : "风机叶片检测的停机与不停机方案",
-    "top1Path" : "02_风场检测无人机/demo-wind-stop-or-not.md",
+    "top1" : "风场检测无人机产品概述",
+    "top1Path" : "04_风场检测无人机/产品概述.md",
     "hit1" : true,
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 12.109
+    "keywordBestScore" : 14.828
   }, {
     "id" : "wind-08",
     "question" : "检测报告包含哪些内容？",
     "expectZone" : "wind-inspect",
-    "top1" : "风机全自动巡检方案与缺陷识别",
-    "top1Path" : "02_风场检测无人机/demo-wind-auto-inspection.md",
+    "top1" : "叶片检测说明",
+    "top1Path" : "04_风场检测无人机/叶片检测说明.md",
     "hit1" : true,
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 8.933
-  }, {
-    "id" : "svc-01",
-    "question" : "提供培训吗？",
-    "expectZone" : "service",
-    "top1" : "服务、培训与合作",
-    "top1Path" : "03_服务与合作/服务培训与合作.md",
-    "hit1" : true,
-    "hit3" : true,
-    "gated" : false,
-    "reason" : "keyword_hit",
-    "keywordBestScore" : 17.569
-  }, {
-    "id" : "svc-02",
-    "question" : "如何联系合作？",
-    "expectZone" : "service",
-    "top1" : "服务、培训与合作",
-    "top1Path" : "03_服务与合作/服务培训与合作.md",
-    "hit1" : true,
-    "hit3" : true,
-    "gated" : false,
-    "reason" : "keyword_hit",
-    "keywordBestScore" : 17.601
-  }, {
-    "id" : "svc-03",
-    "question" : "有没有售后技术支持？",
-    "expectZone" : "service",
-    "top1" : "服务、培训与合作",
-    "top1Path" : "03_服务与合作/服务培训与合作.md",
-    "hit1" : true,
-    "hit3" : true,
-    "gated" : false,
-    "reason" : "keyword_hit",
-    "keywordBestScore" : 11.848
-  }, {
-    "id" : "svc-04",
-    "question" : "可以做区域运维伙伴吗？",
-    "expectZone" : "service",
-    "top1" : "服务、培训与合作",
-    "top1Path" : "03_服务与合作/服务培训与合作.md",
-    "hit1" : true,
-    "hit3" : true,
-    "gated" : false,
-    "reason" : "keyword_hit",
-    "keywordBestScore" : 9.612
-  }, {
-    "id" : "svc-05",
-    "question" : "作业报告模板哪里获取？",
-    "expectZone" : "service",
-    "top1" : "风机叶片无人机自动巡检作业流程",
-    "top1Path" : "02_风场检测无人机/demo-wind-uav-workflow.md",
-    "hit1" : false,
-    "hit3" : false,
-    "gated" : false,
-    "reason" : "keyword_hit",
-    "keywordBestScore" : 11.332
-  }, {
-    "id" : "svc-06",
-    "question" : "设备操作培训包括什么？",
-    "expectZone" : "service",
-    "top1" : "服务、培训与合作",
-    "top1Path" : "03_服务与合作/服务培训与合作.md",
-    "hit1" : true,
-    "hit3" : true,
-    "gated" : false,
-    "reason" : "keyword_hit",
-    "keywordBestScore" : 11.748
+    "keywordBestScore" : 9.371
   }, {
     "id" : "safe-01",
     "question" : "展厅有哪些安全注意事项？",
@@ -278,7 +454,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 23.251
+    "keywordBestScore" : 21.964
   }, {
     "id" : "safe-02",
     "question" : "可以摸无人机吗？",
@@ -289,7 +465,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 14.569
+    "keywordBestScore" : 13.398
   }, {
     "id" : "safe-03",
     "question" : "拍照能开闪光灯吗？",
@@ -300,7 +476,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 10.162
+    "keywordBestScore" : 10.404
   }, {
     "id" : "safe-04",
     "question" : "参观需要预约吗？",
@@ -311,7 +487,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 13.587
+    "keywordBestScore" : 12.934
   }, {
     "id" : "safe-05",
     "question" : "展厅内可以吸烟吗？",
@@ -322,7 +498,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 15.461
+    "keywordBestScore" : 15.498
   }, {
     "id" : "safe-06",
     "question" : "儿童可以单独参观吗？",
@@ -333,38 +509,37 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 12.134
+    "keywordBestScore" : 11.561
   }, {
     "id" : "mix-01",
     "question" : "太阳能电站清洗后发电会提升吗？",
-    "expectZone" : "pv-clean",
-    "top1" : "光伏组件积灰的影响与清洗方式",
-    "top1Path" : "01_光伏清洁无人机/demo-pv-dust-cleaning.md",
+    "top1" : "应用成效与落地案例",
+    "top1Path" : "03_项目与团队/应用成效与案例.md",
     "hit1" : true,
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 10.865
+    "keywordBestScore" : 9.09
   }, {
     "id" : "mix-02",
     "question" : "无人机巡检比人工爬塔更安全吗？",
-    "expectZone" : "wind-inspect",
-    "top1" : "风机全自动巡检方案与缺陷识别",
-    "top1Path" : "02_风场检测无人机/demo-wind-auto-inspection.md",
+    "expectZone" : "pv-doctor",
+    "top1" : "无人机巡检与缺陷诊断",
+    "top1Path" : "02_光伏医生运维系统/巡检与缺陷诊断.md",
     "hit1" : true,
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 12.172
+    "keywordBestScore" : 17.492
   } ],
   "followUps" : [ {
     "id" : "fu-01",
-    "context" : "光伏清洁无人机是做什么的？",
+    "context" : "光伏清洁机器人是做什么的？",
     "question" : "那清洗哪些场景？",
-    "rewritten" : false,
-    "reason" : "none",
-    "rawTop1" : "光伏组件积灰的影响与清洗方式",
-    "rwTop1" : "光伏组件积灰的影响与清洗方式",
+    "rewritten" : true,
+    "reason" : "ellipsis_merged",
+    "rawTop1" : "两栖光伏清洁机器人产品概述",
+    "rwTop1" : "两栖光伏清洁机器人产品概述",
     "rawHit1" : true,
     "rwHit1" : true,
     "rwHit3" : true
@@ -374,8 +549,8 @@
     "question" : "那要多久？",
     "rewritten" : true,
     "reason" : "ellipsis_merged",
-    "rawTop1" : "清洁流程与作业说明",
-    "rwTop1" : "风机叶片检测的停机与不停机方案",
+    "rawTop1" : "无人机巡检与缺陷诊断",
+    "rwTop1" : "叶片检测说明",
     "rawHit1" : false,
     "rwHit1" : true,
     "rwHit3" : true
@@ -385,7 +560,8 @@
     "question" : "那怎么报名？",
     "rewritten" : true,
     "reason" : "ellipsis_merged",
-    "rwTop1" : "服务、培训与合作",
+    "rawTop1" : "两栖光伏清洁机器人产品概述",
+    "rwTop1" : "服务与合作",
     "rawHit1" : false,
     "rwHit1" : true,
     "rwHit3" : true
@@ -395,9 +571,9 @@
     "question" : "那海上能用吗？",
     "rewritten" : true,
     "reason" : "ellipsis_merged",
-    "rawTop1" : "地面激光雷达在风资源评估中的应用",
-    "rwTop1" : "风机全自动巡检方案与缺陷识别",
-    "rawHit1" : true,
+    "rawTop1" : "两栖光伏清洁机器人产品概述",
+    "rwTop1" : "风场检测无人机产品概述",
+    "rawHit1" : false,
     "rwHit1" : true,
     "rwHit3" : true
   }, {
@@ -406,19 +582,31 @@
     "question" : "那能拍照吗？",
     "rewritten" : true,
     "reason" : "ellipsis_merged",
-    "rawTop1" : "风机叶片巡检的常规方式与无人机实践",
+    "rawTop1" : "展厅参观须知",
     "rwTop1" : "展厅参观须知",
-    "rawHit1" : false,
+    "rawHit1" : true,
     "rwHit1" : true,
     "rwHit3" : true
   }, {
     "id" : "fu-06",
-    "context" : "光伏清洁无人机是做什么的？",
-    "question" : "它有几种型号？",
+    "context" : "光伏清洁机器人是做什么的？",
+    "question" : "它会不会压坏光伏板？",
     "rewritten" : true,
     "reason" : "ellipsis_merged",
-    "rwTop1" : "光伏组件积灰的影响与清洗方式",
-    "rawHit1" : false,
+    "rawTop1" : "结构与材料创新",
+    "rwTop1" : "两栖光伏清洁机器人产品概述",
+    "rawHit1" : true,
+    "rwHit1" : true,
+    "rwHit3" : true
+  }, {
+    "id" : "fu-07",
+    "context" : "光伏医生系统是什么？",
+    "question" : "那数据集有多大？",
+    "rewritten" : false,
+    "reason" : "none",
+    "rawTop1" : "数据基础与数据治理",
+    "rwTop1" : "数据基础与数据治理",
+    "rawHit1" : true,
     "rwHit1" : true,
     "rwHit3" : true
   } ]
