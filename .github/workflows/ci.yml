@@ -62,6 +62,13 @@ jobs:
       - name: 检索评测（同一批用例，不写报告）
         run: mvn -B -q -f server/pom.xml test-compile exec:java@eval -Dexec.args="--no-write"
 
+      # 守的是「域外问题不被硬答」这条线：闸门判据是排序分（含同义词扩展），
+      # 域外最高分一旦超过生效阈值，展厅就会对域外问题张口就答——比误拦更难收拾。
+      # 不用「区间是否成立」当判据：当前语料下区间本就不成立（见 docs/eval.md），
+      # 拿它当失败条件会让 CI 长期红着，反而没人看。
+      - name: 闸门余量核查（域外最高分不得越线）
+        run: mvn -B -q -f server/pom.xml test-compile exec:java@calibrate -Dexec.args="--gate-check --no-write"
+
       - name: 打包
         run: mvn -B -f server/pom.xml -DskipTests package
 

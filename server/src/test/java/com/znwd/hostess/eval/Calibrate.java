@@ -40,7 +40,8 @@ import com.znwd.hostess.knowledge.ScoringOptions;
  * 参数：
  *   --grid        额外跑打分参数网格搜索
  *   --no-write    只打印，不写 docs/eval/calibration-*.json
- *   区间不成立时退出码为 2（可当 CI 的失败条件）
+ *   --gate-check  只看闸门余量：域外最高分（闸门实际口径）不得越线，越线退出码 3
+ *   退出码：区间不成立 → 2；--gate-check 下域外越线 → 3
  * </pre>
  */
 public final class Calibrate {
@@ -51,6 +52,7 @@ public final class Calibrate {
         List<String> argv = List.of(args);
         boolean noWrite = argv.contains("--no-write");
         boolean withGrid = argv.contains("--grid");
+        boolean gateCheck = argv.contains("--gate-check");
 
         try (ConfigurableApplicationContext ctx = new SpringApplicationBuilder(HostessApplication.class)
                 .web(WebApplicationType.NONE)
@@ -126,6 +128,15 @@ public final class Calibrate {
                 System.out.println("警告：分数区间不成立（域外最高分不低于在域最低分）：需要补同义词或换语义向量模型");
                 report.put("separated", false);
             }
+            // 闸门判据用的是排序分（keywordBestScore，含同义词扩展）——CI 要守的就是这条线：
+            // 域外最高分一旦越线，展厅就会对域外问题硬答，比误拦更难收拾。
+            boolean gateSafe = maxOodRanking < effective;
+            report.put("gateMetricUsedByGate", "keywordBestScore（排序分，与 HybridRetriever 判闸门同一口径）");
+            report.put("gateSafe", gateSafe);
+            report.put("gateMarginRanking", EvalSupport.round(effective - maxOodRanking, 4));
+            System.out.printf("闸门余量（排序分口径）：域外最高 %.3f / 阈值 %.2f → %s（余量 %.3f）%n",
+                    maxOodRanking, effective, gateSafe ? "守住" : "越线！域外问题会被放行",
+                    effective - maxOodRanking);
             System.out.printf("参考：命中词条数 在域最低=%d 域外最高=%d（该维度不足以单独区分，仅作观察）%n",
                     minCovIn, maxCovOod);
 
@@ -137,7 +148,13 @@ public final class Calibrate {
                 var file = EvalSupport.writeReport(mapper, "calibration", report);
                 System.out.println("\n报告已写入 " + file);
             }
-            if (!separated) {
+            if (gateCheck) {
+                // CI 只守「域外不越线」：区间不成立是当前语料的已知事实（见 docs/eval.md），
+                // 拿它当失败条件会让 CI 长期红着，反而没人看。
+                if (!gateSafe) {
+                    System.exit(3);
+                }
+            } else if (!separated) {
                 System.exit(2);
             }
         }

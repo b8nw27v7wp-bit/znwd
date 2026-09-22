@@ -34,12 +34,20 @@
 - **召回天花板（用例集 v3 起已无漏例）**：旧用例集下 `wind-06`、`svc-05` 在任何参数组合下都进不了 top1；换成公司自有材料、把访客问句做成小节标题、并把只讲风机的旧资料删掉后，42 条计分用例全部 top1 命中。要提升只能补语料或补同义词，调参数无用。
 - **默认阈值演进**：`3.8`（23 块语料中点）→ `6.3`（2026-09-20，8 篇演示资料入库后）→ `8.1`（2026-09-21，修掉跨标点 bigram 与「话题枢纽式同义词」后）→ **`6.3`**（2026-09-22，语料换成三份公司材料并按真实访客问句重标；区间不成立，取域外零漏放的最优覆盖点）。四处同步：`server/.env`、`application.yml` 的 `MIN_RELEVANCE_SCORE` 默认值、`HybridRetriever.DEFAULT_MIN_KEYWORD_SCORE`、CI workflow。合成语料单测仍固定用自己的 3.8——它不该跟着生产阈值走，否则每次重新标定都会让闸门行为测试无辜变红。
 
+## 已修（第九轮：待办与风险收口）
+
+| 项 | 内容 | 验证 |
+| --- | --- | --- |
+| **前端组件测试补全** | 新增 `components/AdminPanel.spec.ts`（4 条：三接口渲染统计与待补资料、口令只进 `sessionStorage` 并作为 `authorization` 头带上、401 给一句人话且不渲染半张表、接口挂掉把原因显示出来）；`App.spec.ts` 新增「对话主流程」4 条（点「有帮助」把反馈连同上一轮问题上报、连续追问复用同一会话、点推荐问题直接提问、空白输入与 Shift+Enter 都不发请求）；`components/StageDiagram.spec.ts` 5 条（三块结构、关键节点、未命中支路、技术栈与实测数据各 6 项、**图上数字与仓库口径一致**）；`components/SourcePanel.spec.ts` 5 条（空态、卡片渲染、分数只显示有值的部分、缺展区回落、片段里的尖括号当文字） | 前端单测 37 → **55 项全绿**；`npm run build`（vue-tsc + vite）通过 |
+| **来源面板去掉无关资料** | `RagPipeline.toSources` 按关键词分量级过滤（`SOURCE_KEEP_RATIO = 0.5`）：低于本次最高分一半的块不展示。实测「多久能回本」3 → 1 条、「数据涉及居民隐私」2 → 1 条，多来源问题照旧保留 | `RagPipelineTest` 6 条；后端单测 64 → **70 项** |
+| **请求体大小上限** | 新增 `web/RequestSizeLimitFilter`（`@Order(2)`）：写请求 `Content-Length > 64KB` 直接 413 + 统一错误信封；**没有 `Content-Length` 的写请求（分块传输）按超限处理**——本服务没有上传接口，放行就是个绕过口子。`ApiError` 增加 `payload_too_large` | 新增 4 条单测；真机实测：65 字节 200 / 70063 字节 413（带 requestId）/ 60063 字节 200 / 分块传输 413；冒烟 56/56 不受影响 |
+| **闸门余量挂进 CI** | `Calibrate` 增加 `--gate-check`：域外最高分（排序分口径，与 `HybridRetriever` 判闸门同判据）不得越过生效阈值，越线退出码 3；CI 在检索评测之后加一步。**刻意不用「区间是否成立」当判据**——当前语料下区间本就不成立，拿它当失败条件只会让 CI 长期红着、没人看 | 实测：阈值 6.3 时守住退 0（余量 0.081）；故意 `MIN_RELEVANCE_SCORE=6.0` 时越线退 3。单测 60 → **64 项** |
+| 文档同步 | `docs/development.md`（单测/前端项数、`--gate-check`）、`docs/eval.md`（标定参数与退出码、单测项数）、`docs/api.md`（413 错误码）、`README.md`（单测项数） | — |
+
 ## 待做
 
-1. **前端组件测试只覆盖了 App 的播报接线**：已加 `@vue/test-utils` + `jsdom` 并写了 `App.spec.ts`（朗读接线三条），但 `AdminPanel.vue` 与对话主流程的回归仍靠人工点；要继续补可直接沿用这套环境。
-2. **（可选）指标暴露**：已带 `spring-boot-starter-actuator`（只暴露 `health,info`）；接多屏/后台要 Prometheus 指标时再接 `micrometer-registry-prometheus`。单机展厅当前 `/api/health` + `/api/stats` 够用。
-3. **（可选）把标定挂进 CI**：区间塌了要早知道；但语料换成正式资料期间可能误报红，等资料稳定再加。
-4. **（可选）请求体大小上限**：消息正文会被截到 2000 字，但超大 JSON 仍会先进内存。建议反代加 `client_max_body_size 64k`，或加一个读 `Content-Length` 的过滤器。
+1. **（可选）指标暴露**：已带 `spring-boot-starter-actuator`（只暴露 `health,info`）；接多屏/后台要 Prometheus 指标时再接 `micrometer-registry-prometheus`。单机展厅当前 `/api/health` + `/api/stats` 够用。
+2. **（可选，需先定方案）真语义向量**：`EMBED_PROVIDER=bag` 是特征哈希，语义路一直空转（MiMo 的 `/v1/embeddings` 对任何模型名都 404）。两条现成路子：换成提供 embeddings 的云服务，或本机跑 Ollama 的 bge-m3 / nomic-embed-text（`http://127.0.0.1:11434/v1`）——代码已支持 `openai_compat`，改 `.env` 即可。换完必须 reload 重建索引并重跑标定与评测（向量参与 RRF 会改变分数分布）。
 
 ## 已完成（第三轮：文档与配置换成新栈）
 
