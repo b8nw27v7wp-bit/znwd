@@ -36,7 +36,7 @@ cd server
 | `followUpRawTop1Rate` | 多轮追问**不改写**直接检索的 top1 | 0.2 |
 | `followUpRewrittenTop1Rate` | 改写后 top1 | **1.0** |
 | `followUpRewriteTriggered` | 触发改写的次数 | 见实跑输出 |
-| `minKeywordScore` | 当次运行实际生效的闸门阈值 | 8.1 |
+| `minKeywordScore` | 当次运行实际生效的闸门阈值 | 6.3 |
 
 报告 JSON 除 summary 外还带逐例明细（`id`、`question`、`expectZone`、`top1`、`top1Path`、`hit1`、`hit3`、`gated`、`reason`、`keywordBestScore`）与多轮明细（`rawTop1`/`rwTop1`/`rawHit1`/`rwHit1`/`rwHit3`）——定位"哪条用例退化"靠这个。
 
@@ -50,9 +50,9 @@ cd server
 
 | 阈值 | 在域被拒 | 域外漏放 |
 | --- | --- | --- |
-| 8.1（当前） | 5 / 101 | 0 |
+| 8.1（旧） | 5 / 101 | 0 |
 | 7.0 | 3 / 101 | 0 |
-| 6.3 | 2 / 101 | 0 |
+| **6.3（当前）** | **2 / 101** | **0** |
 | 6.0 | 2 / 101 | 1（这台无人机多少钱？ 6.27） |
 | 5.5 | 1 / 101 | 2（同上 + 光伏和风电哪个更赚钱？） |
 | 5.0 | 0 / 101 | 4 |
@@ -65,7 +65,7 @@ cd server
 
 基线文件：
 
-- `docs/eval/baseline-java.json` —— 当前实现（Spring Boot）的基线，阈值 8.1，可直接 `--baseline=` 对比。
+- `docs/eval/baseline-java.json` —— 当前实现（Spring Boot）的基线，阈值 6.3，可直接 `--baseline=` 对比。
 - `docs/eval/baseline.json` —— **历史文件**（23 块语料时代，Node 实现）。语料规模不同，`top1/top3` **不可直接比**，只作为证据留存。
 - `docs/eval/retrieval-*.json` —— 历史实跑报告（按时间戳）。
 
@@ -95,8 +95,7 @@ cd server
 | 在域用例最低分（原话口径 / 排序分口径） | 5.118 / 5.118 |
 | 域外问题最高分（原话 / 排序分） | 5.337 / 6.249 |
 | 区间 | **不成立**（两种口径都是 在域最低 < 域外最高） |
-| 实际生效阈值 | 8.1（保守取值：真实问句口径下拒 5/101，域外 0 漏放） |
-| 建议值 | 6.3（真实问句口径下拒 2/101、域外 0 漏放；**未采用，待定**） |
+| 实际生效阈值 | **6.3**（真实问句口径下拒 2/101、域外 0 漏放；四处已同步：`server/.env`、`application.yml` 默认值、`HybridRetriever.DEFAULT_MIN_KEYWORD_SCORE`、CI workflow 的 `MIN_RELEVANCE_SCORE`；`server/.env.example` 注释同步） |
 
 ⚠️ **口径分歧仍在（记录在案，未改代码）**：`HybridRetriever` 判闸门用 `keywordBestScore`（排序分，含同义词扩展），
 `Calibrate` 的区间判据按 `keywordGateScore`（只算原话）算，输出里却自称「与闸门同一口径」。本轮两者结论一致
@@ -109,7 +108,10 @@ cd server
 在域问句的关键词分从 8.9+ 掉到 5~7，一度误拦 8 条；**没有调阈值**，而是按 `docs/knowledge.md` §4 的「问句式小节标题」
 补了访客原话问句做 `##` 标题，把在域最低分抬回 8.398，误拦归零
 → 仍为 `8.1`（只留三份申报/大赛/概述材料、删掉风场与通识两个薄展区、119 块）：区间在两种口径下都成立，
-在域最低分 8.403（原话）/ 8.679（排序分），域外最高 7.037。
+在域最低分 8.403（原话）/ 8.679（排序分），域外最高 7.037
+→ **`6.3`**（全量入库 + 每个展区补「常见问题」层、194 块）：把真实访客问句（101 条）当在域样本重标后，
+区间不再成立（在域最低 5.13 < 域外最高 6.27）——短问句（4~6 个 bigram）的分数上限被 `boost/sqrt(base+1)` 压住。
+取「域外零漏放前提下的最优覆盖点」`6.3`：真实问句被拒从 5 条降到 2 条（有客户了吗、融资了吗），域外 14 条样本仍 0 漏放。
 **阈值是相对量**：语料一变，IDF 随之变化、分数整体平移，不重标就可能把该答的问题拦掉。
 
 ## 5. 改语料后的标准流程
@@ -130,7 +132,7 @@ python tools/smoke.py
 
 ## 6. CI 里怎么跑
 
-`.github/workflows/ci.yml` 的 backend 作业：`mvn test` → `exec:java@eval --no-write` → `package` → 起 jar 跑 `python3 tools/smoke.py`，并显式给出 `MIN_RELEVANCE_SCORE=8.1`（CI 里没有 `server/.env`，不显式给就会退回代码默认值——"CI 通过"必须验的是线上那套阈值）。
+`.github/workflows/ci.yml` 的 backend 作业：`mvn test` → `exec:java@eval --no-write` → `package` → 起 jar 跑 `python3 tools/smoke.py`，并显式给出 `MIN_RELEVANCE_SCORE=6.3`（CI 里没有 `server/.env`，不显式给就会退回代码默认值——"CI 通过"必须验的是线上那套阈值）。
 
 失败该往哪修：
 

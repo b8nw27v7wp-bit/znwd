@@ -199,7 +199,7 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
   "mode": "keyword", "keywordChunks": 126, "indexReady": true, "generation": 2, "semantic": false,
   "vector": { "provider": "bag", "semantic": false, "dims": 512, "vectors": 126, "fingerprint": "…", "indexFile": "…" },
   "degradedReason": "EMBED_PROVIDER=bag（特征哈希，非语义向量）",
-  "thresholds": { "minKeywordScore": 8.1, "minVectorScore": 0.35 }
+  "thresholds": { "minKeywordScore": 6.3, "minVectorScore": 0.35 }
 }
 ```
 
@@ -248,16 +248,16 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 | `verdict` | 一句人话结论 |
 | `hits[]` | `title`、`sourcePath`、`zone`、`zoneTitle`、`fuseScore`、`keywordScore`、`vectorScore`、`matchedTokens`、`matched[]`、`snippet` |
 
-实测样例（当前 194 块语料、阈值 8.1）：
+实测样例（当前 194 块语料、阈值 6.3）：
 
 ```json
 // GET /api/admin/diagnostics?q=帮我写一首关于夏天的诗
 {
   "gated": true, "mode": "keyword", "reason": "below_threshold", "semantic": false, "degraded": true,
   "keywordGateScore": 0.0, "keywordBestScore": 0.0, "vectorBestCosine": 0.2083, "candidates": 8,
-  "thresholds": { "minKeywordScore": 8.1, "minVectorScore": 0.35 },
-  "distanceToGate": 8.1, "hits": [],
-  "verdict": "闸门拦下：有候选但相关度不够（关键词最高 0.00 / 阈值 8.10；语义向量不可用（当前为降级模式），只剩关键词路）"
+  "thresholds": { "minKeywordScore": 6.3, "minVectorScore": 0.35 },
+  "distanceToGate": 6.3, "hits": [],
+  "verdict": "闸门拦下：有候选但相关度不够（关键词最高 0.00 / 阈值 6.30；语义向量不可用（当前为降级模式），只剩关键词路）"
 }
 ```
 

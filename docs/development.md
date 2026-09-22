@@ -28,7 +28,7 @@ cd server && ../tools/mvn -B test        # 等价于 mvn -B test
 | --- | --- | --- |
 | 起后端 | `cd server && ../tools/mvn spring-boot:run` | `Tomcat started on port 8787` / `Started HostessApplication` |
 | 单测 | `cd server && ../tools/mvn -B test` | `Tests run: 60, Failures: 0, Errors: 0` |
-| 检索评测 | `cd server && ../tools/mvn -B test-compile exec:java@eval -Dexec.args="--no-write"` | `top1Rate = 1.0`、`top3Rate = 1.0`、`gateBlockedCount = 0`、`minKeywordScore = 8.1` |
+| 检索评测 | `cd server && ../tools/mvn -B test-compile exec:java@eval -Dexec.args="--no-write"` | `top1Rate = 1.0`、`top3Rate = 1.0`、`gateBlockedCount = 2`（两条已知弱问句）、`minKeywordScore = 6.3` |
 | 阈值标定 | `cd server && ../tools/mvn -B test-compile exec:java@calibrate` | 在域最弱 8 条、域外降序、区间与建议；**区间判据与闸门口径不一致，先读 `docs/eval.md` 的说明**；`--grid` 再加 36 组参数网格；报告落 `docs/eval/calibration-*.json` |
 | 资料入库 | `cd server && ../tools/mvn -B -q test-compile exec:java@ingest -Dexec.args="--src ./inbox --zone <展区id>"`（`--dry-run` 先看目标路径） | `完成：N/M 入库`；扫描件 PDF 与 `.doc` 明确报错；用法见 `docs/knowledge.md` §8 |
 | 接口冒烟 | `python tools/smoke.py`（需服务在跑，`BASE=http://…` 可改目标） | `通过 56 项，失败 0 项` |
@@ -96,7 +96,7 @@ python tools/smoke.py                                  # 56 项契约（需服�
 
 CI（`.github/workflows/ci.yml`，push/PR 都跑）：
 
-- **backend**：起一个 MySQL 8.4 service 容器 → 用 root 执行 `server/db/init.sql`（`sed` 注入口令、`@'localhost'` 换成 `@'%'`，因为容器里来源是 docker 网关 IP）→ `mvn test` → `exec:java@eval --no-write` → `package` → 起 jar 跑 `python3 tools/smoke.py`（先断言 `storageAvailable:true`，库没连上就直接失败）→ 再起两个实例跑 `python3 tools/security.py`（`SECOND_BASE`/`MISCONFIG_BASE`）→ `python3 tools/db-check.py`。`LLM_PROVIDER=mock`、`MIN_RELEVANCE_SCORE=8.1` 显式给出，失败时打印三个实例的日志。
+- **backend**：起一个 MySQL 8.4 service 容器 → 用 root 执行 `server/db/init.sql`（`sed` 注入口令、`@'localhost'` 换成 `@'%'`，因为容器里来源是 docker 网关 IP）→ `mvn test` → `exec:java@eval --no-write` → `package` → 起 jar 跑 `python3 tools/smoke.py`（先断言 `storageAvailable:true`，库没连上就直接失败）→ 再起两个实例跑 `python3 tools/security.py`（`SECOND_BASE`/`MISCONFIG_BASE`）→ `python3 tools/db-check.py`。`LLM_PROVIDER=mock`、`MIN_RELEVANCE_SCORE=6.3` 显式给出，失败时打印三个实例的日志。
 - **frontend**：`npm ci` → `npm run build` → `npm test`
 
 失败时的判断顺序：先在本地复现对应命令；契约类失败（smoke）先看 `docs/api.md` 的字段表，检索类失败（eval）先跑 `calibrate` 看阈值区间是否还成立，边界/安全类失败（security）先看 `docs/security-testing.md` 里该编号的期望与「已接受的风险」两节，别急着改代码。

@@ -1,6 +1,6 @@
 {
   "summary" : {
-    "at" : "2026-09-22T02:40:18.873407800Z",
+    "at" : "2026-09-22T02:54:52.868031400Z",
     "runtime" : "spring-boot/java",
     "embedProvider" : "bag",
     "semantic" : false,
@@ -14,11 +14,11 @@
     "top3Hit" : 137,
     "top1Rate" : 1.0,
     "top3Rate" : 1.0,
-    "gatedTop1Rate" : 0.9635,
-    "gatedTop3Rate" : 0.9635,
-    "gateBlockedCount" : 5,
-    "gateBlocked" : [ "probe-28", "probe-64", "probe-75", "probe-91", "probe-92" ],
-    "minKeywordScore" : 8.1,
+    "gatedTop1Rate" : 0.9854,
+    "gatedTop3Rate" : 0.9854,
+    "gateBlockedCount" : 2,
+    "gateBlocked" : [ "probe-64", "probe-75" ],
+    "minKeywordScore" : 6.3,
     "followUpCases" : 5,
     "followUpRawTop1Rate" : 0.6,
     "followUpRawTop3Rate" : 1.0,
@@ -322,7 +322,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 13.945
+    "keywordBestScore" : 13.907
   }, {
     "id" : "proj-06",
     "question" : "如何联系合作？",
@@ -792,8 +792,8 @@
     "top1Path" : "02_光伏医生运维系统/常见问题.md",
     "hit1" : true,
     "hit3" : true,
-    "gated" : true,
-    "reason" : "below_threshold",
+    "gated" : false,
+    "reason" : "keyword_hit",
     "keywordBestScore" : 6.658
   }, {
     "id" : "probe-29",
@@ -1443,7 +1443,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 13.945
+    "keywordBestScore" : 13.907
   }, {
     "id" : "probe-88",
     "question" : "怎么合作",
@@ -1485,8 +1485,8 @@
     "top1Path" : "03_项目与团队/应用成效与案例.md",
     "hit1" : true,
     "hit3" : true,
-    "gated" : true,
-    "reason" : "below_threshold",
+    "gated" : false,
+    "reason" : "keyword_hit",
     "keywordBestScore" : 7.774
   }, {
     "id" : "probe-92",
@@ -1496,8 +1496,8 @@
     "top1Path" : "03_项目与团队/应用成效与案例.md",
     "hit1" : true,
     "hit3" : true,
-    "gated" : true,
-    "reason" : "below_threshold",
+    "gated" : false,
+    "reason" : "keyword_hit",
     "keywordBestScore" : 7.434
   }, {
     "id" : "probe-93",

@@ -23,7 +23,7 @@ public class HybridRetriever {
      *
      * <p>改语料、改同义词表之后重跑标定再动这个数，不要凭手感调。
      */
-    public static final double DEFAULT_MIN_KEYWORD_SCORE = 8.1;
+    public static final double DEFAULT_MIN_KEYWORD_SCORE = 6.3;
     public static final double DEFAULT_MIN_VECTOR_SCORE = 0.35;
 
     private static final int RRF_K = 60;

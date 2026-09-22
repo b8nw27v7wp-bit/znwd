@@ -27,10 +27,10 @@ jobs:
           --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pci-root-pw-not-a-secret"
           --health-interval=5s --health-timeout=5s --health-retries=30
     env:
-      # CI 里没有 server/.env。8.1 现在同时也是代码默认值（application.yml 的 MIN_RELEVANCE_SCORE
+      # CI 里没有 server/.env。6.3 现在同时也是代码默认值（application.yml 的 MIN_RELEVANCE_SCORE
       # 与 HybridRetriever.DEFAULT_MIN_KEYWORD_SCORE），显式写出来是为了让"CI 通过的阈值"可见可改；
       # 重新标定后这三处要一起改。
-      MIN_RELEVANCE_SCORE: '8.1'
+      MIN_RELEVANCE_SCORE: '6.3'
       # 都是 CI 专用的一次性口令（不是密钥）：root 只用来执行 init.sql，应用用最小权限账号。
       MYSQL_ROOT_PASSWORD: ci-root-pw-not-a-secret
       APP_DB_PASSWORD: ci-app-pw-not-a-secret

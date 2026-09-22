@@ -63,7 +63,7 @@ cd web && npm ci && npm run build                    # → web/dist
 | `KNOWLEDGE_DIR` | `./knowledge` | 知识正文目录（相对仓库根或绝对路径） |
 | `INDEX_DIR` | `./server/indexes` | 向量索引目录（可删，会自动重建） |
 | `DATA_DIR` | `./server/data` | JSONL 日志目录 |
-| `MIN_RELEVANCE_SCORE` | `8.1` | 相关性闸门阈值（标定得出，改语料后必须重标） |
+| `MIN_RELEVANCE_SCORE` | `6.3` | 相关性闸门阈值（标定得出，改语料后必须重标） |
 | `MIN_VECTOR_SCORE` | `0.35` | 语义向量兜底阈值 |
 | `ANSWER_CACHE_SIZE` | `200` | 答案缓存条数 |
 | `UNCOVERED_LOG_SIZE` | `50` | 未覆盖问题留存条数（0 = 关闭） |
