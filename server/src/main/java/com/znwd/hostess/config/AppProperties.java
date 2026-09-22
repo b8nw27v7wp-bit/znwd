@@ -30,6 +30,13 @@ public record AppProperties(
         long logMaxBytes,
         String logMessageMode,
         String corsOrigins,
+        /**
+         * 是否信任 `X-Forwarded-For` 作为限流键（默认 false）。
+         *
+         * <p>该头由客户端可写：采信它等于让调用方自己选限流桶。只有前面挂着自家反代、
+         * 且反代会剥离同名头时才打开（见 {@code http/ClientIp}）。
+         */
+        boolean trustForwardedFor,
         String nodeEnv,
         Llm llm,
         Embed embed) {

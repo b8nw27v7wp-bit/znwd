@@ -185,7 +185,7 @@ class HttpSupportTest {
     private record AdminGuardFixture(String token, boolean requireToken, String nodeEnv) {
         AppProperties props() {
             return new AppProperties("./knowledge", "./server/indexes", "./server/data", false, 3.8, 0.35, 30, 200,
-                    50, token, requireToken, false, 5_000_000, "hash", "", nodeEnv,
+                    50, token, requireToken, false, 5_000_000, "hash", "", false, nodeEnv,
                     new AppProperties.Llm("mock", "", "", "", 90_000, 180_000, 2, 1000, 0, ""),
                     new AppProperties.Embed("bag", "", "", "", 0, 512, 60_000));
         }

@@ -25,14 +25,17 @@
 - **日志隐私**：默认 `LOG_MESSAGE_MODE=hash`，落盘的是 `hash#长度#前 20 字`，不是整段提问；需要排查时显式改 preview。
 - **异常不外泄**：统一错误信封 `{error,message,requestId}`，5xx 固定文案「服务内部错误」，堆栈只进服务端日志。
 - **Actuator 面最小**：只暴露 `health,info`（`management.endpoints.web.exposure.include`）。
+- **请求体上限**：`RequestSizeLimitFilter` 拦下超过 64KB 的写请求（413 + 统一错误信封），避免超大 JSON 先进内存；无 `Content-Length` 的写请求一律按超限处理。
+- **限流键默认不信任 `X-Forwarded-For`**：该头客户端可写，采信它等于让调用方自己挑限流桶（每次换一个值就是一个新桶，`CHAT_RATE_PER_MIN` 失效）。默认取 `remoteAddr`；仅当显式 `TRUST_FORWARDED_FOR=true`（且反代会剥离同名头）时才取转发头首个地址。实测：默认配置下每次换伪造头仍第 31 次 429；开关打开后 35 次不同头各自成桶。
 
 ## 三、已接受的风险（不是疏忽，是权衡）
 
 1. **`/api/knowledge/list` 无鉴权**：它是对外契约的一部分（冒烟脚本在跑），会返回知识文件名、分块数与同义词摘要。局域网展厅内泄露面很小；要收紧就给它加 `AdminGuard` 并让冒烟带 token。
 2. **`/api/health` 暴露绝对路径**（`knowledgeDir`/`dataDir`/索引文件）：运营排查要用。若部署在不受控网络，建议在反代层只放行 `/api/chat*` 与 `/`，其余接口限内网。
-3. **请求体无大小上限**：消息正文会被截到 2000 字，但超大 JSON 仍会先进内存（Tomcat 的 `maxPostSize` 只管表单）。建议在反代加 `client_max_body_size 64k`，或加一个读 `Content-Length` 的过滤器。
+3. **请求体上限只做在应用层（64KB）**：消息正文会被截到 2000 字，超大 JSON 已在过滤器里被 413 拦掉；反代侧仍建议再加一道 `client_max_body_size 64k`（两道防线不冲突）。
 4. **日志保留提问前 20 字**：可读性与隐私的折中，可用 `LOG_MESSAGE_MODE` 调到纯 hash。
-5. **启动窗口竞态**：`/api/health` 在 `ApplicationReadyEvent` 的会话恢复完成前就可能回 200，这段时间 `GET /api/sessions/{id}` 可能 404（影响：重启后头几百毫秒的追问拿不到上文）。展厅重启不频繁，暂不改。
+5. **会话接口无鉴权**：`GET /api/sessions/{id}` 只凭 `sessionId` 返回该会话的消息列表。sessionId 是前端生成的随机串（不可猜），但拿到它的人能读到这段对话；展厅场景内网、无敏感内容，暂不加鉴权。要收紧就给它加 `AdminGuard`。
+6. **启动窗口竞态**：`/api/health` 在 `ApplicationReadyEvent` 的会话恢复完成前就可能回 200，这段时间 `GET /api/sessions/{id}` 可能 404（影响：重启后头几百毫秒的追问拿不到上文）。展厅重启不频繁，暂不改。
 
 ## 四、上线检查清单（展厅部署前逐条过）
 

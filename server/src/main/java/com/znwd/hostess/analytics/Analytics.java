@@ -41,6 +41,15 @@ public class Analytics {
     private final DatabaseStatus databaseStatus;
     private final int maxUncovered;
 
+    /**
+     * 未覆盖问题的落库长度上限，与 `uncovered_question.question` 的列宽一致。
+     *
+     * <p>访客提问在入参阶段被截到 2000 字，而这一列是 varchar(512)：不在这里截断就会
+     * `DataTruncation`，被下面的 catch 变成一条 WARN——接口照常回 200，运营的补资料清单却悄悄少一条。
+     * 内存清单用同一个值，免得「重启后同一条问题变短」。
+     */
+    private static final int UNCOVERED_QUESTION_MAX = 512;
+
     private final List<ChatLogEntry> logs = new ArrayList<>();
     private final List<FeedbackEntry> feedback = new ArrayList<>();
     private final List<UncoveredEntry> uncovered = new ArrayList<>();
@@ -58,6 +67,11 @@ public class Analytics {
         return databaseStatus == null || databaseStatus.shouldAttempt();
     }
 
+    /** 按列宽截断：超长写库会 DataTruncation，而这条失败路径只会留一条 WARN（数据悄悄丢） */
+    private static String clip(String value, int max) {
+        return value == null || value.length() <= max ? value : value.substring(0, max);
+    }
+
     public Analytics(@Nullable ChatLogMapper chatLogMapper, @Nullable FeedbackMapper feedbackMapper,
                      @Nullable UncoveredMapper uncoveredMapper, @Nullable DatabaseStatus databaseStatus,
                      int uncoveredLogSize) {
@@ -69,6 +83,8 @@ public class Analytics {
     }
 
     public void logChat(ChatLogEntry item) {
+        // 先按列宽截断：超长插入会 DataTruncation，被 catch 成 WARN 后接口照样 200，清单却少一条
+        String uncoveredQuestion = clip(item.questionForUncovered(), UNCOVERED_QUESTION_MAX);
         // 内存部分加锁、数据库写在锁外：库慢不能拖住其它请求（问答热路径只碰内存）
         synchronized (this) {
             chatTotal++;
@@ -94,8 +110,8 @@ public class Analytics {
                         ? usage.totalTokens()
                         : nullToZero(usage.promptTokens()) + nullToZero(usage.completionTokens());
             }
-            if (item.noHit() && item.questionForUncovered() != null && maxUncovered > 0) {
-                uncovered.add(0, new UncoveredEntry(item.at(), item.sessionId(), item.questionForUncovered()));
+            if (item.noHit() && uncoveredQuestion != null && maxUncovered > 0) {
+                uncovered.add(0, new UncoveredEntry(item.at(), item.sessionId(), uncoveredQuestion));
                 while (uncovered.size() > maxUncovered) {
                     uncovered.remove(uncovered.size() - 1);
                 }
@@ -115,9 +131,9 @@ public class Analytics {
         }
         // 未覆盖问题单独成表：它是运营补资料的待办清单，重启后必须还在
         if (uncoveredMapper != null && maxUncovered > 0 && dbWritable()
-                && item.noHit() && item.questionForUncovered() != null) {
+                && item.noHit() && uncoveredQuestion != null) {
             try {
-                uncoveredMapper.insert(new UncoveredEntry(item.at(), item.sessionId(), item.questionForUncovered()));
+                uncoveredMapper.insert(new UncoveredEntry(item.at(), item.sessionId(), uncoveredQuestion));
             } catch (RuntimeException e) {
                 log.warn("[analytics] 未覆盖问题落库失败：{}", e.getMessage());
             }

@@ -93,6 +93,9 @@ znwd:
   log-max-bytes: ${LOG_MAX_BYTES:5000000}
   log-message-mode: ${LOG_MESSAGE_MODE:hash}
   cors-origins: ${CORS_ORIGINS:}
+  # 是否信任 X-Forwarded-For 作为限流键：默认 false（那个头客户端可写，采信它=限流可被绕过）。
+  # 只有确认前面挂着自家反代且反代会剥离同名头时才设为 true。
+  trust-forwarded-for: ${TRUST_FORWARDED_FOR:false}
   llm:
     provider: ${LLM_PROVIDER:mock}
     base-url: ${LLM_BASE_URL:}

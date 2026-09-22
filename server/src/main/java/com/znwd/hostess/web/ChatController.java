@@ -27,6 +27,7 @@ import com.znwd.hostess.analytics.Analytics;
 import com.znwd.hostess.config.AppProperties;
 import com.znwd.hostess.domain.FeedbackEntry;
 import com.znwd.hostess.http.ApiError;
+import com.znwd.hostess.http.ClientIp;
 import com.znwd.hostess.http.JsonlStore;
 import com.znwd.hostess.http.RateLimiter;
 import com.znwd.hostess.http.RequestParser;
@@ -215,7 +216,8 @@ public class ChatController {
     }
 
     private void rateLimit(HttpServletRequest request) {
-        Long wait = limiter.allow(clientIp(request));
+        Long wait = limiter.allow(ClientIp.of(request.getHeader("x-forwarded-for"),
+                request.getRemoteAddr(), props.trustForwardedFor()));
         if (wait != null) {
             throw ApiException.rateLimited(wait);
         }
@@ -240,16 +242,6 @@ public class ChatController {
 
     /** 客户端断开（关闭浏览器/切屏）——不是服务端错误，按正常收尾处理 */
     private static class ClientGoneException extends RuntimeException {
-    }
-
-    /** 反代后取真实客户端 IP：优先 X-Forwarded-For 首个地址 */
-    private static String clientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("x-forwarded-for");
-        if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",")[0].strip();
-        }
-        String remote = request.getRemoteAddr();
-        return remote == null ? "unknown" : remote;
     }
 
     private static String cut(String s, int max) {

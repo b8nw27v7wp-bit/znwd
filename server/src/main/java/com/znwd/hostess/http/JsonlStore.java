@@ -10,6 +10,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
@@ -69,7 +70,12 @@ public class JsonlStore {
 
     public void append(Map<String, Object> obj) {
         Map<String, Object> payload = prepare(obj);
-        writer.execute(() -> write(payload));
+        try {
+            writer.execute(() -> write(payload));
+        } catch (RejectedExecutionException e) {
+            // 优雅关闭窗口里还有请求进来：日志丢一条可以接受，别把异常抛给问答请求
+            log.debug("[jsonl] 写入线程已关闭，丢弃一条日志：{}", file);
+        }
     }
 
     private void write(Map<String, Object> payload) {

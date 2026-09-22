@@ -17,6 +17,7 @@ public final class ApiError {
     public static final String UNSUPPORTED_MEDIA_TYPE = "unsupported_media_type";
     public static final String UNAUTHORIZED = "unauthorized";
     public static final String RATE_LIMITED = "rate_limited";
+    public static final String PAYLOAD_TOO_LARGE = "payload_too_large";
     public static final String INTERNAL_ERROR = "internal_error";
 
     private ApiError() {
