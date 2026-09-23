@@ -2,9 +2,11 @@ package com.znwd.hostess.knowledge;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Hybrid 检索：关键词路与语义向量路 RRF 融合 + 相关性闸门。
@@ -24,7 +26,17 @@ public class HybridRetriever {
      * <p>改语料、改同义词表之后重跑标定再动这个数，不要凭手感调。
      */
     public static final double DEFAULT_MIN_KEYWORD_SCORE = 6.3;
-    public static final double DEFAULT_MIN_VECTOR_SCORE = 0.35;
+
+    /**
+     * 语义兜底阈值：关键词没过阈值时，余弦 ≥ 它才放行（否则判定域外）。
+     *
+     * <p>0.75 是「关闭兜底」的意思：2026-09-23 用真 bge-m3 向量标定（209 块语料）显示
+     * 域外最高余弦 0.6826（「扫地机器人多少钱？」）<b>高于</b>被误拦的在域用例
+     * （probe-64 0.6389 / probe-75 0.6725），区间不成立——口子一开必然先放域外问题进来。
+     * 所以语义向量只参与排序融合，不单独放行；误拦靠补语料/补同义词解决。
+     * 补完语料重跑 calibrate，看 vectorHatchSeparated 再决定。
+     */
+    public static final double DEFAULT_MIN_VECTOR_SCORE = 0.75;
 
     private static final int RRF_K = 60;
     private static final double RRF_BOTH_BONUS = 0.01;
@@ -129,7 +141,14 @@ public class HybridRetriever {
         List<RetrievedChunk> useKeyword = gated ? List.of() : kw;
         // 非语义向量（bag 哈希兜底）不参与排序融合：它不是相似度，融合进来只会打乱关键词路的排序，
         // 而 mode 却如实上报 keyword —— 上报与行为不一致最难排查。
-        List<VectorHit> useVector = gated || !semantic ? List.of() : vec;
+        //
+        // 语义向量也只在「关键词没过闸门、靠余弦救回来」时才接管排序。实测让它参与普通查询的排序，
+        // top1 会掉两例（doc-08 / probe-45「运维方案能自动生成吗」被话题相邻的「项目背景与需求」
+        // 顶掉，RRF 给双路命中的块加权，关键词路的第一名反而被压下去）——而关键词路在这套语料上
+        // 本来就 137/137。语义路的职责是救回关键词够不着的问法，不是在关键词已答对时重排。
+        // 另外：向量只对关键词候选重排、不新增候选，扩候选是闸门的事。
+        boolean hatchPath = !keywordPass && vectorPass;
+        List<VectorHit> useVector = gated || !semantic || !hatchPath ? List.of() : withinKeyword(kw, vec);
 
         RetrievalMode mode = semantic && !useVector.isEmpty() ? RetrievalMode.HYBRID : RetrievalMode.KEYWORD;
         List<HybridHit> fused = rrfFuse(useKeyword, useVector);
@@ -152,6 +171,18 @@ public class HybridRetriever {
     public HybridStats stats() {
         boolean semantic = vectors.semantic();
         VectorStats vs = vectors.stats();
+        String degradedReason;
+        if (!vectors.supportsSemantic()) {
+            degradedReason = "EMBED_PROVIDER=bag（特征哈希，非语义向量）";
+        } else if (vectors.degradedReason() != null) {
+            degradedReason = vectors.degradedReason();
+        } else if (!vectors.queryHealthy()) {
+            degradedReason = "查询期向量化失败（最近错误：" + vectors.lastQueryError() + "），检索已退回仅关键词";
+        } else if (vs.vectors() == 0) {
+            degradedReason = "向量索引为空（尚未构建）";
+        } else {
+            degradedReason = null;
+        }
         return new HybridStats(
                 semantic && vs.vectors() > 0 ? RetrievalMode.HYBRID : RetrievalMode.KEYWORD,
                 snapshot.keyword().list().size(),
@@ -159,8 +190,26 @@ public class HybridRetriever {
                 snapshot.ready(),
                 snapshot.gen(),
                 semantic,
-                semantic ? null : "EMBED_PROVIDER=bag（特征哈希，非语义向量）",
+                degradedReason,
                 new RetrievalDiagnostics.Thresholds(minKeywordScore, minVectorScore));
+    }
+
+    /** 只保留同时出现在关键词候选里的向量命中：向量路负责排序，不负责扩候选 */
+    private static List<VectorHit> withinKeyword(List<RetrievedChunk> keyword, List<VectorHit> vector) {
+        if (vector.isEmpty()) {
+            return List.of();
+        }
+        Set<String> ids = new HashSet<>();
+        for (RetrievedChunk c : keyword) {
+            ids.add(c.chunk().id());
+        }
+        List<VectorHit> out = new ArrayList<>();
+        for (VectorHit v : vector) {
+            if (ids.contains(v.id())) {
+                out.add(v);
+            }
+        }
+        return out;
     }
 
     private static List<HybridHit> rrfFuse(List<RetrievedChunk> keyword, List<VectorHit> vector) {

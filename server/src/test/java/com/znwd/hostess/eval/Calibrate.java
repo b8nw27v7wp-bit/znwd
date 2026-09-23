@@ -40,8 +40,9 @@ import com.znwd.hostess.knowledge.ScoringOptions;
  * 参数：
  *   --grid        额外跑打分参数网格搜索
  *   --no-write    只打印，不写 docs/eval/calibration-*.json
- *   --gate-check  只看闸门余量：域外最高分（闸门实际口径）不得越线，越线退出码 3
- *   退出码：区间不成立 → 2；--gate-check 下域外越线 → 3
+ *   --gate-check  只守两条「域外不越线」：关键词域外最高分不得过阈值（越线退出码 3）、
+ *                 语义域外最高余弦不得过 MIN_VECTOR_SCORE（越线退出码 4）
+ *   退出码：区间不成立 → 2；关键词越线 → 3；语义兜底越线 → 4
  * </pre>
  */
 public final class Calibrate {
@@ -77,6 +78,12 @@ public final class Calibrate {
                 ood.add(measure(retriever, "ood-" + i, EvalSupport.OUT_OF_DOMAIN.get(i)));
             }
             ood.sort(Comparator.comparingDouble(Sample::keywordBest).reversed());
+
+            List<Sample> oodNear = new ArrayList<>();
+            for (int i = 0; i < EvalSupport.OUT_OF_DOMAIN_NEAR.size(); i++) {
+                oodNear.add(measure(retriever, "near-" + i, EvalSupport.OUT_OF_DOMAIN_NEAR.get(i)));
+            }
+            oodNear.sort(Comparator.comparingDouble(Sample::vectorBest).reversed());
 
             System.out.println("\n== 在域用例：关键词分最弱的 8 条（越弱越可能被闸门误拦）==");
             inDomain.stream().limit(8).forEach(s -> System.out.println("  " + s.line()));
@@ -140,6 +147,57 @@ public final class Calibrate {
             System.out.printf("参考：命中词条数 在域最低=%d 域外最高=%d（该维度不足以单独区分，仅作观察）%n",
                     minCovIn, maxCovOod);
 
+            // ── 语义兜底（MIN_VECTOR_SCORE）标定 ──────────────────────────────
+            // 兜底口子的危险面和关键词闸门相反：不是「拦太多」，而是「放太宽」——
+            // 域外问题的余弦天然不低（话题相邻就更不低），开大了等于给闸门开了个侧门。
+            double effectiveVector = retriever.stats().thresholds().minVectorScore();
+            boolean semanticNow = retriever.stats().semantic();
+            // 判据必须与闸门一致：闸门比的是**排序分**（keywordBestScore，含同义词扩展），
+            // 不是只算原话的 keywordGateScore。用错口径会报出「误拦 2 条」而线上其实 0 条误拦
+            // （2026-09-23 补了「客户」「融资」同义词后就是这样：原话分 4.90/5.90 没到 6.3，
+            // 但排序分已经过了闸门）。
+            List<Sample> gatedInDomain = inDomain.stream()
+                    .filter(s -> s.rankingBest() < effective)
+                    .sorted(Comparator.comparingDouble(Sample::vectorBest))
+                    .toList();
+            double maxOodVector = Math.max(
+                    ood.isEmpty() ? 0 : ood.stream().mapToDouble(Sample::vectorBest).max().orElse(0),
+                    oodNear.isEmpty() ? 0 : oodNear.stream().mapToDouble(Sample::vectorBest).max().orElse(0));
+            double minGatedVector = gatedInDomain.isEmpty() ? 0 : gatedInDomain.get(0).vectorBest();
+            boolean hatchSeparated = !gatedInDomain.isEmpty() && maxOodVector < minGatedVector;
+
+            System.out.printf("%n== 语义兜底阈值（MIN_VECTOR_SCORE，当前生效 %.2f，语义路%s）==%n",
+                    effectiveVector, semanticNow ? "已启用" : "未启用（bag）");
+            System.out.printf("  被关键词闸门误拦、需要兜底救回的在域用例：%d 条（排序分口径，与闸门一致）%n", gatedInDomain.size());
+            gatedInDomain.forEach(s -> System.out.println("    " + s.line()));
+            System.out.println("  近域域外样本（余弦降序，卡兜底口子用）：");
+            oodNear.forEach(s -> System.out.println("    " + s.line()));
+            System.out.printf("  域外最高余弦=%.4f  待救在域最低余弦=%.4f → %s%n",
+                    maxOodVector, minGatedVector, hatchSeparated ? "区间可用" : "无可用区间");
+            if (hatchSeparated) {
+                double suggestedVector = EvalSupport.round((maxOodVector + minGatedVector) / 2, 2);
+                System.out.printf("  建议 MIN_VECTOR_SCORE=%.2f（当前 %.2f）%n", suggestedVector, effectiveVector);
+            } else {
+                System.out.println("  建议：MIN_VECTOR_SCORE 设到域外最高余弦之上——语义向量不参与普通查询排序"
+                        + "（关键词路答得对的时候不让它插手，实测插手会顶掉 top1），"
+                        + "只保留「关键词没过闸门时兜底 + 诊断里给余弦」两种用途；误拦靠补语料/补同义词解决");
+            }
+            if (semanticNow && maxOodVector >= effectiveVector) {
+                System.out.printf("  警告：生效阈值 %.2f 低于域外最高余弦 %.4f —— 域外问题会被语义兜底放行%n",
+                        effectiveVector, maxOodVector);
+            }
+            // 语义兜底阈值相关：域外最高余弦是硬边界，被误拦用例的最低余弦是它要救的对象
+            report.put("effectiveMinVectorScore", EvalSupport.round(effectiveVector, 4));
+            report.put("maxOutOfDomainVector", EvalSupport.round(maxOodVector, 4));
+            report.put("minGatedInDomainVector", EvalSupport.round(minGatedVector, 4));
+            report.put("outOfDomainNear", rows(oodNear));
+            report.put("gatedInDomainWeakest", rows(gatedInDomain));
+            report.put("vectorHatchSeparated", hatchSeparated);
+            if (hatchSeparated) {
+                report.put("suggestedMinVectorScore",
+                        EvalSupport.round((maxOodVector + minGatedVector) / 2, 2));
+            }
+
             if (withGrid) {
                 report.put("scoringGrid", grid(knowledge, set));
             }
@@ -153,6 +211,14 @@ public final class Calibrate {
                 // 拿它当失败条件会让 CI 长期红着，反而没人看。
                 if (!gateSafe) {
                     System.exit(3);
+                }
+                // 语义兜底同样守「域外不越线」：开了语义路之后，域外问题可以绕过关键词闸门
+                // 从余弦这边进来，所以这条线和上面那条一起守。
+                boolean hatchSafe = !semanticNow || maxOodVector < effectiveVector;
+                if (!hatchSafe) {
+                    System.out.printf("兜底越线：域外最高余弦 %.4f ≥ 生效 MIN_VECTOR_SCORE %.2f%n",
+                            maxOodVector, effectiveVector);
+                    System.exit(4);
                 }
             } else if (!separated) {
                 System.exit(2);

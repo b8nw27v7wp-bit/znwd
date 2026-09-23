@@ -27,11 +27,12 @@ cd server && ../tools/mvn -B test        # 等价于 mvn -B test
 | 目的 | 命令（工作目录） | 预期输出 |
 | --- | --- | --- |
 | 起后端 | `cd server && ../tools/mvn spring-boot:run` | `Tomcat started on port 8787` / `Started HostessApplication` |
-| 单测 | `cd server && ../tools/mvn -B test` | `Tests run: 77, Failures: 0, Errors: 0` |
+| 单测 | `cd server && ../tools/mvn -B test` | `Tests run: 83, Failures: 0, Errors: 0` |
 | 检索评测 | `cd server && ../tools/mvn -B test-compile exec:java@eval -Dexec.args="--no-write"` | `top1Rate = 1.0`、`top3Rate = 1.0`、`gateBlockedCount = 2`（两条已知弱问句）、`minKeywordScore = 6.3` |
-| 阈值标定 | `cd server && ../tools/mvn -B test-compile exec:java@calibrate` | 在域最弱 8 条、域外降序、区间与建议；**区间判据与闸门口径不一致，先读 `docs/eval.md` 的说明**；`--grid` 再加 36 组参数网格；`--gate-check` 只判闸门余量（域外最高分不得越线，越线退出码 3，CI 用的就是这条）；报告落 `docs/eval/calibration-*.json` |
+| 阈值标定 | `cd server && ../tools/mvn -B test-compile exec:java@calibrate` | 在域最弱 8 条、域外降序、区间与建议、**语义兜底标定**（域外最高余弦 vs 待救用例）；**区间判据与闸门口径不一致，先读 `docs/eval.md` 的说明**；`--grid` 再加 36 组参数网格；`--gate-check` 判两条线（关键词域外越线退出码 3、语义余弦越线退出码 4，CI 用的就是这条）；报告落 `docs/eval/calibration-*.json` |
 | 资料入库 | `cd server && ../tools/mvn -B -q test-compile exec:java@ingest -Dexec.args="--src ./inbox --zone <展区id>"`（`--dry-run` 先看目标路径） | `完成：N/M 入库`；扫描件 PDF 与 `.doc` 明确报错；用法见 `docs/knowledge.md` §8 |
 | 接口冒烟 | `python tools/smoke.py`（需服务在跑，`BASE=http://…` 可改目标） | `通过 56 项，失败 0 项` |
+| 问答内容验收 | `python tools/acceptance.py`（需服务 + 真模型在跑；`TAGS=fix,fact` 可只跑一组） | `通过 40 项，失败 0 项`（内容层：该答的答对、该拒的拒、资料里没有的不许编；CI 跑不了，要真模型） |
 | 边界与安全 | `python tools/security.py`（同上；非回环越权与误配置组见 `docs/security-testing.md`） | `通过 49 项，失败 0 项`（只跑主实例）／`57 项`（另起两个实例时） |
 | 库层核查 | `python tools/db-check.py`（需本机 mysql 客户端：`MYSQL_BIN` 或候选路径 `D:/mysql-cli/mysql-8.4.0-winx64/bin/mysql.exe`；缺客户端整组 SKIP） | `通过 8 项，失败 0 项` |
 | 本地化不变量 | `python tools/offline-check.py`（`--runtime` 追加运行期核查） | `通过 5 项，失败 0 项` |

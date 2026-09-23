@@ -1,6 +1,6 @@
 {
   "openapi": "3.0.0",
-  "info": { "title": "Virtual Hostess API", "version": "1.2.0" },
+  "info": { "title": "Virtual Hostess API", "version": "1.3.0" },
   "servers": [{ "url": "/" }],
   "components": {
     "schemas": {
@@ -139,7 +139,7 @@
     }
   },
   "paths": {
-    "/api/health": { "get": { "summary": "运行状态", "responses": { "200": { "description": "健康信息（含检索模式、阈值、CORS 白名单）" } } } },
+    "/api/health": { "get": { "summary": "运行状态", "responses": { "200": { "description": "健康信息（含检索模式、embeddingReady、阈值、CORS 白名单）" } } } },
     "/api/chat": {
       "post": {
         "summary": "问答（非流式）",

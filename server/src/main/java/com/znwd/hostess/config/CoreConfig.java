@@ -41,7 +41,14 @@ public class CoreConfig {
             AppProperties.Embed embed = props.embed();
             String baseUrl = firstNonBlank(embed.baseUrl(), props.llm().baseUrl());
             String apiKey = firstNonBlank(embed.apiKey(), props.llm().apiKey());
-            log.info("[embed] provider=openai_compat model={} dims={}", embed.model(), embed.dims());
+            if (isBlank(embed.baseUrl())) {
+                // 回落到 LLM_BASE_URL 是老行为（同一个网关既对话又做 embedding），但现在的对话网关
+                // （小米 MiMo）并没有 embedding 模型：回落过去只会拿到 404，所以必须喊出来。
+                log.warn("[embed] 未配置 EMBED_BASE_URL，回落到 LLM_BASE_URL={}（若该网关没有 embeddings 接口，"
+                        + "向量构建会失败并退化为仅关键词）", baseUrl);
+            }
+            log.info("[embed] provider=openai_compat model={} dims={} batch={} baseUrl={}",
+                    embed.model(), embed.dims(), embed.batchSize(), baseUrl);
             return new OpenAiCompatEmbeddingProvider(baseUrl, apiKey, embed.model(), embed.dims(),
                     Duration.ofMillis(embed.timeoutMs()), mapper);
         }
@@ -54,7 +61,8 @@ public class CoreConfig {
 
     @Bean
     public VectorStore vectorStore(EmbeddingProvider embedder, AppProperties props, ObjectMapper mapper) {
-        return new VectorStore(embedder, props.indexDirPath().resolve("vectors." + embedder.name() + ".json"), mapper);
+        return new VectorStore(embedder, props.indexDirPath().resolve("vectors." + embedder.name() + ".json"), mapper,
+                props.embed() == null ? 32 : props.embed().batchSize());
     }
 
     @Bean
@@ -108,5 +116,9 @@ public class CoreConfig {
 
     private static String firstNonBlank(String a, String b) {
         return a == null || a.isBlank() ? (b == null ? "" : b) : a;
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 }

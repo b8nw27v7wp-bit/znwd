@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
-"""本地化不变量核查：**除大模型之外，一切都要能在不联网的机器上跑**。
+"""本地化不变量核查：**除大模型与 embedding 服务之外，一切都要能在不联网的机器上跑**。
 
 这条要求是部署一体机时定下来的，但它很容易被一次「顺手引个 CDN 字体」「加个埋点」
 悄悄破坏——所以写成可执行的检查，而不是靠发布前手查一遍。
+
+embedding 走云端（EMBED_PROVIDER=openai_compat 指向外部服务）之后，出网口从「大模型一个」
+变成「大模型 + embedding 两个」；要求相应变成两条：**出网只允许这两个适配器**，
+**且这两个依赖不可用时服务仍要能答**（embedding 不通 → 退回仅关键词并在 health 说明原因，
+见 O06；大模型不通 → 见 O07）。
 
     python tools/offline-check.py            # 源码 + 前端产物 + 依赖清单
     python tools/offline-check.py --runtime   # 追加运行期核查（需要服务在跑）
@@ -10,9 +15,11 @@
 四类检查：
   O01  前端产物（web/dist）里没有需要联网的引用（字体 CDN、脚本 CDN、图片外链、埋点）
   O02  前端产物里没有已知的第三方 CDN/埋点域名
-  O03  后端源码里能发起网络连接的入口只有 LLM/Embedding 两个适配器
-  O04  依赖清单（pom.xml / package.json）里没有联网 SDK 或遥测库
-  O05  （--runtime）跑着的服务的 LLM provider 与预期一致，且拒答/检索/落库不依赖外网
+  O03  index.html 只引本地产物（相对路径）
+  O04  后端源码里能发起网络连接的入口只有 LLM/Embedding 两个适配器
+  O05  依赖清单（pom.xml / package.json）里没有联网 SDK 或遥测库
+  O06  （--runtime）语义路状态与检索模式自洽：不可用时必须上报原因并退回仅关键词
+  O07  （--runtime）答案链路可降级：mock 模式下整条链路无外呼
 
 O03 是这套检查里最有价值的一条：它盯的是「有人新加了一处出网调用」，而不是某一次发布。
 退出码 0 = 全部通过，1 = 有断言失败。
@@ -65,7 +72,7 @@ KNOWN_CDN = [
     "google-analytics.com", "googletagmanager.com", "sentry.io", "umami.is", "hm.baidu.com", "cnzz.com",
 ]
 
-print("== O 组：本地化不变量（除 LLM 外一律本地）\n")
+print("== O 组：本地化不变量（除大模型与 embedding 服务外一律本地）\n")
 print("== O01/O02 前端产物")
 if not DIST.is_dir():
     skip("O01 前端产物无联网引用", "web/dist 不存在（先 npm run build）")
@@ -144,11 +151,21 @@ if RUNTIME:
     try:
         with urllib.request.urlopen(BASE + "/api/health", timeout=10) as res:
             health = json.loads(res.read().decode("utf-8"))
+        retrieval = health.get("retrieval") or {}
+        vector = retrieval.get("vector") or {}
         print(f"        服务：{BASE} llmProvider={health.get('llmProvider')} "
-              f"embedding={health.get('embedding')} storageAvailable={health.get('storageAvailable')}")
-        check("O06 检索与落库都在本地（embedding=bag 时不依赖外部向量服务）",
-              health.get("embedding") in ("bag", "openai_compat"),
-              f"embedding={health.get('embedding')}")
+              f"embedding={health.get('embedding')} embeddingReady={health.get('embeddingReady')} "
+              f"mode={retrieval.get('mode')} storageAvailable={health.get('storageAvailable')}")
+        # 语义路走外部服务之后，判据从「一切都在本地」改成「状态与行为自洽」：
+        # 能用就必须报 hybrid，不能用就必须报原因 + 退回仅关键词（关键词路本来就能独立答）。
+        ready = health.get("embeddingReady")
+        mode = retrieval.get("mode")
+        reason = retrieval.get("degradedReason")
+        check("O06 语义路状态与检索模式自洽（不可用时给出原因并退回关键词）",
+              (ready is True and mode in ("hybrid", "keyword"))
+              or (ready is False and mode == "keyword" and bool(reason)),
+              f"embeddingReady={ready} mode={mode} degradedReason={reason} "
+              f"queryFailures={vector.get('queryFailures')} lastQueryError={vector.get('lastQueryError')}")
         check("O07 答案链路可降级：mock 模式下整条链路无外呼",
               health.get("llmProvider") == "mock" or os.environ.get("ALLOW_REAL_LLM") == "1",
               f"当前 llmProvider={health.get('llmProvider')}；要么用 mock 起服务，要么设 ALLOW_REAL_LLM=1 明确认账")
@@ -161,6 +178,7 @@ print("\n== 汇总 ==")
 print(f"通过 {passed} 项，失败 {len(failed)} 项，跳过 {len(skipped)} 项")
 for name in failed:
     print(f"  FAIL  {name}")
-print("\n判据：《除大模型之外，一切都要在离线机器上能跑》。命中一项失败时，"
+print("\n判据：《除大模型与 embedding 服务之外，一切都要在离线机器上能跑；"
+      "这两个依赖不可用时，服务必须还能按关键词路答》。命中一项失败时，"
       "要么去掉那个联网用法，要么把该文件加进本脚本的白名单并说明理由。")
 sys.exit(1 if failed else 0)

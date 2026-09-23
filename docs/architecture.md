@@ -77,10 +77,13 @@ knowledge/  ──KnowledgeLoader──▶  块（title/zone/tags/正文）
                               HybridRetriever：RRF 融合 + 相关性闸门
 ```
 
-- **命中判定**：关键词路最高分 ≥ `MIN_RELEVANCE_SCORE`（默认 6.3）→ 命中；否则看语义向量路（`semantic=true` 且余弦 ≥ `MIN_VECTOR_SCORE`）。
+- **命中判定**：关键词路最高分 ≥ `MIN_RELEVANCE_SCORE`（默认 6.3）→ 命中；否则看语义向量路（`semantic=true` 且余弦 ≥ `MIN_VECTOR_SCORE`）→ 兜底命中；两路都不达标才拒答。
+- **语义向量不参与普通查询的排序**（2026-09-23 实测定的）：真 bge-m3 向量接上后让它参与 RRF 融合，137 条计分用例的 top1 从 1.0 掉到 0.9854（doc-08 / probe-45「运维方案能自动生成吗」被话题相邻的「项目背景与需求」顶掉）。规则因此收成：关键词路过了闸门就按关键词路排序，语义向量只在**关键词没过闸门、靠余弦救回**时接管排序，且只对关键词候选重排、不新增候选（扩候选是闸门的事）。
+- **兜底口子当前是关着的**：标定显示域外最高余弦 0.6801（「扫地机器人多少钱？」），而补同义词后已没有「被误拦、需要兜底救回」的在域用例（0 条），区间无从成立——开口子必然先把域外问题放进来，所以 `MIN_VECTOR_SCORE=0.75`（等价于关闭兜底）。误拦靠补语料/补同义词解决。
 - **非语义向量不参与融合**：`bag` 是哈希兜底、不是相似度，融进去只会打乱关键词路排序，而 `mode` 仍如实上报 `keyword`——上报与行为不一致最难排查。此时它只做诊断上报。
-- **模式如实上报**：只有语义向量真的参与融合才是 `hybrid`，否则 `keyword`（附 `degradedReason`）。
-- **同义词**：内置 23 组在 `Synonyms`，可用 `knowledge/_meta/synonyms.tsv` 覆盖或走 `PUT /api/admin/synonyms` 在线替换；**查询期展开**，改完立即生效、无需重建索引。
+- **模式如实上报**：只有语义向量真的参与排序（兜底路径）才是 `hybrid`，否则 `keyword`（附 `degradedReason`）。语义路可用但没被用到的查询报 `keyword`，这是如实上报而不是降级。
+- **语义路可降级**：embedding 走外部服务，它不通时**不阻塞启动、也不报错给访客**——构建失败退回仅关键词并记 `degradedReason`；查询期失败只影响本次检索、计数进 `queryFailures`/`lastQueryError` 并在 `/api/health` 的 `embeddingReady=false` 上体现，下一次成功自愈。
+- **同义词**：内置 30 组在 `Synonyms`，可用 `knowledge/_meta/synonyms.tsv` 覆盖或走 `PUT /api/admin/synonyms` 在线替换；**查询期展开**，改完立即生效、无需重建索引。
 - **诊断出口**：`RetrievalDiagnostics` + `RetrievalVerdict` 把「为什么被拦/命中」翻成一句人话，由 `/api/admin/diagnostics` 暴露。
 - **换代原子性**：`HybridRetriever` 用 `volatile Snapshot(gen, keyword, ready)`，reload 时关键词快照与向量索引同代切换，检索中不会混代。
 
@@ -155,7 +158,7 @@ MySQL 表（`resources/schema.sql`，全部 `CREATE TABLE IF NOT EXISTS`）：
 | 常量 | 值 | 位置 |
 | --- | --- | --- |
 | 闸门阈值 `minKeywordScore` | 6.3（真实问句口径下域外零漏放的最优覆盖点） | `application.yml` / `HybridRetriever` |
-| 语义向量阈值 `minVectorScore` | 0.35 | 同上 |
+| 语义向量阈值 `minVectorScore` | 0.75（= 关闭兜底：域外最高余弦 0.6826 高于待救用例，区间不成立） | 同上 |
 | 检索 topK | 4 | `RagPipeline.DEFAULT_TOP_K` |
 | 拼上下文的历史条数 | 12 | `RagPipeline.MAX_HISTORY_MESSAGES` |
 | 分块上限 / 重叠 | 500 / 80 字符 | `TextChunker` |

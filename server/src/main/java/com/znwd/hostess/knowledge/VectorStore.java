@@ -11,7 +11,11 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -29,21 +33,43 @@ import com.znwd.hostess.embedding.Vectors;
  *   <li>非语义 provider（bag）的向量不参与融合与闸门兜底，由 {@link #semantic()} 上报。</li>
  * </ul>
  * 索引文件格式与旧 Node 版一致（version/provider/dims/fingerprint/updatedAt/items），可直接沿用。
+ *
+ * <p><b>语义路可降级</b>：provider 走的是外部服务（云端 embedding 或本机服务），它不通时
+ * <b>不能让整个展板跟着不可用</b>——关键词路本来就能独立支撑（137/137 全靠它）。
+ * 所以构建/查询失败一律记为降级原因并退回空向量，由 {@link #degradedReason()} 与
+ * {@code /api/health} 显式上报，而不是抛出去把启动或请求带崩。
  */
 public class VectorStore {
 
+    private static final Logger log = LoggerFactory.getLogger(VectorStore.class);
+
     private static final int INDEX_VERSION = 1;
-    private static final int BATCH = 32;
+
+    /** provider 的单请求批次上限各不相同（本地 bge 可以大、云服务常见 10~32），由 EMBED_BATCH_SIZE 定 */
+    private static final int DEFAULT_BATCH = 32;
 
     private final EmbeddingProvider embedder;
     private final Path indexFile;
     private final ObjectMapper mapper;
+    private final int batchSize;
     private final AtomicReference<VecData> data = new AtomicReference<>(VecData.empty());
 
+    /** 语义路不可用的原因（构建失败等）；null = 正常。语义路「能力」与「当下能不能用」是两件事，见 semantic() */
+    private volatile String degradedReason;
+    private final AtomicInteger queryFailures = new AtomicInteger();
+    private volatile String lastQueryError;
+    /** 查询期向量化最近是否成功：失败置 false，下一次成功自愈。用来发现「索引在、但每次查询都在失败」 */
+    private volatile boolean queryHealthy = true;
+
     public VectorStore(EmbeddingProvider embedder, Path indexFile, ObjectMapper mapper) {
+        this(embedder, indexFile, mapper, DEFAULT_BATCH);
+    }
+
+    public VectorStore(EmbeddingProvider embedder, Path indexFile, ObjectMapper mapper, int batchSize) {
         this.embedder = embedder;
         this.indexFile = indexFile;
         this.mapper = mapper;
+        this.batchSize = Math.max(1, batchSize);
     }
 
     /** 供检索端固定引用，避免一次检索里混用新旧代 */
@@ -52,33 +78,86 @@ public class VectorStore {
     }
 
     public boolean semantic() {
+        // 「provider 是不是语义的」与「语义路当下能不能用」是两件事：只报前者会出现
+        // health 说 semantic=true、mode 却一直是 keyword 的上报与行为不一致。
+        // 查询期失败也算不可用：索引在、但每次查询都失败时，语义路实际上没在做事。
+        return embedder.semantic() && degradedReason == null && queryHealthy && !data.get().vectors().isEmpty();
+    }
+
+    /** provider 本身是否具备语义能力（与当下可用性无关）：用于区分「本来就是 bag」与「语义路挂了」 */
+    public boolean supportsSemantic() {
         return embedder.semantic();
     }
 
+    /** 查询期向量化最近是否成功（失败置 false，下一次成功自愈） */
+    public boolean queryHealthy() {
+        return queryHealthy;
+    }
+
+    /** 语义路不可用的原因；null = 正常 */
+    public String degradedReason() {
+        return degradedReason;
+    }
+
+    /** 构建成功、但查询期向量化失败的次数（外部服务中途不通）——语义路「静悄悄失效」的主要探测器 */
+    public int queryFailures() {
+        return queryFailures.get();
+    }
+
+    public String lastQueryError() {
+        return lastQueryError;
+    }
+
+    /**
+     * 重建向量索引。
+     *
+     * <p>失败<b>不抛出</b>：记下降级原因、退回空向量，检索仍能按关键词路独立工作。
+     * 抛出去的后果是「embedding 服务抖一下，展板整个起不来」——现场没人能修，日志也没人看。
+     * 失败时清空旧向量而不是沿用：知识改过之后旧向量与当前语料并非一一对应，
+     * 沿用等于把两代数据混着检索，这类问题比降级更难查。
+     */
     public void build(List<KnowledgeChunk> chunks) {
         Map<String, float[]> nextVectors = new LinkedHashMap<>();
         Map<String, KnowledgeChunk> nextById = new LinkedHashMap<>();
         String fingerprint = KnowledgeLoader.fingerprint(chunks);
         int dims = 0;
-        for (int i = 0; i < chunks.size(); i += BATCH) {
-            List<KnowledgeChunk> batch = chunks.subList(i, Math.min(chunks.size(), i + BATCH));
-            List<String> texts = new ArrayList<>(batch.size());
-            for (KnowledgeChunk c : batch) {
-                texts.add(embedText(c));
-            }
-            List<float[]> vecs = embedder.embed(texts);
-            for (int j = 0; j < batch.size(); j++) {
-                KnowledgeChunk c = batch.get(j);
-                float[] v = j < vecs.size() ? vecs.get(j) : new float[0];
-                nextById.put(c.id(), c);
-                nextVectors.put(c.id(), v);
-                if (v.length > 0) {
-                    dims = v.length;
+        try {
+            for (int i = 0; i < chunks.size(); i += batchSize) {
+                List<KnowledgeChunk> batch = chunks.subList(i, Math.min(chunks.size(), i + batchSize));
+                List<String> texts = new ArrayList<>(batch.size());
+                for (KnowledgeChunk c : batch) {
+                    texts.add(embedText(c));
+                }
+                List<float[]> vecs = embedder.embed(texts);
+                for (int j = 0; j < batch.size(); j++) {
+                    KnowledgeChunk c = batch.get(j);
+                    float[] v = j < vecs.size() ? vecs.get(j) : new float[0];
+                    nextById.put(c.id(), c);
+                    nextVectors.put(c.id(), v);
+                    if (v.length > 0) {
+                        dims = v.length;
+                    }
                 }
             }
+            if (!chunks.isEmpty() && dims == 0) {
+                degrade("向量维度为 0（provider 返回了空向量）");
+                return;
+            }
+            persist(chunks, nextVectors, dims, fingerprint);
+        } catch (RuntimeException e) {
+            degrade("向量索引构建失败：" + e.getMessage());
+            return;
         }
-        persist(chunks, nextVectors, dims, fingerprint);
         data.set(new VecData(nextVectors, nextById, embedder.name(), dims, fingerprint));
+        degradedReason = null;
+        log.info("[embed] 向量索引已重建：{} 块 / {} 维 / provider={} / 批次 {}",
+                nextVectors.size(), dims, embedder.name(), batchSize);
+    }
+
+    private void degrade(String reason) {
+        degradedReason = reason;
+        data.set(VecData.empty());
+        log.error("[embed] 语义路降级，检索退回仅关键词（关键词路不受影响）：{}", reason);
     }
 
     public boolean tryLoad(List<KnowledgeChunk> chunks) {
@@ -115,6 +194,7 @@ public class VectorStore {
             }
             if (ok > 0 && ok == chunks.size()) {
                 data.set(new VecData(nextVectors, nextById, embedder.name(), dims, fp));
+                degradedReason = null;
                 return true;
             }
             return false;
@@ -133,7 +213,15 @@ public class VectorStore {
         if (data.vectors().isEmpty()) {
             return List.of();
         }
-        List<float[]> embedded = embedder.embed(List.of(query));
+        List<float[]> embedded;
+        try {
+            embedded = embedder.embed(List.of(query));
+            queryHealthy = true;
+        } catch (RuntimeException e) {
+            // 查询期向量化失败：本次检索退回仅关键词（不抛给调用方，免得一次外部抖动变成访客看到的报错）
+            recordQueryFailure(e);
+            return List.of();
+        }
         if (embedded.isEmpty() || embedded.get(0).length == 0) {
             return List.of();
         }
@@ -150,15 +238,28 @@ public class VectorStore {
         return hits.size() <= topK ? hits : new ArrayList<>(hits.subList(0, topK));
     }
 
+    private void recordQueryFailure(RuntimeException e) {
+        lastQueryError = e.getMessage();
+        queryHealthy = false;
+        int n = queryFailures.incrementAndGet();
+        // 外部服务挂了会每个请求都失败，日志不能被刷屏：只记第 1 次与每 50 次
+        if (n == 1 || n % 50 == 0) {
+            log.warn("[embed] 查询向量化失败第 {} 次，本次检索退回仅关键词：{}", n, e.getMessage());
+        }
+    }
+
     public VectorStats stats() {
         VecData d = data.get();
         return new VectorStats(
                 d.providerName().isEmpty() ? embedder.name() : d.providerName(),
-                embedder.semantic(),
+                semantic(),
                 d.dims(),
                 d.vectors().size(),
                 d.fingerprint(),
-                indexFile.toString());
+                indexFile.toString(),
+                degradedReason,
+                queryFailures.get(),
+                lastQueryError);
     }
 
     private String embedText(KnowledgeChunk chunk) {

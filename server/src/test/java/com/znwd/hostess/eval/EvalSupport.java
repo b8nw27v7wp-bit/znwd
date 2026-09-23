@@ -46,6 +46,24 @@ public final class EvalSupport {
             "这台无人机多少钱？",
             "能开发票吗？");
 
+    /**
+     * 域外样本·近域扩展：给「语义兜底阈值」标定用。
+     *
+     * <p>为什么单独一批：关键词闸门的判据（域外排序分不越线）只用上面那批；
+     * 这批问句的词面与语料高度重叠（光伏、机器人、公司），语义余弦天然偏高（实测 0.5~0.7），
+     * 正好用来卡 MIN_VECTOR_SCORE —— 兜底口子开大了，打穿闸门的不是闲聊，就是这类问题。
+     * 拿它们去抬关键词阈值是错的（那是另一件事），所以不混进 OUT_OF_DOMAIN。
+     */
+    public static final List<String> OUT_OF_DOMAIN_NEAR = List.of(
+            "光伏板多少钱一瓦？",
+            "今年光伏补贴政策有什么变化？",
+            "你们和隆基绿能是什么关系？",
+            "扫地机器人多少钱？",
+            "这个机器人能送外卖吗？",
+            "你们公司上市了吗？",
+            "帮我查一下明天的天气",
+            "帮我写一段 Python 代码");
+
     private static final DateTimeFormatter STAMP =
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH-mm-ss-SSS").withZone(ZoneId.of("Asia/Shanghai"));
 

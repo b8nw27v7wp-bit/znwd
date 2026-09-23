@@ -31,6 +31,10 @@ jobs:
       # 与 HybridRetriever.DEFAULT_MIN_KEYWORD_SCORE），显式写出来是为了让"CI 通过的阈值"可见可改；
       # 重新标定后这三处要一起改。
       MIN_RELEVANCE_SCORE: '6.3'
+      # 语义兜底阈值。CI 里 EMBED_PROVIDER 未设置 → 默认 bag（语义路关闭），所以它不影响 CI 结果；
+      # 写出来是为了让「线上生效的这组阈值」在 CI 里也可见。语义路打开后 calibrate --gate-check
+      # 会多守一条线：域外最高余弦不得过这个值（越线退出码 4）。
+      MIN_VECTOR_SCORE: '0.75'
       # 都是 CI 专用的一次性口令（不是密钥）：root 只用来执行 init.sql，应用用最小权限账号。
       MYSQL_ROOT_PASSWORD: ci-root-pw-not-a-secret
       APP_DB_PASSWORD: ci-app-pw-not-a-secret

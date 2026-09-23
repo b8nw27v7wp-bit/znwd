@@ -64,7 +64,7 @@ cd web && npm ci && npm run build                    # → web/dist
 | `INDEX_DIR` | `./server/indexes` | 向量索引目录（可删，会自动重建） |
 | `DATA_DIR` | `./server/data` | JSONL 日志目录 |
 | `MIN_RELEVANCE_SCORE` | `6.3` | 相关性闸门阈值（标定得出，改语料后必须重标） |
-| `MIN_VECTOR_SCORE` | `0.35` | 语义向量兜底阈值 |
+| `MIN_VECTOR_SCORE` | `0.75` | 语义向量兜底阈值。当前值 = 关闭兜底（域外最高余弦 0.6826 高于待救用例，区间不成立，见 `docs/eval.md`） |
 | `ANSWER_CACHE_SIZE` | `200` | 答案缓存条数 |
 | `UNCOVERED_LOG_SIZE` | `50` | 未覆盖问题留存条数（0 = 关闭） |
 | `NO_HIT_LLM` | `false` | 闸门拦截时是否仍让模型生成拒答（默认固定文案、0 token） |
@@ -80,8 +80,11 @@ cd web && npm ci && npm run build                    # → web/dist
 | `LLM_MAX_TOKENS` | `0` | 输出上限（0 = 不限），成本闸门 |
 | `LLM_MAX_RETRIES` / `LLM_RETRY_BASE_MS` | `2` / `1000` | 过载重试与退避 |
 | `LLM_TIMEOUT_MS` / `LLM_STREAM_TIMEOUT_MS` | `90000` / `180000` | 单次调用预算（含重试） |
-| `EMBED_PROVIDER` | `bag` | `bag`（无语义）\| `openai_compat`（真语义，需 reload 重建索引） |
-| `EMBED_BASE_URL` / `EMBED_API_KEY` / `EMBED_MODEL` | 空 | 内网 embeddings |
+| `EMBED_PROVIDER` | `bag` | `bag`（无语义）\| `openai_compat`（真语义；换 provider 后必须重建索引：`POST /api/knowledge/reload` 或重启） |
+| `EMBED_BASE_URL` / `EMBED_API_KEY` / `EMBED_MODEL` | 空 | OpenAI 兼容 `/embeddings`。本项目现用硅基流动 `https://api.siliconflow.cn/v1` + `BAAI/bge-m3`（1024 维、免费档有限流） |
+| `EMBED_DIMS` | `0` | 期望维度（bge-m3 = `1024`）；0 = 由首次响应推断 |
+| `EMBED_BATCH_SIZE` | `32` | 单请求条数上限：各家不同（阿里云百炼 10、硅基流动 32），**超一条整个请求 400** |
+| `EMBED_TIMEOUT_MS` | `60000` | 单次向量化请求超时 |
 | `LOG_MAX_BYTES` | `5000000` | `events.jsonl` 轮转阈值 |
 | `LOG_MESSAGE_MODE` | `hash` | `hash`（只落 hash + 20 字前缀）\| `preview`（落 80 字预览） |
 
@@ -174,13 +177,13 @@ python tools/smoke.py
 - 限流 `CHAT_RATE_PER_MIN` 是防刷底线（默认 30/分钟/IP），现场若有人连续刷提问会收到 429。
 - `.env`、`server/data/`、`server/indexes/`、`web/dist/` 都不进版本库（见 `docs/development.md` 提交约定）。
 
-## 离线/内网部署：只有大模型出网
+## 离线/内网部署：只有大模型与 embedding 服务出网
 
-一体机是独立环境，网络只用来接大模型。这条要求现在是**可执行的检查**，不是口头约定：
+一体机是独立环境，网络只用来接大模型与 embedding。这条要求现在是**可执行的检查**，不是口头约定：
 
 ```bash
 python tools/offline-check.py              # 产物 / 后端源码出网入口 / 依赖清单
-python tools/offline-check.py --runtime    # 追加：跑着的服务 provider 是否符合预期
+python tools/offline-check.py --runtime    # 追加：语义路状态与检索模式是否自洽
 ```
 
 | 类别 | 结论 | 依据 |
@@ -188,17 +191,24 @@ python tools/offline-check.py --runtime    # 追加：跑着的服务 provider �
 | 前端产物 | 无任何联网引用（字体走系统栈、形象图本地、无 CDN/埋点） | O01–O03 扫 `web/dist` |
 | 后端出网入口 | 只有 `llm/OpenAiCompatChatModel` 与 `embedding/OpenAiCompatEmbeddingProvider` | O04 扫源码（白名单之外出现网络调用即失败） |
 | 依赖 | 无云 SDK / 遥测库 | O05 扫 `pom.xml`、`package.json` |
-| 知识/检索/闸门/落库 | 全在本地 | MySQL 本机；`EMBED_PROVIDER=bag` 时向量路离线兜底 |
+| 知识/检索/闸门/落库 | 全在本地 | MySQL 本机；向量索引是本地 JSON 文件（`server/indexes/vectors.<provider>.json`） |
+
+**embedding 走云端之后，出网口从 1 个变成 2 个**（`EMBED_PROVIDER=openai_compat` + 云端 `/embeddings`）。
+要求相应变成两条：出网只允许这两个适配器；**这两个依赖不可用时服务仍要能答**。
+向量索引是落盘的：启动时只要指纹对得上就直接读文件，**不需要联网**——云端 embedding 在开机时不可用，
+展板照样能起来（索引重建才需要联网）。
 
 **没网时会发生什么**（按组件逐个说清，避免现场才发现）：
 
 | 场景 | 表现 |
 | --- | --- |
-| 启动、加载知识、检索、闸门判定 | 正常（都是本地计算） |
+| 启动、加载知识、检索、闸门判定 | 正常（都是本地计算；向量索引从本地文件加载） |
 | 域外/未覆盖问题 | 正常给固定拒答（闸门拦截不调用大模型） |
 | 命中知识的问题 | 需要调大模型；没网则回答失败，页面给友好提示，技术原因进运营视图 |
+| embedding 服务不可用 | 服务照常起、照常答（检索退回仅关键词）；`/api/health` 报 `embeddingReady=false` + `retrieval.vector.degradedReason`/`queryFailures`/`lastQueryError`，日志按第 1 次与每 50 次记 WARN。语义路恢复后下一次成功自愈 |
+| 语料改动后需要重建向量索引 | 这时才需要 embedding 服务可达；不可达则退回仅关键词并在 health 说明原因，不会让服务起不来 |
 | 演示/验收（无网、无模型） | `LLM_PROVIDER=mock`：整条链路可跑，回答是带「Mock 演示回复」的固定摘要 |
-| 想离线也有真回答 | 在机器上放本地大模型，`LLM_BASE_URL` 指向它（OpenAI 兼容即可，无需改代码） |
+| 想离线也有真回答 | 在机器上放本地大模型，`LLM_BASE_URL` 指向它（OpenAI 兼容即可，无需改代码）；embedding 同理可指向本机 Ollama 的 `/v1` |
 
 自检套件本身也都在本地跑：`smoke.py`（接口契约）、`security.py`（边界与安全）、`db-check.py`（库层），
 三个都不需要外网，可直接拷到一体机上执行。

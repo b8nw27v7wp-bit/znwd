@@ -106,8 +106,16 @@ public class OpenAiCompatEmbeddingProvider implements EmbeddingProvider {
             Thread.currentThread().interrupt();
             throw new EmbeddingException("Embeddings interrupted", e);
         } catch (Exception e) {
-            throw new EmbeddingException("Embeddings failed: " + e.getMessage(), e);
+            throw new EmbeddingException("Embeddings failed: " + describe(e), e);
         }
+    }
+
+    /** 连接被拒这类异常在部分 JDK 上 getMessage() 是 null，日志里只剩 "Embeddings failed: null" 没法排查 */
+    private static String describe(Exception e) {
+        String message = e.getMessage();
+        return message == null || message.isBlank()
+                ? e.getClass().getSimpleName()
+                : e.getClass().getSimpleName() + ": " + message;
     }
 
     private static String truncate(String s, int max) {

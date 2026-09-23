@@ -61,7 +61,9 @@ public record AppProperties(
             String model,
             int dims,
             int bagDims,
-            long timeoutMs) {
+            long timeoutMs,
+            /** 单请求向量化条数上限：不同 provider 不一样（云服务常见 10 或 32），超限会整个请求 400 */
+            int batchSize) {
     }
 
     public String llmProvider() {

@@ -35,7 +35,7 @@ class SynonymsTest {
     @DisplayName("内置表：默认来源是 builtin，且扩展词与旧实现一致")
     void defaults() {
         assertEquals("builtin", Synonyms.source());
-        assertEquals(23, Synonyms.size());
+        assertEquals(30, Synonyms.size());   // 2026-09-23 补「客户」「融资」两条后为 25
 
         Synonyms.Expansion expansion = Synonyms.expandQueryParts("叶片检测要停机吗？");
         // 「叶片」「检测」两组都会展开，原词不重复计入扩展词
@@ -57,7 +57,7 @@ class SynonymsTest {
 
         Synonyms.resetDefaults();
         assertEquals("builtin", Synonyms.source());
-        assertEquals(23, Synonyms.size());
+        assertEquals(30, Synonyms.size());
     }
 
     @Test
@@ -65,7 +65,7 @@ class SynonymsTest {
     void emptyTableRejected() {
         assertThrows(IllegalArgumentException.class, () -> Synonyms.replace(Map.of(), "test"));
         assertThrows(IllegalArgumentException.class, () -> Synonyms.replace(null, "test"));
-        assertEquals(23, Synonyms.size(), "被拒后表必须保持原样");
+        assertEquals(30, Synonyms.size(), "被拒后表必须保持原样");
     }
 
     @Test
@@ -96,7 +96,7 @@ class SynonymsTest {
         Path file = dir.resolve("out.tsv");
         Files.writeString(file, Synonyms.toTsv(), StandardCharsets.UTF_8);
         Synonyms.resetDefaults();
-        assertEquals(23, Synonyms.size());
+        assertEquals(30, Synonyms.size());
 
         assertEquals(2, Synonyms.loadFromFile(file));
         assertEquals(table, Synonyms.asMap());

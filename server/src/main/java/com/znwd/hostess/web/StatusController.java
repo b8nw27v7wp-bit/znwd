@@ -29,7 +29,7 @@ import com.znwd.hostess.session.SessionStore;
 @RestController
 public class StatusController {
 
-    public static final String VERSION = "1.2.0";
+    public static final String VERSION = "1.3.0";
 
     private final KnowledgeService knowledge;
     private final VectorStore vectorStore;
@@ -62,6 +62,9 @@ public class StatusController {
         out.put("knowledgeChunks", knowledge.chunks().size());
         out.put("llmProvider", props.llmProvider());
         out.put("embedding", vectorStore.stats().provider());
+        // 语义向量走的是外部服务（云端 embedding）：它不通时服务照常跑，但检索只走关键词。
+        // 单看 embedding=openai_compat 看不出这件事，所以这里给一个一眼可见的布尔量。
+        out.put("embeddingReady", vectorStore.semantic());
         out.put("retrieval", knowledge.stats());
         out.put("knowledgeDir", knowledge.knowledgeDir().toString());
         out.put("activeSessions", sessions.count());

@@ -79,7 +79,12 @@ znwd:
   data-dir: ${DATA_DIR:./server/data}
   watch-knowledge: ${KNOWLEDGE_WATCH:false}
   min-relevance-score: ${MIN_RELEVANCE_SCORE:6.3}
-  min-vector-score: ${MIN_VECTOR_SCORE:0.35}
+  # 语义向量兜底阈值：关键词没过阈值时，余弦 ≥ 它才放行。
+  # 当前 0.75 = 「关闭兜底」：标定（2026-09-23，真 bge-m3 向量）显示域外最高余弦 0.6826
+  # （「扫地机器人多少钱？」）高于待救的误拦用例（probe-64 0.6389 / probe-75 0.6725），
+  # 区间不成立——开口子必然先把域外问题放进来。语义向量因此只参与排序融合（RRF），不单独放行。
+  # 误拦改用补语料/补同义词解决；补完重跑 calibrate，看 vectorHatchSeparated 再决定要不要开口子。
+  min-vector-score: ${MIN_VECTOR_SCORE:0.75}
   chat-rate-per-min: ${CHAT_RATE_PER_MIN:30}
   answer-cache-size: ${ANSWER_CACHE_SIZE:200}
   uncovered-log-size: ${UNCOVERED_LOG_SIZE:50}
@@ -116,3 +121,6 @@ znwd:
     dims: ${EMBED_DIMS:0}
     bag-dims: ${EMBED_BAG_DIMS:512}
     timeout-ms: ${EMBED_TIMEOUT_MS:60000}
+    # 单请求向量化条数上限。云 embedding 服务各有上限（阿里云百炼 10、硅基流动 32），
+    # 超一条整个请求 400（不是截断），所以必须可配。换 provider 时先看它的批次上限。
+    batch-size: ${EMBED_BATCH_SIZE:32}

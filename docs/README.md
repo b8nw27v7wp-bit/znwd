@@ -38,7 +38,8 @@ server/                # Spring Boot：HTTP / RAG / LLM / MySQL
 web/                   # Vue 3 + Vite：左 1/3 形象 + 下方对话
 tools/                 # mvn（Maven 包装脚本）、smoke.py（接口契约冒烟）、
                        # security.py（边界与安全用例）、db-check.py（库层脱敏与最小权限核查）、
-                       # offline-check.py（「除 LLM 外一律本地」不变量）
+                       # offline-check.py（「除大模型与 embedding 服务外一律本地」不变量）、
+                       # acceptance.py（问答内容验收：该答的答对没有、该拒的拒了没有、有没有编）
 ```
 
 规则：

@@ -86,7 +86,7 @@
 | `score` | number | RRF 融合分 |
 | `sourcePath` | string | 相对知识库的路径 |
 | `zone` / `zoneTitle` | string | 展区 id / 展区名（可为空） |
-| `vectorScore` / `keywordScore` | number | 两路原始分（无向量路时 `vectorScore=0`） |
+| `vectorScore` / `keywordScore` | number | 两路原始分。语义向量只在兜底路径参与排序，所以普通查询的 `vectorScore` 是 0（= 这次排序没用到向量路），`keywordScore` 才是决定排序的那个数 |
 
 **按资料文件去重**：同一份资料的多个命中片段只保留最高分的那条，所以 `sources.length` 是「引了几份资料」，
 不是「命中几块」。不去重时来源面板会挂出多张同名卡片、前端 `:key` 也会撞（见 `RagPipeline.toSources`）。
@@ -179,7 +179,7 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 
 | 字段 | 说明 |
 | --- | --- |
-| `ok` / `version` | 存活 / 后端版本（当前 `1.2.0`） |
+| `ok` / `version` | 存活 / 后端版本（当前 `1.3.0`） |
 | `knowledgeChunks` | 已加载知识块数 |
 | `llmProvider` / `embedding` | LLM 提供方 / 向量提供方（`bag`\|`openai_compat`） |
 | `retrieval` | 检索统计对象，见下 |
@@ -189,6 +189,7 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 | `adminTokenRequired` | 生产是否强制管理口令 |
 | `corsOrigins` | 生效的 CORS 白名单 |
 | `minRelevanceScore` / `noHitLlm` | 当前闸门阈值 / 拒答是否走模型 |
+| `embedding` / `embeddingReady` | embedding provider 名 / **语义路当下是否可用**。`openai_compat` 但 `embeddingReady=false` = 语义路挂了（原因在 `retrieval.degradedReason` 或 `retrieval.vector.lastQueryError`），检索已退回仅关键词 |
 | `storage` | 固定 `mysql` |
 | `storageAvailable` | **库是否可用**；`false` 时服务照常讲解、只是不落库（前端不在页面上提示，只在运营视图的「本机设置」里显示） |
 | `host` / `uptimeSec` | 监听地址 / 运行秒数 |
@@ -197,12 +198,20 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 
 ```json
 {
-  "mode": "keyword", "keywordChunks": 126, "indexReady": true, "generation": 2, "semantic": false,
-  "vector": { "provider": "bag", "semantic": false, "dims": 512, "vectors": 126, "fingerprint": "…", "indexFile": "…" },
-  "degradedReason": "EMBED_PROVIDER=bag（特征哈希，非语义向量）",
-  "thresholds": { "minKeywordScore": 6.3, "minVectorScore": 0.35 }
+  "mode": "keyword", "keywordChunks": 215, "indexReady": true, "generation": 1, "semantic": true,
+  "vector": {
+    "provider": "openai_compat", "semantic": true, "dims": 1024, "vectors": 215,
+    "fingerprint": "…", "indexFile": "…",
+    "degradedReason": null, "queryFailures": 0, "lastQueryError": null
+  },
+  "degradedReason": null,
+  "thresholds": { "minKeywordScore": 6.3, "minVectorScore": 0.75 }
 }
 ```
+
+- `semantic` 是**当下是否可用**（provider 支持语义 + 索引就绪 + 没在降级 + 查询期没在失败），不是「provider 是否具备语义能力」；
+- `mode` 只有在语义向量**真的参与了这次排序**（关键词没过闸门、靠余弦救回）时才是 `hybrid`；关键词路自己过了闸门就是 `keyword`——这是如实上报，不是降级；
+- `vector.degradedReason` 是构建/加载层面的不可用原因；`queryFailures` / `lastQueryError` 记查询期失败（外部服务中途不通），失败会让 `semantic=false`，下一次成功自动自愈。
 
 ### GET /api/health/summary（无鉴权）
 
@@ -247,18 +256,25 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 | `thresholds` | `{ minKeywordScore, minVectorScore }` |
 | `distanceToGate` | **>0 表示还差多少分才够阈值**（负数=已超出） |
 | `verdict` | 一句人话结论 |
-| `hits[]` | `title`、`sourcePath`、`zone`、`zoneTitle`、`fuseScore`、`keywordScore`、`vectorScore`、`matchedTokens`、`matched[]`、`snippet` |
+| `hits[]` | `title`、`sourcePath`、`zone`、`zoneTitle`、`fuseScore`、`keywordScore`、`vectorScore`、`matchedTokens`、`matched[]`、`snippet`。**`vectorScore` 只在语义向量参与了本次排序（兜底路径）时才有值**，其余情况是 0——它不是「这块没有余弦」，而是「这次排序没用到向量路」 |
 
-实测样例（当前 209 块语料、阈值 6.3）：
+实测样例（当前 215 块语料、阈值 6.3 / 0.75，语义路已接上）：
 
 ```json
-// GET /api/admin/diagnostics?q=帮我写一首关于夏天的诗
+// GET /api/admin/diagnostics?q=有客户了吗   （被闸门误拦的真实问句，余弦 0.6389 不够兜底阈值）
 {
-  "gated": true, "mode": "keyword", "reason": "below_threshold", "semantic": false, "degraded": true,
+  "gated": true, "mode": "keyword", "reason": "below_threshold", "semantic": true, "degraded": false,
+  "keywordGateScore": 4.9037, "keywordBestScore": 4.9037, "vectorBestCosine": 0.6389, "candidates": 16,
+  "thresholds": { "minKeywordScore": 6.3, "minVectorScore": 0.75 },
+  "distanceToGate": 1.3963, "hits": []
+}
+
+// GET /api/admin/diagnostics?q=帮我写一首关于夏天的诗   （域外）
+{
+  "gated": true, "mode": "keyword", "reason": "below_threshold", "semantic": true, "degraded": false,
   "keywordGateScore": 0.0, "keywordBestScore": 0.0, "vectorBestCosine": 0.2083, "candidates": 8,
-  "thresholds": { "minKeywordScore": 6.3, "minVectorScore": 0.35 },
-  "distanceToGate": 6.3, "hits": [],
-  "verdict": "闸门拦下：有候选但相关度不够（关键词最高 0.00 / 阈值 6.30；语义向量不可用（当前为降级模式），只剩关键词路）"
+  "thresholds": { "minKeywordScore": 6.3, "minVectorScore": 0.75 },
+  "distanceToGate": 6.3, "hits": []
 }
 ```
 
@@ -312,7 +328,7 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 ```json
 {
   "knowledgeDir": "E:\\znwd\\knowledge",
-  "fileCount": 17, "chunkCount": 209,
+  "fileCount": 17, "chunkCount": 215,
   "retrieval": { "…同 /api/health 的 retrieval…": "" },
   "zones": ["…"],
   "synonyms": { "count": 23, "source": "builtin", "file": "…synonyms.tsv" },
@@ -324,11 +340,11 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 
 重载知识、重建关键词与向量索引，并清空答案缓存。
 
-`{ "ok": true, "knowledgeChunks": 209, "generation": 2, "retrieval": {…}, "synonyms": {…}, "files": [ {"sourcePath":"…","chunks":5} ] }`
+`{ "ok": true, "knowledgeChunks": 215, "generation": 2, "retrieval": {…}, "synonyms": {…}, "files": [ {"sourcePath":"…","chunks":5} ] }`
 
 ### GET /api/openapi.json（无鉴权）
 
-返回 `server/src/main/resources/openapi.json` 的内容（版本 `1.2.0`，含 `ChatRequest`/`ChatResponse`/`Source`/`Error`/`Diagnostics`/`Synonyms` schema）。契约改动改这个文件，别在 Java 里手拼 JSON。
+返回 `server/src/main/resources/openapi.json` 的内容（版本 `1.3.0`，含 `ChatRequest`/`ChatResponse`/`Source`/`Error`/`Diagnostics`/`Synonyms` schema）。契约改动改这个文件，别在 Java 里手拼 JSON。
 
 ## 契约冻结
 

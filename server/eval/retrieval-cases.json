@@ -1,6 +1,6 @@
 {
   "version": 4,
-  "description": "Hybrid 检索评测集 v4：核心用例 + 真实访客问句（probe 集，含常见问题层），覆盖 3 个展区",
+  "description": "Hybrid 检索评测集 v4：核心用例 + 真实访客问句（probe 集，含常见问题层），覆盖 3 个展区 2026-09-23 增补 cov-01~cov-08：补语料那一轮新覆盖的问法（社会效益/运维痛点/技术创新/数据来源/非本品类/定价），让这批内容有 CI 回归网。",
   "cases": [
     {
       "id": "pv-01",
@@ -836,6 +836,54 @@
     {
       "id": "probe-95",
       "question": "社会效益如何",
+      "zone": "project",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "cov-01",
+      "question": "项目有什么社会效益",
+      "zone": "project",
+      "sourcePathIncludes": "应用成效与案例"
+    },
+    {
+      "id": "cov-02",
+      "question": "传统运维有什么问题",
+      "zone": "project",
+      "sourcePathIncludes": "项目背景与需求"
+    },
+    {
+      "id": "cov-03",
+      "question": "技术创新之处有哪些",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "系统总览"
+    },
+    {
+      "id": "cov-04",
+      "question": "数据集是从哪里采集的",
+      "zone": "pv-doctor",
+      "sourcePathIncludes": "数据基础与数据治理"
+    },
+    {
+      "id": "cov-05",
+      "question": "你们做扫地机器人吗",
+      "zone": "pv-clean",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "cov-06",
+      "question": "这套系统卖多少钱",
+      "zone": "project",
+      "sourcePathIncludes": "商业模式与定价"
+    },
+    {
+      "id": "cov-07",
+      "question": "对社会有什么好处",
+      "zone": "project",
+      "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "cov-08",
+      "question": "对环保有什么贡献",
       "zone": "project",
       "sourcePathIncludes": "常见问题"
     }

@@ -1,23 +1,23 @@
 {
   "summary" : {
-    "at" : "2026-09-22T05:59:42.991025700Z",
+    "at" : "2026-09-23T03:33:31.552002500Z",
     "runtime" : "spring-boot/java",
-    "embedProvider" : "bag",
-    "semantic" : false,
+    "embedProvider" : "openai_compat",
+    "semantic" : true,
     "llmProvider" : "openai_compat",
-    "knowledgeChunks" : 209,
+    "knowledgeChunks" : 215,
     "knowledgeDir" : "E:\\znwd\\knowledge",
     "generation" : 1,
-    "cases" : 137,
+    "cases" : 145,
     "openCases" : 2,
-    "top1Hit" : 137,
-    "top3Hit" : 137,
+    "top1Hit" : 145,
+    "top3Hit" : 145,
     "top1Rate" : 1.0,
     "top3Rate" : 1.0,
-    "gatedTop1Rate" : 0.9854,
-    "gatedTop3Rate" : 0.9854,
-    "gateBlockedCount" : 2,
-    "gateBlocked" : [ "probe-64", "probe-75" ],
+    "gatedTop1Rate" : 1.0,
+    "gatedTop3Rate" : 1.0,
+    "gateBlockedCount" : 0,
+    "gateBlocked" : [ ],
     "minKeywordScore" : 6.3,
     "followUpCases" : 5,
     "followUpRawTop1Rate" : 0.6,
@@ -36,7 +36,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 25.805
+    "keywordBestScore" : 25.748
   }, {
     "id" : "pv-02",
     "question" : "太阳能组件怎么清洗？",
@@ -47,7 +47,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 16.008
+    "keywordBestScore" : 16.028
   }, {
     "id" : "pv-03",
     "question" : "清洁作业流程是怎样的？",
@@ -58,7 +58,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 32.887
+    "keywordBestScore" : 32.832
   }, {
     "id" : "pv-04",
     "question" : "光伏电站组件积灰怎么处理？",
@@ -69,7 +69,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 18.63
+    "keywordBestScore" : 18.725
   }, {
     "id" : "pv-05",
     "question" : "清洁机器人适用哪些场景？",
@@ -80,7 +80,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 15.911
+    "keywordBestScore" : 15.858
   }, {
     "id" : "pv-06",
     "question" : "清洁机器人和光伏医生是什么关系？",
@@ -91,7 +91,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 20.171
+    "keywordBestScore" : 20.103
   }, {
     "id" : "pv-07",
     "question" : "组件表面鸟粪如何清理？",
@@ -102,7 +102,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 17.995
+    "keywordBestScore" : 18.072
   }, {
     "id" : "pv-08",
     "question" : "屋顶光伏能用无人机清洗吗？",
@@ -113,7 +113,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 10.638
+    "keywordBestScore" : 10.542
   }, {
     "id" : "pv-09",
     "question" : "清洁机器人有多重？",
@@ -124,7 +124,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 20.474
+    "keywordBestScore" : 20.56
   }, {
     "id" : "pv-10",
     "question" : "履带在湿滑条件下会打滑吗？",
@@ -135,7 +135,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 14.67
+    "keywordBestScore" : 14.763
   }, {
     "id" : "pv-11",
     "question" : "两栖是什么意思？",
@@ -146,7 +146,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 17.091
+    "keywordBestScore" : 17.056
   }, {
     "id" : "doc-01",
     "question" : "光伏医生系统是什么？",
@@ -157,7 +157,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 18.565
+    "keywordBestScore" : 19.164
   }, {
     "id" : "doc-02",
     "question" : "无人机巡检能发现哪些故障？",
@@ -168,7 +168,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 19.084
+    "keywordBestScore" : 18.728
   }, {
     "id" : "doc-03",
     "question" : "巡检图像的采集参数有什么要求？",
@@ -179,7 +179,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 13.704
+    "keywordBestScore" : 13.699
   }, {
     "id" : "doc-04",
     "question" : "热红外数据集有多大？",
@@ -190,7 +190,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 14.792
+    "keywordBestScore" : 14.618
   }, {
     "id" : "doc-05",
     "question" : "污渍识别用的什么算法？",
@@ -201,7 +201,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 12.068
+    "keywordBestScore" : 12.092
   }, {
     "id" : "doc-06",
     "question" : "平台有哪些功能？",
@@ -212,7 +212,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 13.691
+    "keywordBestScore" : 13.497
   }, {
     "id" : "doc-07",
     "question" : "海上光伏能用无人机巡检吗？",
@@ -223,7 +223,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 15.191
+    "keywordBestScore" : 14.78
   }, {
     "id" : "doc-08",
     "question" : "运维方案能自动生成吗？",
@@ -234,7 +234,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 13.577
+    "keywordBestScore" : 13.568
   }, {
     "id" : "doc-09",
     "question" : "巡检数据会不会拍到居民区？",
@@ -245,7 +245,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 13.419
+    "keywordBestScore" : 13.471
   }, {
     "id" : "doc-10",
     "question" : "清洁和检测是不是同一套系统？",
@@ -256,7 +256,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 17.348
+    "keywordBestScore" : 14.676
   }, {
     "id" : "doc-11",
     "question" : "故障识别模型还能用在哪？",
@@ -267,7 +267,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 10.066
+    "keywordBestScore" : 10.025
   }, {
     "id" : "proj-01",
     "question" : "项目背景是什么？",
@@ -278,7 +278,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 17.255
+    "keywordBestScore" : 17.057
   }, {
     "id" : "proj-02",
     "question" : "有哪些落地案例？",
@@ -289,7 +289,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 18.113
+    "keywordBestScore" : 18.019
   }, {
     "id" : "proj-03",
     "question" : "团队和专利情况如何？",
@@ -300,7 +300,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 10.415
+    "keywordBestScore" : 10.409
   }, {
     "id" : "proj-04",
     "question" : "项目能降低多少运维成本？",
@@ -311,7 +311,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 14.878
+    "keywordBestScore" : 14.709
   }, {
     "id" : "proj-05",
     "question" : "提供培训吗？",
@@ -322,7 +322,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 13.379
+    "keywordBestScore" : 13.435
   }, {
     "id" : "proj-06",
     "question" : "如何联系合作？",
@@ -333,7 +333,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 9.268
+    "keywordBestScore" : 9.344
   }, {
     "id" : "proj-07",
     "question" : "有没有售后技术支持？",
@@ -344,7 +344,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 17.746
+    "keywordBestScore" : 17.804
   }, {
     "id" : "proj-08",
     "question" : "可以发展本地服务商吗？",
@@ -355,7 +355,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 16.149
+    "keywordBestScore" : 16.205
   }, {
     "id" : "proj-09",
     "question" : "设备操作培训包括什么？",
@@ -366,7 +366,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 19.719
+    "keywordBestScore" : 19.811
   }, {
     "id" : "proj-10",
     "question" : "项目参加的是什么比赛？",
@@ -377,7 +377,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 16.164
+    "keywordBestScore" : 16.208
   }, {
     "id" : "proj-11",
     "question" : "项目目前有客户和收入吗？",
@@ -388,7 +388,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 13.736
+    "keywordBestScore" : 17.429
   }, {
     "id" : "proj-12",
     "question" : "有哪些代表性论文？",
@@ -399,7 +399,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 9.34
+    "keywordBestScore" : 9.427
   }, {
     "id" : "proj-13",
     "question" : "数据来源和更新频率是怎样的？",
@@ -410,7 +410,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 12.328
+    "keywordBestScore" : 12.174
   }, {
     "id" : "proj-14",
     "question" : "融资情况如何？",
@@ -421,7 +421,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 11.783
+    "keywordBestScore" : 19.522
   }, {
     "id" : "proj-15",
     "question" : "发电效率能提升多少？",
@@ -432,7 +432,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 10.392
+    "keywordBestScore" : 10.217
   }, {
     "id" : "proj-16",
     "question" : "清洁机器人怎么收费？",
@@ -443,7 +443,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 21.673
+    "keywordBestScore" : 21.667
   }, {
     "id" : "proj-17",
     "question" : "项目总投入多少资金？",
@@ -454,7 +454,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 15.848
+    "keywordBestScore" : 15.995
   }, {
     "id" : "proj-18",
     "question" : "运维服务怎么收费？",
@@ -465,7 +465,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 9.864
+    "keywordBestScore" : 9.954
   }, {
     "id" : "mix-01",
     "question" : "太阳能电站清洗后发电会提升吗？",
@@ -475,7 +475,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 9.788
+    "keywordBestScore" : 9.774
   }, {
     "id" : "mix-02",
     "question" : "无人机巡检比人工爬塔更安全吗？",
@@ -486,7 +486,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 20.718
+    "keywordBestScore" : 20.369
   }, {
     "id" : "probe-01",
     "question" : "两栖光伏清洁机器人是做什么的",
@@ -497,7 +497,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 31.941
+    "keywordBestScore" : 31.79
   }, {
     "id" : "probe-02",
     "question" : "为什么叫两栖",
@@ -508,7 +508,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 9.161
+    "keywordBestScore" : 9.091
   }, {
     "id" : "probe-03",
     "question" : "机器人对光伏板的压强是多少",
@@ -519,7 +519,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 14.673
+    "keywordBestScore" : 14.603
   }, {
     "id" : "probe-04",
     "question" : "会不会压坏光伏板",
@@ -530,7 +530,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 11.08
+    "keywordBestScore" : 11.09
   }, {
     "id" : "probe-05",
     "question" : "履带湿滑会不会打滑",
@@ -541,7 +541,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 9.603
+    "keywordBestScore" : 9.651
   }, {
     "id" : "probe-06",
     "question" : "履带用什么材料",
@@ -552,7 +552,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 15.357
+    "keywordBestScore" : 15.426
   }, {
     "id" : "probe-07",
     "question" : "机器人外壳防护等级多少",
@@ -563,7 +563,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 22.066
+    "keywordBestScore" : 22.11
   }, {
     "id" : "probe-08",
     "question" : "主体框架用什么材料",
@@ -574,7 +574,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 15.685
+    "keywordBestScore" : 15.727
   }, {
     "id" : "probe-09",
     "question" : "CFRP 有什么优点",
@@ -585,7 +585,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 12.919
+    "keywordBestScore" : 12.977
   }, {
     "id" : "probe-10",
     "question" : "机器人怎么控制",
@@ -596,7 +596,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 15.29
+    "keywordBestScore" : 15.348
   }, {
     "id" : "probe-11",
     "question" : "支持二次开发吗",
@@ -607,7 +607,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 14.26
+    "keywordBestScore" : 14.341
   }, {
     "id" : "probe-12",
     "question" : "有几种工作模式",
@@ -618,7 +618,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 14.656
+    "keywordBestScore" : 16.056
   }, {
     "id" : "probe-13",
     "question" : "清洗流程是什么",
@@ -629,7 +629,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 13.754
+    "keywordBestScore" : 13.809
   }, {
     "id" : "probe-14",
     "question" : "巡检怎么发现污渍",
@@ -640,7 +640,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 15.328
+    "keywordBestScore" : 15.899
   }, {
     "id" : "probe-15",
     "question" : "无人机巡检后机器人怎么知道去哪洗",
@@ -651,7 +651,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 18.766
+    "keywordBestScore" : 19.219
   }, {
     "id" : "probe-16",
     "question" : "清洁机器人能替代人工吗",
@@ -662,7 +662,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 22.208
+    "keywordBestScore" : 21.937
   }, {
     "id" : "probe-17",
     "question" : "适用哪些电站",
@@ -673,7 +673,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 12.653
+    "keywordBestScore" : 12.626
   }, {
     "id" : "probe-18",
     "question" : "屋顶光伏能用吗",
@@ -684,7 +684,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 10.109
+    "keywordBestScore" : 10.194
   }, {
     "id" : "probe-19",
     "question" : "海上光伏能清洗吗",
@@ -695,7 +695,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 13.431
+    "keywordBestScore" : 13.457
   }, {
     "id" : "probe-20",
     "question" : "光伏医生是什么",
@@ -706,7 +706,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 12.884
+    "keywordBestScore" : 14.065
   }, {
     "id" : "probe-21",
     "question" : "光伏医生包含哪些技术",
@@ -717,7 +717,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 9.41
+    "keywordBestScore" : 9.357
   }, {
     "id" : "probe-22",
     "question" : "和只用无人机的方案有什么不同",
@@ -728,7 +728,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 13.899
+    "keywordBestScore" : 13.964
   }, {
     "id" : "probe-23",
     "question" : "能识别热斑吗",
@@ -739,7 +739,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 8.528
+    "keywordBestScore" : 8.584
   }, {
     "id" : "probe-24",
     "question" : "隐裂能发现吗",
@@ -750,7 +750,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 9.178
+    "keywordBestScore" : 9.162
   }, {
     "id" : "probe-25",
     "question" : "积灰怎么评估",
@@ -761,7 +761,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 9.288
+    "keywordBestScore" : 9.724
   }, {
     "id" : "probe-26",
     "question" : "用什么算法识别污渍",
@@ -772,7 +772,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 11.377
+    "keywordBestScore" : 11.4
   }, {
     "id" : "probe-27",
     "question" : "为什么用 YOLOv8",
@@ -783,7 +783,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 11.651
+    "keywordBestScore" : 11.712
   }, {
     "id" : "probe-28",
     "question" : "CBAM 是什么",
@@ -794,7 +794,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 6.774
+    "keywordBestScore" : 6.796
   }, {
     "id" : "probe-29",
     "question" : "训练数据怎么来的",
@@ -805,7 +805,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 13.111
+    "keywordBestScore" : 13.053
   }, {
     "id" : "probe-30",
     "question" : "数据集有多少张图",
@@ -816,7 +816,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 11.473
+    "keywordBestScore" : 11.46
   }, {
     "id" : "probe-31",
     "question" : "数据从哪些电站采集",
@@ -827,7 +827,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 14.971
+    "keywordBestScore" : 14.983
   }, {
     "id" : "probe-32",
     "question" : "图像分辨率有什么要求",
@@ -838,7 +838,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 11.61
+    "keywordBestScore" : 11.654
   }, {
     "id" : "probe-33",
     "question" : "热成像灵敏度要求",
@@ -849,7 +849,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 15.098
+    "keywordBestScore" : 15.11
   }, {
     "id" : "probe-34",
     "question" : "多久巡检一次",
@@ -860,7 +860,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 12.05
+    "keywordBestScore" : 12.012
   }, {
     "id" : "probe-35",
     "question" : "数据采集缺失怎么办",
@@ -871,7 +871,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 15.84
+    "keywordBestScore" : 15.948
   }, {
     "id" : "probe-36",
     "question" : "污渍标注标准是什么",
@@ -882,7 +882,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 10.581
+    "keywordBestScore" : 10.672
   }, {
     "id" : "probe-37",
     "question" : "热斑标注标准是什么",
@@ -893,7 +893,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 10.62
+    "keywordBestScore" : 10.711
   }, {
     "id" : "probe-38",
     "question" : "标注质量怎么保证",
@@ -904,7 +904,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 16.779
+    "keywordBestScore" : 16.827
   }, {
     "id" : "probe-39",
     "question" : "数据涉及居民隐私怎么办",
@@ -915,7 +915,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 19.867
+    "keywordBestScore" : 20.0
   }, {
     "id" : "probe-40",
     "question" : "数据归谁所有",
@@ -926,7 +926,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 13.871
+    "keywordBestScore" : 13.916
   }, {
     "id" : "probe-41",
     "question" : "数据传输安全吗",
@@ -937,7 +937,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 12.474
+    "keywordBestScore" : 12.392
   }, {
     "id" : "probe-42",
     "question" : "系统满足哪些标准",
@@ -948,7 +948,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 15.461
+    "keywordBestScore" : 15.423
   }, {
     "id" : "probe-43",
     "question" : "数据多久更新一次",
@@ -959,7 +959,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 17.486
+    "keywordBestScore" : 17.585
   }, {
     "id" : "probe-44",
     "question" : "病历档案是什么",
@@ -970,7 +970,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 11.966
+    "keywordBestScore" : 12.031
   }, {
     "id" : "probe-45",
     "question" : "能自动生成运维方案吗",
@@ -981,7 +981,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 12.7
+    "keywordBestScore" : 12.692
   }, {
     "id" : "probe-46",
     "question" : "三维可视化能看什么",
@@ -992,7 +992,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 10.262
+    "keywordBestScore" : 10.352
   }, {
     "id" : "probe-47",
     "question" : "能预测发电量吗",
@@ -1003,7 +1003,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 9.854
+    "keywordBestScore" : 9.863
   }, {
     "id" : "probe-48",
     "question" : "功率预测用什么算法",
@@ -1014,7 +1014,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 14.204
+    "keywordBestScore" : 14.213
   }, {
     "id" : "probe-49",
     "question" : "平台怎么部署",
@@ -1025,7 +1025,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 11.516
+    "keywordBestScore" : 11.529
   }, {
     "id" : "probe-50",
     "question" : "兼容别的无人机吗",
@@ -1036,7 +1036,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 9.682
+    "keywordBestScore" : 9.674
   }, {
     "id" : "probe-51",
     "question" : "集中式电站怎么用",
@@ -1047,7 +1047,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 11.884
+    "keywordBestScore" : 11.967
   }, {
     "id" : "probe-52",
     "question" : "分布式屋顶怎么巡检",
@@ -1058,7 +1058,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 15.153
+    "keywordBestScore" : 15.231
   }, {
     "id" : "probe-53",
     "question" : "海上光伏运维怎么做",
@@ -1069,7 +1069,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 16.015
+    "keywordBestScore" : 16.095
   }, {
     "id" : "probe-54",
     "question" : "农光互补能管吗",
@@ -1080,7 +1080,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 9.934
+    "keywordBestScore" : 10.021
   }, {
     "id" : "probe-55",
     "question" : "循环经济用得上吗",
@@ -1091,7 +1091,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 15.647
+    "keywordBestScore" : 15.769
   }, {
     "id" : "probe-56",
     "question" : "组件报废怎么判断",
@@ -1102,7 +1102,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 16.704
+    "keywordBestScore" : 16.892
   }, {
     "id" : "probe-57",
     "question" : "还能用于风电吗",
@@ -1113,7 +1113,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 10.976
+    "keywordBestScore" : 11.005
   }, {
     "id" : "probe-58",
     "question" : "国内光伏装机多少",
@@ -1124,7 +1124,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 13.576
+    "keywordBestScore" : 13.42
   }, {
     "id" : "probe-59",
     "question" : "光伏运维市场多大",
@@ -1135,7 +1135,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 12.051
+    "keywordBestScore" : 12.126
   }, {
     "id" : "probe-60",
     "question" : "宁波光伏装机多少",
@@ -1146,7 +1146,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 14.477
+    "keywordBestScore" : 14.529
   }, {
     "id" : "probe-61",
     "question" : "传统清洗有什么问题",
@@ -1157,7 +1157,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 12.813
+    "keywordBestScore" : 12.829
   }, {
     "id" : "probe-62",
     "question" : "人工巡检有什么问题",
@@ -1168,7 +1168,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 11.912
+    "keywordBestScore" : 11.794
   }, {
     "id" : "probe-63",
     "question" : "项目来源哪里",
@@ -1179,7 +1179,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 12.593
+    "keywordBestScore" : 12.64
   }, {
     "id" : "probe-64",
     "question" : "有客户了吗",
@@ -1188,9 +1188,9 @@
     "top1Path" : "03_项目与团队/常见问题.md",
     "hit1" : true,
     "hit3" : true,
-    "gated" : true,
-    "reason" : "below_threshold",
-    "keywordBestScore" : 4.904
+    "gated" : false,
+    "reason" : "keyword_hit",
+    "keywordBestScore" : 11.429
   }, {
     "id" : "probe-65",
     "question" : "收入情况怎样",
@@ -1201,7 +1201,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 13.569
+    "keywordBestScore" : 13.654
   }, {
     "id" : "probe-66",
     "question" : "项目投入多少钱",
@@ -1212,7 +1212,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 16.331
+    "keywordBestScore" : 16.173
   }, {
     "id" : "probe-67",
     "question" : "收费怎么算",
@@ -1223,7 +1223,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 11.29
+    "keywordBestScore" : 11.392
   }, {
     "id" : "probe-68",
     "question" : "一个 GW 电站一年要多少服务费",
@@ -1234,7 +1234,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 18.184
+    "keywordBestScore" : 18.258
   }, {
     "id" : "probe-69",
     "question" : "毛利率多少",
@@ -1245,7 +1245,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 10.445
+    "keywordBestScore" : 10.483
   }, {
     "id" : "probe-70",
     "question" : "成本结构怎样",
@@ -1256,7 +1256,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 12.467
+    "keywordBestScore" : 12.534
   }, {
     "id" : "probe-71",
     "question" : "未来五年财务预测",
@@ -1267,7 +1267,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 14.358
+    "keywordBestScore" : 14.383
   }, {
     "id" : "probe-72",
     "question" : "市场空间多大",
@@ -1278,7 +1278,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 10.387
+    "keywordBestScore" : 10.46
   }, {
     "id" : "probe-73",
     "question" : "竞争格局如何",
@@ -1289,7 +1289,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 11.631
+    "keywordBestScore" : 11.703
   }, {
     "id" : "probe-74",
     "question" : "怎么推广",
@@ -1300,7 +1300,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 9.329
+    "keywordBestScore" : 9.32
   }, {
     "id" : "probe-75",
     "question" : "融资了吗",
@@ -1309,9 +1309,9 @@
     "top1Path" : "03_项目与团队/常见问题.md",
     "hit1" : true,
     "hit3" : true,
-    "gated" : true,
-    "reason" : "below_threshold",
-    "keywordBestScore" : 5.902
+    "gated" : false,
+    "reason" : "keyword_hit",
+    "keywordBestScore" : 22.407
   }, {
     "id" : "probe-76",
     "question" : "团队多少人",
@@ -1322,7 +1322,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 8.477
+    "keywordBestScore" : 8.374
   }, {
     "id" : "probe-77",
     "question" : "团队背景",
@@ -1333,7 +1333,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 10.733
+    "keywordBestScore" : 10.752
   }, {
     "id" : "probe-78",
     "question" : "有哪些专利",
@@ -1344,7 +1344,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 9.887
+    "keywordBestScore" : 9.882
   }, {
     "id" : "probe-79",
     "question" : "专利号是多少",
@@ -1355,7 +1355,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 8.58
+    "keywordBestScore" : 8.846
   }, {
     "id" : "probe-80",
     "question" : "获得过什么奖",
@@ -1366,7 +1366,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 13.048
+    "keywordBestScore" : 13.117
   }, {
     "id" : "probe-81",
     "question" : "发表过论文吗",
@@ -1377,7 +1377,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 14.195
+    "keywordBestScore" : 14.31
   }, {
     "id" : "probe-82",
     "question" : "依托单位是谁",
@@ -1388,7 +1388,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 11.705
+    "keywordBestScore" : 11.819
   }, {
     "id" : "probe-83",
     "question" : "公司什么时候成立的",
@@ -1399,7 +1399,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 16.861
+    "keywordBestScore" : 16.962
   }, {
     "id" : "probe-84",
     "question" : "研究院是做什么的",
@@ -1410,7 +1410,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 9.134
+    "keywordBestScore" : 9.207
   }, {
     "id" : "probe-85",
     "question" : "研究院有多少人",
@@ -1421,7 +1421,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 9.149
+    "keywordBestScore" : 9.201
   }, {
     "id" : "probe-86",
     "question" : "算力平台怎么样",
@@ -1432,7 +1432,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 14.877
+    "keywordBestScore" : 14.938
   }, {
     "id" : "probe-87",
     "question" : "能提供培训吗",
@@ -1443,7 +1443,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 13.379
+    "keywordBestScore" : 13.435
   }, {
     "id" : "probe-88",
     "question" : "怎么合作",
@@ -1454,7 +1454,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 11.351
+    "keywordBestScore" : 11.444
   }, {
     "id" : "probe-89",
     "question" : "售后支持有吗",
@@ -1465,7 +1465,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 13.615
+    "keywordBestScore" : 13.663
   }, {
     "id" : "probe-90",
     "question" : "碳排放怎么算",
@@ -1476,7 +1476,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 13.772
+    "keywordBestScore" : 13.875
   }, {
     "id" : "probe-91",
     "question" : "运维成本能降多少",
@@ -1487,7 +1487,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 7.916
+    "keywordBestScore" : 7.765
   }, {
     "id" : "probe-92",
     "question" : "清洗后效率能到多少",
@@ -1498,7 +1498,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 7.365
+    "keywordBestScore" : 7.319
   }, {
     "id" : "probe-93",
     "question" : "落地案例有哪些",
@@ -1509,7 +1509,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 19.841
+    "keywordBestScore" : 19.739
   }, {
     "id" : "probe-94",
     "question" : "和哪些电站合作",
@@ -1520,7 +1520,7 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 10.067
+    "keywordBestScore" : 10.133
   }, {
     "id" : "probe-95",
     "question" : "社会效益如何",
@@ -1531,7 +1531,95 @@
     "hit3" : true,
     "gated" : false,
     "reason" : "keyword_hit",
-    "keywordBestScore" : 9.468
+    "keywordBestScore" : 14.188
+  }, {
+    "id" : "cov-01",
+    "question" : "项目有什么社会效益",
+    "expectZone" : "project",
+    "top1" : "项目与团队常见问题",
+    "top1Path" : "03_项目与团队/常见问题.md",
+    "hit1" : true,
+    "hit3" : true,
+    "gated" : false,
+    "reason" : "keyword_hit",
+    "keywordBestScore" : 14.617
+  }, {
+    "id" : "cov-02",
+    "question" : "传统运维有什么问题",
+    "expectZone" : "project",
+    "top1" : "项目与团队常见问题",
+    "top1Path" : "03_项目与团队/常见问题.md",
+    "hit1" : true,
+    "hit3" : true,
+    "gated" : false,
+    "reason" : "keyword_hit",
+    "keywordBestScore" : 9.568
+  }, {
+    "id" : "cov-03",
+    "question" : "技术创新之处有哪些",
+    "expectZone" : "pv-doctor",
+    "top1" : "光伏医生系统总览",
+    "top1Path" : "02_光伏医生运维系统/系统总览.md",
+    "hit1" : true,
+    "hit3" : true,
+    "gated" : false,
+    "reason" : "keyword_hit",
+    "keywordBestScore" : 10.556
+  }, {
+    "id" : "cov-04",
+    "question" : "数据集是从哪里采集的",
+    "expectZone" : "pv-doctor",
+    "top1" : "数据基础与数据治理",
+    "top1Path" : "02_光伏医生运维系统/数据基础与数据治理.md",
+    "hit1" : true,
+    "hit3" : true,
+    "gated" : false,
+    "reason" : "keyword_hit",
+    "keywordBestScore" : 8.778
+  }, {
+    "id" : "cov-05",
+    "question" : "你们做扫地机器人吗",
+    "expectZone" : "pv-clean",
+    "top1" : "光伏清洁机器人常见问题",
+    "top1Path" : "01_光伏清洁机器人/常见问题.md",
+    "hit1" : true,
+    "hit3" : true,
+    "gated" : false,
+    "reason" : "keyword_hit",
+    "keywordBestScore" : 21.763
+  }, {
+    "id" : "cov-06",
+    "question" : "这套系统卖多少钱",
+    "expectZone" : "project",
+    "top1" : "项目与团队常见问题",
+    "top1Path" : "03_项目与团队/常见问题.md",
+    "hit1" : true,
+    "hit3" : true,
+    "gated" : false,
+    "reason" : "keyword_hit",
+    "keywordBestScore" : 13.879
+  }, {
+    "id" : "cov-07",
+    "question" : "对社会有什么好处",
+    "expectZone" : "project",
+    "top1" : "项目与团队常见问题",
+    "top1Path" : "03_项目与团队/常见问题.md",
+    "hit1" : true,
+    "hit3" : true,
+    "gated" : false,
+    "reason" : "keyword_hit",
+    "keywordBestScore" : 15.164
+  }, {
+    "id" : "cov-08",
+    "question" : "对环保有什么贡献",
+    "expectZone" : "project",
+    "top1" : "应用成效与落地案例",
+    "top1Path" : "03_项目与团队/应用成效与案例.md",
+    "hit1" : true,
+    "hit3" : true,
+    "gated" : false,
+    "reason" : "keyword_hit",
+    "keywordBestScore" : 6.407
   } ],
   "followUps" : [ {
     "id" : "fu-01",
