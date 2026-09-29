@@ -599,27 +599,41 @@ else:
 print("\n== G 组：SSE 流式边界（坏 body / 事件序列 / 中途断开）")
 # ─────────────────────────────────────────────────────────────────────────────
 def sse(payload, abort_after=None, timeout=90):
-    """读 SSE 流；abort_after=N 表示收到 N 个 data 帧后主动断开（模拟访客关页面）。"""
-    raw_req = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    req = urllib.request.Request(BASE + "/api/chat/stream", data=raw_req,
-                                 headers={"Content-Type": "application/json", "Accept": "text/event-stream"})
-    events, headers, code = [], {}, 0
-    try:
-        res = urllib.request.urlopen(req, timeout=timeout)
-    except urllib.error.HTTPError as e:
-        return e.code, dict(e.headers or {}), [], False
-    with res:
-        code, headers = res.status, dict(res.headers)
-        event = None
-        for line in res:
-            text = line.decode("utf-8", "replace").rstrip("\n")
-            if text.startswith("event:"):
-                event = text[6:].strip()
-            elif text.startswith("data:"):
-                events.append((event, text[5:].strip()))
-                if abort_after is not None and len(events) >= abort_after:
-                    res.close()
-                    return code, headers, events, True
+    """读 SSE 流；abort_after=N 表示收到 N 个 data 帧后主动断开（模拟访客关页面）。
+
+    命中限流（429）时按信封里的 retryAfter 等一轮再打一次——和 chat() 同样处理：
+    C/G 组连续几十个聊天请求，撞上 CHAT_RATE_PER_MIN 是早晚的事，不处理就会把
+    G03–G05 这几条 SSE 契约断言记成 FAIL（CI 上真踩过：smoke 先跑了一轮、窗口被吃掉）。
+    仍拿不到 200 就把 429 原样返回，让断言如实报红，不掩盖。
+    """
+    for attempt in range(2):
+        raw_req = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        req = urllib.request.Request(BASE + "/api/chat/stream", data=raw_req,
+                                     headers={"Content-Type": "application/json", "Accept": "text/event-stream"})
+        events, headers, code = [], {}, 0
+        try:
+            res = urllib.request.urlopen(req, timeout=timeout)
+        except urllib.error.HTTPError as e:
+            if e.code == 429 and attempt == 0:
+                body = e.read().decode("utf-8", "replace")
+                wait = min(retry_after_seconds(body), 70)
+                print(f"        （SSE 命中限流，等 {wait}s 后重试一次）")
+                time.sleep(wait + 1)
+                continue
+            return e.code, dict(e.headers or {}), [], False
+        with res:
+            code, headers = res.status, dict(res.headers)
+            event = None
+            for line in res:
+                text = line.decode("utf-8", "replace").rstrip("\n")
+                if text.startswith("event:"):
+                    event = text[6:].strip()
+                elif text.startswith("data:"):
+                    events.append((event, text[5:].strip()))
+                    if abort_after is not None and len(events) >= abort_after:
+                        res.close()
+                        return code, headers, events, True
+        return code, headers, events, False
     return code, headers, events, False
 
 
