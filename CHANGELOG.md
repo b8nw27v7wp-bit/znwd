@@ -75,6 +75,7 @@
 | 库层 | `python tools/db-check.py` | **8 / 8** |
 | 运行期不变量 | `python tools/offline-check.py --runtime` | **7 / 7**（O07 只在 `LLM_PROVIDER=mock` 下有判据，真 provider 下按设计跳过） |
 | 内容验收 | `python tools/acceptance.py` | **40 / 40**（真模型，1 条延迟提醒） |
+| 远端 CI | push 后 GitHub Actions（run `36512516950`，提交 `267af84`） | **两个 job 全步骤 success**：后端（MySQL 容器 → init.sql 建库 → 单测 → 评测 → 闸门核查 → 打包 → 起真实 jar 跑冒烟 → 四实例边界安全 → 库层 → 运行期不变量）、前端（npm ci → 构建 → 单测 → 离线不变量） |
 
 两条环境记录，供下次复跑省时间：
 
