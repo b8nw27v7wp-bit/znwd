@@ -8,7 +8,9 @@
     MYSQL_BIN="/d/MySQL/MySQL Server9.7/bin/mysql.exe" python tools/db-check.py
     DB_HOST=127.0.0.1 DB_USER=znwd DB_PASSWORD=… python tools/db-check.py   # 环境变量优先（CI 用）
 
-没有 mysql 客户端、或库连不上时，用例标 SKIP（不是通过）。口令通过临时 option 文件传给客户端，
+没有 mysql 客户端、或库连不上时，用例标 SKIP（不是通过）。
+D09（chat_log 与 /api/stats 对账）要读管理面接口，口令取值顺序同库账号：
+环境变量 > server/.env > 空；取不到时记 SKIP（CI 的 STRICT 模式下等同失败，所以 workflow 里显式传）。口令通过临时 option 文件传给客户端，
 **不出现在命令行参数里**（Windows 上命令行对同机其他进程可见）。
 """
 import json
@@ -212,7 +214,9 @@ try:
 
     # ── D09: chat_log 统计字段与 /api/stats 对账（TC-DB-08） ────────────────
     print("\n== 库层：chat_log 统计字段与 /api/stats 对账")
-    ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
+    # 口令取值顺序与库账号一致（环境变量 > server/.env > 空）：本地直接 `python tools/db-check.py`
+    # 就能跑，不必记着带上 ADMIN_TOKEN；CI 里由 workflow 显式传。
+    ADMIN_TOKEN = env_value("ADMIN_TOKEN", "")
     if not ADMIN_TOKEN:
         skip("D09 chat_log 与 /api/stats 对账", "未设 ADMIN_TOKEN 环境变量")
     else:

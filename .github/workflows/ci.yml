@@ -218,8 +218,12 @@ jobs:
 
       # 库层核查：落库之后到底存了什么。放在安全用例之后——那一步收尾会等限流窗口滑过去，
       # 这里再发提问不会被 429 挡住。
+      # 要 ADMIN_TOKEN：D09 的对账要读 /api/stats，那是管理面接口（匿名 401），
+      # 而 CI 是 STRICT 模式、SKIP 会判成 FAIL——不传口令这条用例直接红（踩过一次）。
       - name: 库层核查（脱敏形态与最小权限）
         run: python3 tools/db-check.py
+        env:
+          ADMIN_TOKEN: ci-only-token-not-a-secret
 
       # 运行期不变量：O06（检索模式自洽）与 O07（mock 下 LLM 不外呼）只在 --runtime 时才跑，
       # 而这个 job 的主实例还活着，所以在这里补一次——否则它们在 CI 里从不存在，
