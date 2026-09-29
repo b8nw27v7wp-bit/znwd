@@ -149,6 +149,48 @@
 
 会话令牌链路对着真后端实跑确认：问答下发 32 位令牌 → 不带令牌 GET 404 → 带令牌 GET 200 → 带令牌 DELETE 200 `{ok:true}` → 删后 GET 404，与前端新代码的调用方式逐条对齐。
 
+### 第三轮审核、bug 排查与前后端连通性（2026-09-29）
+
+四路并行：真前端代码↔真后端集成套件、字段级契约对账（前端读取 / 后端真实响应 / 文档三方）、对抗性 bug 排查（独立实例）、
+并发与生命周期只读审核；主会话另补了 26 路并发压测与「重启后令牌」实验。
+
+**修掉的真缺陷**
+
+| 缺陷 | 位置 | 影响 | 修法 |
+| --- | --- | --- | --- |
+| `/api/health` 的 `retrieval` 前端标成 `string` | `web/src/api.ts` | 后端发的是完整检索统计对象；将来谁按字符串用它就是运行时 TypeError | 新增 `HealthRetrieval` 按后端真实字段声明并把 `retrieval` 改成它，另补 `embeddingReady`/`adminTokenRequired`/`answerCacheSize` 三个可选字段；health 的 3 处测试桩同步改成对象 |
+| `startOver` 清服务端会话失败后连重试机会都没有 | `web/src/composables/useChat.ts` | DELETE 一失败就丢掉令牌，服务端那条会话只能等 TTL | 失败重试 1 次（300ms 退避）；仍失败把原因写进运营视图并注明「服务端那条会话最多留到 TTL 10 分钟」。不引入持久化重试队列——一体机场景不值得 |
+| `VectorStore.generation` 非 volatile | `knowledge/VectorStore.java` | 无锁读路径（stats/isCurrent）理论上可能读到陈旧代数 | 改 `volatile`（缓存键走的是 volatile snapshot，本来就没有该问题；这步是消疑，不是修 bug） |
+| 向量降级日志限流用 `static` 字段 | `knowledge/HybridRetriever.java` | 多 context/热部署时，新实例的首条 WARN 会被旧实例的计时器压制 | 改成实例字段 |
+| Analytics 计数器「靠锁保可见性」这条约束没写下来 | `analytics/Analytics.java` | 当前正确，但后人为了减锁竞争去掉 `stats()` 的 `synchronized` 就会读到不一致统计 | 把不变式写成注释钉在方法上 |
+| 部署文档没写「前端产物怎么接后端」 | `docs/deployment.md` | 静态服务器不反代 `/api` → 页面能开、接口全 404；SSE 被代理缓冲 → 回答憋完一次性吐 | 新增 §1.1：两种拓扑（nginx 反代 / 构建期 `VITE_API_BASE_URL` + `CORS_ORIGINS`）、nginx 片段（`proxy_buffering off`、`proxy_read_timeout 300s`）、三句排障口诀 |
+| 「无令牌窗口」表述模糊 | `docs/api.md` | 「重启后自然消失」会被反复当成悬空风险上报 | 写明：重启后从库恢复的会话（令牌只在内存、不落库）在 **≤ 会话 TTL（10 分钟）**窗口内可读可删，超期不恢复且库行被清 |
+
+**核实后不成立 / 影响被高估（记录以免重复报）**
+
+- **「会话令牌没生效」（对抗排查报 High）**：实测同一会话——重启前不带令牌 404、错令牌 404、对令牌 200（`?sessionToken=` 形式也 200）；它报的是**重启后从 MySQL 恢复的老会话**：令牌只在内存，恢复的会话按设计放行，窗口 ≤ TTL 10 分钟。`docs/api.md:195` 与 `docs/test-cases.md` TC-SES-11/TC-SEC-08 早已写明这是单屏展厅设计下的已接受风险。
+- 「`VectorStore.generation` 导致旧答案继续命中缓存」：缓存键读的是 `HybridRetriever` 的 `volatile snapshot`，不存在这条路径。
+- 「`/api/feedback` 缺 `sessionId` 应回 400」：按设计——只有 `rating` 必填，`sessionId`/`question`/`comment` 可选（`docs/api.md` §POST /api/feedback）。
+- 「Analytics 计数器可见性」：`stats()` 与 `logChat()` 持同一把锁，happens-before 成立，无实际 bug。
+- 畸形输入（43 条）、限流窗口与 `X-Forwarded-For` 伪造、SSE 中途断开、并发 PUT synonyms、前端套件确定性（`npm test` ×3 全绿）——在专用实例上逐项排除。
+
+**本轮新增的可复用资产**
+
+- `web/src/__live__/live-backend.itest.ts` + `web/vitest.live.config.ts`：**真前端模块 → 真后端**的连通性套件（17 条），默认 `npm test` 与 CI 都不收集，手动跑
+  `cd web && npx vitest run --config vitest.live.config.ts`（需后端在跑）。内含一条「绕过缓存真走一次上游」的用例
+  （`cached=false`、`latencyMs>0`、帧序不变）——否则整份套件会被答案缓存短路成「秒过」，看着绿其实没碰到模型。
+
+**本轮复跑（新 jar + 真 MiMo + 云端 bge-m3 + 本机 MySQL）**
+
+| 环节 | 结果 |
+| --- | --- |
+| 后端单测 | **167 项** 0 失败 |
+| 前端 | `npm test` **144 项**；`npm run build`（vue-tsc + vite）通过 |
+| 接口冒烟 | **100 通过 / 0 失败 / 0 跳过** |
+| 真机连通性套件 | **17 条通过**（其中真模型回合：cached=false、latencyMs 3680ms、54 个 delta 帧、202 字正文、1 条来源） |
+| 26 路并发（10 问答 + 8 流式 + 8 只读） | 全数成功，**无 5xx、无连接错误、无串帧**；8 路并发流式 7–9.8s |
+| 重启恢复 + 令牌语义 | 重启前拒绝无令牌访问；重启后恢复的老会话按设计放行（≤10 分钟）；会话与统计均从 MySQL 恢复 |
+
 ### 文档口径统一
 
 - 单测/前端/冒烟项数、语料块数（**219 块 / 17 篇**）、域外最高余弦（0.6826 → **0.6252**）、闸门余量（→ **0.130**）、

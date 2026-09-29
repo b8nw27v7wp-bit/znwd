@@ -95,6 +95,27 @@ export interface ZoneInfo {
 /** 推荐问题就是一行文字（后端 /api/suggestions 的 items 是字符串数组，与旧契约一致） */
 export type Suggestion = string;
 
+/** /api/health 的 retrieval：后端直接把检索统计对象序列化出来（不是字符串），字段与 HybridStats 同名 */
+export interface HealthRetrieval {
+  mode: 'hybrid' | 'keyword';
+  keywordChunks?: number;
+  indexReady?: boolean;
+  /** 索引代数：reload 后 +1，也是答案缓存 key 的一部分 */
+  generation?: number;
+  /** 语义向量这一轮是否真的参与了排序（false = 只走关键词路） */
+  semantic?: boolean;
+  thresholds?: { minKeywordScore?: number; minVectorScore?: number };
+  vector?: {
+    provider?: string;
+    semantic?: boolean;
+    dims?: number;
+    vectors?: number;
+    fingerprint?: string;
+    indexFile?: string;
+    queryFailures?: number;
+  };
+}
+
 export interface HealthInfo {
   ok: boolean;
   ready?: boolean;
@@ -106,7 +127,13 @@ export interface HealthInfo {
   /** 服务端语音是否可用：决定播报走服务端还是浏览器 */
   speechReady?: boolean;
   embedding: string;
-  retrieval: string;
+  /** 检索统计（对象，不是字符串）：2026-09-29 修掉这里原先错标成 string 的类型 */
+  retrieval: HealthRetrieval;
+  /** 语义向量可用性：embedding 不通时为 false，检索自动只走关键词路 */
+  embeddingReady?: boolean;
+  /** 管理口径是否强制口令（运营排障用；只在上报里有，前端不读它做判断） */
+  adminTokenRequired?: boolean;
+  answerCacheSize?: number;
   storage: string;
   storageAvailable: boolean;
   activeSessions: number;

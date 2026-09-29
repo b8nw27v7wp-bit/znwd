@@ -172,6 +172,11 @@ public class Analytics {
         return new ArrayList<>(uncovered.subList(0, size));
     }
 
+    /**
+     * 计数器不是 volatile：可见性靠 logChat 与这里**同一把 this 锁**保证。
+     * 谁要为了减少锁竞争把这里的 synchronized 去掉，必须同时把这些计数器改成 volatile/AtomicLong，
+     * 否则运营视图会读到不一致的统计。
+     */
     public synchronized Map<String, Object> stats(int activeSessions) {
         long up = feedback.stream().filter(FeedbackEntry::up).count();
         long down = feedback.stream().filter(FeedbackEntry::down).count();

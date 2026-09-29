@@ -74,7 +74,7 @@ function stubFetch(storageAvailable = true, streamFails = false, answer = ANSWER
       const url = String(input);
       if (url.includes('/api/health')) {
         return new Response(
-          JSON.stringify({ ok: true, knowledgeChunks: 134, llmProvider: 'mock', embedding: 'bag', retrieval: 'keyword', storage: 'mysql', storageAvailable, activeSessions: 0, minRelevanceScore: 6.3, uptimeSec: 1 }),
+          JSON.stringify({ ok: true, knowledgeChunks: 134, llmProvider: 'mock', embedding: 'bag', retrieval: { mode: 'keyword', keywordChunks: 134 }, storage: 'mysql', storageAvailable, activeSessions: 0, minRelevanceScore: 6.3, uptimeSec: 1 }),
           { status: 200 },
         );
       }
@@ -169,7 +169,7 @@ function stubServerSpeech(audios: FakeAudioEl[], calls: string[]): void {
       calls.push(url);
       if (url.includes('/api/health')) {
         return new Response(
-          JSON.stringify({ ok: true, knowledgeChunks: 134, llmProvider: 'openai_compat', speech: 'mimo', speechReady: true, embedding: 'bag', retrieval: 'keyword', storage: 'mysql', storageAvailable: true, activeSessions: 0, minRelevanceScore: 6.3, uptimeSec: 1 }),
+          JSON.stringify({ ok: true, knowledgeChunks: 134, llmProvider: 'openai_compat', speech: 'mimo', speechReady: true, embedding: 'bag', retrieval: { mode: 'keyword', keywordChunks: 134 }, storage: 'mysql', storageAvailable: true, activeSessions: 0, minRelevanceScore: 6.3, uptimeSec: 1 }),
           { status: 200 },
         );
       }
@@ -604,7 +604,7 @@ describe('展厅页面：语音失败可见与手势解锁', () => {
 function defaultFetchHandler(url: string): Response {
   if (url.includes('/api/health')) {
     return new Response(
-      JSON.stringify({ ok: true, knowledgeChunks: 134, llmProvider: 'mock', embedding: 'bag', retrieval: 'keyword', storage: 'mysql', storageAvailable: true, activeSessions: 0, minRelevanceScore: 6.3, uptimeSec: 1 }),
+      JSON.stringify({ ok: true, knowledgeChunks: 134, llmProvider: 'mock', embedding: 'bag', retrieval: { mode: 'keyword', keywordChunks: 134 }, storage: 'mysql', storageAvailable: true, activeSessions: 0, minRelevanceScore: 6.3, uptimeSec: 1 }),
       { status: 200 },
     );
   }

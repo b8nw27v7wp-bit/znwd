@@ -362,6 +362,7 @@ python tools/db-check.py
 | TC-DB(统计对账) | `tools/db-check.py` D09a–k + CI | 已覆盖（2026-09-29 补） |
 | TC-SES(TTL) / TC-DGR(会话上限、轮次裁剪) | `SessionStoreTest`（JUnit，`mvn test`） | 已覆盖（2026-09-29 补） |
 | TC-SSE(超时 UI) / TC-UI(展区竞态、health 降级、闲置复位、API 前缀、输入法组字) / TC-SES(前端令牌带回) | `App.spec` / `useChat.spec` / `apiUrl.spec`（vitest） | 已覆盖（2026-09-29 补） |
+| **前后端连通性（真前端模块 → 真后端）** | `web/src/__live__/live-backend.itest.ts` + `web/vitest.live.config.ts`（16 条） | 需后端在跑；**不进 CI、不进默认 `npm test`**（文件名是 `.itest.ts` 且 tsconfig 排除） |
 | TC-UI(真实点击与布局、真机语音) / TC-DGR(故障注入：LLM·库·语音断网) / TC-SES(重启恢复) / TC-DEP(反代、一体机开机自启·备份·断电重启) / TC-PERF(长跑) | 手工 | 仍需人工或到机器上做 |
 
 ### 3.2 缺口补齐记录（2026-09-29）
@@ -396,6 +397,7 @@ cd web && npm test                                      # 前端单测
 python tools/smoke.py                                   # 契约（串行）
 python tools/security.py                                # 边界安全（串行，收尾自动等限流窗口）
 python tools/db-check.py                                # 库层（勿与 security 并行）
+cd web && npx vitest run --config vitest.live.config.ts  # 真机连通性（需 8787 在跑；真前端模块打真后端）
 cd web && npm run build && cd .. && python tools/offline-check.py  # 先 build 再查产物
 cd server && ../tools/mvn -B test-compile exec:java@eval -Dexec.args="--no-write --baseline=docs/eval/baseline-java.json"
 cd server && ../tools/mvn -B test-compile exec:java@calibrate -Dexec.args="--gate-check --no-write"

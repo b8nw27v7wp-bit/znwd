@@ -48,7 +48,8 @@ public class VectorStore {
     private volatile String lastQueryError;
     private volatile boolean queryHealthy = true;
     private volatile long nextQueryProbeAt;
-    private long generation;
+    /** 索引代数：写点在 synchronized 的 tryLoad/build 里，但无锁读路径（stats/isCurrent）也要看到最新值 */
+    private volatile long generation;
 
     public VectorStore(EmbeddingProvider embedder, Path indexFile, ObjectMapper mapper) {
         this(embedder, indexFile, mapper, DEFAULT_BATCH);

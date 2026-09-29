@@ -13,8 +13,8 @@ import org.slf4j.LoggerFactory;
 public class HybridRetriever {
 
     private static final Logger log = LoggerFactory.getLogger(HybridRetriever.class);
-    /** 向量检索降级 WARN 限流：每个实例最多每 60 秒输出一条，防止刷屏 */
-    private static volatile long lastVectorDegradedLogMs;
+    /** 向量检索降级 WARN 限流：每个实例最多每 60 秒输出一条，防止刷屏（实例字段：多 context/热部署时不互相压制） */
+    private volatile long lastVectorDegradedLogMs;
     private static final long VECTOR_DEGRADED_LOG_INTERVAL_MS = 60_000;
 
     public static final double DEFAULT_MIN_KEYWORD_SCORE = 6.3;

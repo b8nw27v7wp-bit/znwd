@@ -246,13 +246,20 @@ export function useChat() {
       const previousSessionId = sessionId.value;
       const previousToken = sessionToken.value;
       let resetError = '';
-      try {
-        // 带上令牌：服务端对下发过令牌的会话，不带就回 404，等于没清掉（换人失败但看不出来）
-        await resetSession(previousSessionId, previousToken || null);
-      } catch (e) {
-        resetError = e instanceof Error ? e.message : '重置会话失败';
-        logError('（重置会话）', resetError);
+      // 带令牌：服务端对下发过令牌的会话，不带就回 404，等于没清掉（换人失败但看不出来）。
+      // 重试一次是为了服务刚重启/瞬时拒绝：真失败也只是让服务端那条会话多活到 TTL（10 分钟）为止，
+      // 本地已经换了新会话、上下文不会串；所以不为此引入持久化重试队列（一体机场景不值得）。
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          await resetSession(previousSessionId, previousToken || null);
+          resetError = '';
+          break;
+        } catch (e) {
+          resetError = e instanceof Error ? e.message : '重置会话失败';
+          if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 300));
+        }
       }
+      if (resetError) logError('（重置会话）', `${resetError}（服务端那条会话最多留到 TTL 10 分钟）`);
       if (operation !== resetGeneration) return;
       const fresh = newSessionId();
       sessionId.value = fresh;

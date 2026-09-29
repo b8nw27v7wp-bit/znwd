@@ -192,7 +192,10 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 - 下发：`POST /api/chat` 响应字段 `sessionToken`；`POST /api/chat/stream` 挂在 `done` 帧上（`meta` 帧不带）。
 - 带回：`GET`/`DELETE /api/sessions/{id}` 用 `X-Session-Token` 头（或 `?sessionToken=` 查询串，便于手测）。
 - 判据：**不匹配一律 404 `not_found`**——不回 403，403 等于承认这个 `sessionId` 有效。
-- 兼容：从未下发过令牌的老会话（例如上一版本前端起的会话）仍可不带令牌访问，重启后自然消失。
+- 兼容：从未下发过令牌的老会话（例如上一版本前端起的会话）仍可不带令牌访问。
+  **重启后从 MySQL 恢复的会话也属于这一类**（令牌只存在内存里，不落库），所以它们在这台机器重启后的
+  **≤ 会话 TTL（10 分钟）**窗口内是可读可删的；超过 TTL 的会话不会被恢复，库里的行也会被清掉。
+  这是单屏展厅设计下的已接受风险，见 `docs/security-testing.md`。
 - 前端：令牌只放内存与 `sessionStorage`，不进 URL、不进日志；换人时带令牌 `DELETE` 即可清上下文。
 
 ### GET /api/sessions/{sessionId}

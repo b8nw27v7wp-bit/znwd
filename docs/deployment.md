@@ -31,6 +31,34 @@
 - 前端 dev/preview 由 Vite 把 `/api` 代理到 `VITE_API_TARGET`（默认 `http://127.0.0.1:8787`）；SSE 会被强制 `no-cache, no-transform`，否则看不到逐字输出。
 - 展厅现场自查：`npm run build && npm run preview`（`:4173`，同样代理 `/api`），不必装 Nginx。
 
+### 1.1 前端产物怎么接后端（两种拓扑，二选一）
+
+**默认构建的前端是「同源」的**：`apiUrl()` 不带前缀时请求 `/api/...`，也就是打到**托管页面的那个源**。所以静态服务器必须把 `/api` 转给 jar，否则页面能打开、所有接口都 404——现场表现是「白屏/一直转圈」，而 curl 后端又是好的。
+
+**拓扑 A（推荐）：静态服务器反代 `/api`**，前端用默认构建（不需要 `VITE_API_BASE_URL`）：
+
+```nginx
+server {
+  listen 8080;
+  root /opt/znwd/web/dist;
+  location / { try_files $uri $uri/ /index.html; }        # SPA 回退，刷新子路径不会 404
+  location /api/ {
+    proxy_pass http://127.0.0.1:8787;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";                       # 让 SSE 用长连接
+    proxy_buffering off;                                  # 必须关：否则回答会「憋完一次性吐」
+    proxy_read_timeout 300s;                              # 给流式回答留足
+  }
+}
+```
+
+**拓扑 B：前端与后端跨源**——构建时把 API 前缀写死：`VITE_API_BASE_URL=http://127.0.0.1:8787 npm run build`（末尾不要带 `/`），并在后端配 `CORS_ORIGINS`：
+
+- 前端从**本机回环**打开（`http://127.0.0.1:任意端口`、`http://localhost:…`）时，后端默认就放行（`CorsPolicy` 内置回环源规则），**不用配** `CORS_ORIGINS`；`vite preview` 走的就是这种。
+- 前端要从**别的机器/非回环地址**打开，必须 `CORS_ORIGINS=http://<前端来源>`（逗号分隔，可用 `*` 但等于对所有来源开放，展厅内网也要慎用）；不配的表现是浏览器把所有接口请求拦在预检，后端日志里**一条都看不到**。
+
+排障口诀：**curl 后端好、页面却什么接口都不通** → 先看 Network 里的请求 URL 打到哪个源（拓扑没配对），再看是否 CORS（跨源没配白名单），最后看 SSE 是否被代理缓冲（回答一次性出现）。
+
 ## 2. 构建
 
 ```bash
