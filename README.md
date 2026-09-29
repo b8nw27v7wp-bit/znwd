@@ -1,6 +1,6 @@
 # AI 虚拟讲解问答（产品展厅）
 
-浏览器大屏：**整页仅占左约 1/3**——上方虚拟形象，**下方对话框**；右侧约 2/3 留白（可并排放展览视频）。
+浏览器大屏：**整页仅占左约 1/4（CSS `--panel-width: 25%`）**——上方虚拟形象，**下方对话框**；右侧约 3/4 留白（可并排放展览视频）。
 基于本地企业知识 **Hybrid RAG** 与可插拔 **LLM** 生成回答。
 
 当前知识业务：**光伏清洁机器人**、**光伏医生智慧运维**、**项目与团队**（语料来自三份申报/项目概述材料）。
@@ -39,7 +39,7 @@ znwd/
 │   ├── eval/retrieval-cases.json  # 检索评测用例
 │   ├── indexes/                 # 向量索引（不入库，可重建）
 │   └── src/main/java/com/znwd/hostess/{config,embedding,knowledge,llm,audio,http,domain,repository,session,analytics,rag,web}
-├── web/                         # Vue 3 + Vite：左 1/3 形象 + 下方对话
+├── web/                         # Vue 3 + Vite：左约 1/4（CSS `--panel-width: 25%`）形象 + 下方对话
 │   └── src/{App.vue,api.ts,composables,components,styles.css}
 ├── knowledge/                   # RAG 知识（整目录替换业务资料；_meta/zones.json 管展区）
 ├── tools/                       # mvn（MSYS 包装脚本）、smoke/security/db/offline 检查脚本
@@ -50,7 +50,7 @@ znwd/
 ## 常用 API
 
 - `GET /api/health`（`ok`/`ready` 表示知识快照已就绪；另含 `retrieval`、`storageAvailable`、`corsOrigins`、语音与 embedding 状态）
-- `GET /api/suggestions`（`?zone=pv-clean` / `wind-inspect` / `exhibit-*`；返回**字符串数组**）
+- `GET /api/suggestions`（`?zone=pv-clean` / `wind-inspect` / `exhibit-*`；返回**字符串数组**。现行展区只有 pv-clean / pv-doctor / project；`wind-inspect` 属历史，风场语料已移除）
 - `GET /api/zones`
 - `POST /api/chat` — `{ "message", "sessionId" }` → 含 `noHit`（知识库未覆盖）与 `sources`
 - `POST /api/chat/stream` — SSE（`meta` → `delta`* → `done`）
@@ -68,11 +68,11 @@ znwd/
 ## 校验命令
 
 ```bash
-cd server && ../tools/mvn -B test                                        # 单测（157 项）
+cd server && ../tools/mvn -B test                                        # 单测（167 项）
 cd server && ../tools/mvn -B test-compile exec:java@eval -Dexec.args="--no-write --baseline=docs/eval/baseline-java.json"   # 检索评测 + 已提交基线门禁
 cd server && ../tools/mvn -B test-compile exec:java@calibrate            # 阈值标定（改语料后必跑）
 cd server && ../tools/mvn -B -q test-compile exec:java@ingest -Dexec.args="--src ./inbox --zone <展区id>"   # 资料入库（PDF/Word/txt）
-python tools/smoke.py                                                    # 接口契约冒烟（需服务在跑；带 ADMIN_TOKEN 时 60 项，语音启用 63 项，口径见 docs/development.md §7）
+python tools/smoke.py                                                    # 接口契约冒烟（需服务在跑；100 项，口径见 docs/development.md §7）
 python tools/acceptance.py                                               # 问答内容验收（需真模型在跑，40 项）
 cd web && npm run build && npm test                                      # 前端类型检查+构建、单测
 ```

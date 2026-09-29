@@ -1,5 +1,7 @@
 # 修复计划：语音播报「没启动」
 
+> **本文是 2026-09-22 的语音播报修复计划快照**：P0/P1/P2 均已修复并复验；当前状态以 `CHANGELOG.md` 与 `docs/{architecture,api}.md` 为准，本文保留当时的根因与验收依据。
+
 状态：**P0 / P1 / P2 已修并复验**（2026-09-22）。复验数据见下方「实测证据」的复验表与「验收结果」。相关代码：`web/src/composables/useSpeech.ts`、`web/src/App.vue`、`web/src/components/AdminPanel.vue`。
 
 ## 现象

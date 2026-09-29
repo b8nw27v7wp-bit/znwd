@@ -4,6 +4,45 @@
 
 ## [未发布] — 2026-09-29 · 会话归属令牌 / 话术外置 / 运营面板 / 反馈独立限流 + 交付前全量复跑
 
+### 文档-代码口径对齐（第四批复跑，2026-09-29）
+
+前几批的测试数字与契约结论只回写到「第一批」口径，第二/三轮的增项没有同步进活文档；这一轮做了一次全量复跑 + 逐处对齐。
+
+**代码侧（2 项真修复）**
+
+- **`Calibrate` 区间判据与闸门口径不一致（已修）**：`HybridRetriever` 判闸门比的是排序分 `keywordBestScore`
+  （含同义词扩展），而 `Calibrate` 的「区间是否成立」却按只算原话的 `keywordGateScore` 算，输出还自称「与闸门同一口径」。
+  改用排序分口径后，本次输出**区间成立**：域外最高 6.170 < 阈值 6.3 < 在域最低 6.438，建议 `minKeywordScore=6.3`，
+  余量 **0.130**（原话口径 2.505/5.419 保留为参考行）。`--gate-check` 判据不变（退出码 0）。
+- **清掉已删展区的同义词遗留词（30 → 21）**：`Synonyms.DEFAULTS` 移出风场/叶片/塔筒/闪光灯/触摸/摸/展品/预约/安全
+  等随旧语料一起退役的词条，`SynonymsTest` 同步（`defaults/replace/tsvRoundTrip` 断言与示例改到现行语料）。
+
+**文档侧（对齐到 2026-09-29 复跑的权威口径）**
+
+| 环节 | 权威结果 |
+| --- | --- |
+| 后端单测 | **167** 项 0 失败 |
+| 前端 | `npm test` **144** 项（12 文件）全绿；`npm run build` 通过 |
+| 检索评测 | 145 条计分（+2 开放）top1/top3 **1.0**、`gateBlockedCount` 0、与 `baseline-java.json` 逐例不一致 **0** |
+| 闸门标定 | 区间成立（6.170~6.438）、余量 **0.130**、`--gate-check` 退出 0 |
+| 语义兜底 | 域外最高余弦 **0.6252**、待救在域 0 条，`MIN_VECTOR_SCORE=0.75` 仍等价关闭 |
+| 接口冒烟 | **100 / 0 / 0** |
+| 边界安全 | 主实例 **91 / 0 / 7**（缺第二/误配置/开发态实例）；四实例 **99 / 0 / 0** |
+| 库层 | **19 / 0 / 0** |
+| 离线不变量 | **7 / 0 / 1**（O07 仅 mock 下判定） |
+| 内容验收 | **40 / 0** |
+
+- 数字与结论落到 `README.md`、`docs/{README,development,api,architecture,knowledge,security,security-testing,deployment,eval,test-cases,CODE_REVIEW_HANDOFF,optimization-backlog}.md`；
+  `docs/development.md §7` 新增「当前口径」表作为唯一出处。
+- 修掉的契约/结构漂移：`/api/feedback` 已是独立限流桶（`FEEDBACK_RATE_PER_MIN`，旧文写成与 chat 共桶）；
+  鉴权清单补 `GET /api/knowledge/list`；`health.speechReady` 现在同时要求 base URL 与 API key 非空；
+  同义词示例 `count` 23 → 21；`architecture.md` 前端清单补 `KnowledgePanel`/`DiagnosticsPanel`/`StageDiagram`；
+  布局口径从「左 1/3」正为「左约 1/4（`--panel-width: 25%`）」；`knowledge.md` 示例标题从「光伏清洁无人机」正为「两栖光伏清洁机器人」；
+  `application.yml` / `api.md` 的旧余弦数字（0.6826/0.6389）改为现行 0.6252/待救 0。
+- 风场时代的历史示例（`叶片检测要停机吗？`、`wind-inspect`、`叶片/风叶/桨叶`）**按要求保留并加注**，不改成现行语料；
+  历史快照（`HERMES_HANDOFF.md`、`REPAIR_PLAN.md`、`optimization-backlog.md` 各轮表、`docs/archive/`）原样保留。
+- 前端 `api.ts` 补齐诊断接口的可选字段（`semantic`/`degraded`/`matchedTokens`/`matched`）；`docs/plan.md` 标注为 2026-09-22 历史快照。
+
 ### Added — 会话归属令牌（`X-Session-Token`）
 
 - **问答响应下发会话令牌**：非流式是响应字段 `sessionToken`，SSE 挂在 `done` 帧上（`meta` 帧不带）。

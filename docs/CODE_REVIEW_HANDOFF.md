@@ -41,7 +41,7 @@
 | P1 | 向量索引缺少身份/维度/语料校验 | 已修复 | 索引 v2、provider/model/endpoint/dims/指纹校验、查询冷却 |
 | P1 | 知识库空/加载失败时静默继续 | 已修复 | `KnowledgeLoader`/`KnowledgeService` fail-closed，快照原子替换 |
 | P1 | 会话恢复顺序、并发写和清理不可靠 | 已修复 | 分片锁、单调 seq、按 seq 恢复、过期清理、失败状态 |
-| P1 | 前端 SSE 状态机、Abort、reset、TTS 竞态 | 已修复 | 前端 134 项测试与构建通过（2026-09-29 复核） |
+| P1 | 前端 SSE 状态机、Abort、reset、TTS 竞态 | 已修复 | 前端 144 项测试与构建通过（2026-09-29 复核） |
 | P1 | 会话 GET/DELETE 无所有权校验 | **已修复（2026-09-29）**：问答响应下发 `sessionToken`，`GET/DELETE` 用 `X-Session-Token`（或 `?sessionToken=`）校验，不匹配回 404 | `ChatWebContractTest` 4 条单测；`tools/security.py` S19/S19a–d 实测 404/404/200/200；残留取舍（令牌即所有权）记在 `docs/security-testing.md` |
 | P1 | 语义兜底是否允许新增候选，代码与文档契约不一致 | **已决策：允许语义新增候选，文档已同步** | 按「文档对齐代码」定稿：`HybridRetriever` 保持允许，`docs/architecture.md`/`docs/knowledge.md` 已改写；`MIN_VECTOR_SCORE=0.75` 仍等效关闭兜底（测试注释待 `server/` 侧同步） |
 | P1 | 一体机 MySQL 初始化、开机自启、备份恢复未在目标机验证 | **未验证** | 固定 `DB_HOST=127.0.0.1`；先执行 `server/db/init.sql`，正式验收要求 `storageAvailable=true` |
@@ -97,8 +97,8 @@ py -3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml', encoding=
 
 已取得的结果：
 
-- 后端：123 tests，0 failures，0 errors，0 skipped。
-- 前端：9 个测试文件，104 tests passed。
+- 后端：167 tests，0 failures，0 errors，0 skipped。
+- 前端：12 个测试文件，144 tests passed。
 - 前端构建：`vue-tsc -b` + `vite build` 通过。
 - eval：145 条计分用例 top1/top3 均为 1.0，baseline 逐例不一致数为 0。
 - calibrate gate-check：退出码 0；域外关键词分与语义余弦未越线。
@@ -111,7 +111,7 @@ py -3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml', encoding=
 2. **CI 尚未在 runner 上执行**：本地 YAML 解析只能证明语法，不证明 MySQL service、`env -u`、端口探测和脚本顺序在 Ubuntu runner 上正常。
 3. **语义兜底契约已定稿**：当前 `HybridRetriever` 在关键词未过闸门时可能把向量独有候选带入结果——已决策「允许语义新增候选、文档对齐代码」，`docs/architecture.md`、`docs/knowledge.md` 已同步（`MIN_VECTOR_SCORE=0.75` 仍等效关闭兜底）。
 4. **会话访问模型仍是单屏假设**：随机 ID 降低猜测概率，但不是访问控制。
-5. **阈值区间警告仍存在**：标定显示在域最低分与域外最高分的可分区间不成立；当前依靠 6.3 的排序分口径守住域外门禁，语料变化后必须重标定。
+5. **阈值区间已成立但仍须重标定**：标定（排序分口径，与闸门一致）区间成立：域外最高 6.170 < 阈值 6.3 < 在域最低 6.438，余量 0.130；语料变化后必须重标定。
 6. **一体机本机 MySQL 尚未做干净机演练**：需要验证开机自启、`.env` 权限、`init.sql` 幂等性、断电重启后的会话/统计恢复和本机备份恢复；不涉及远程数据库 TLS。
 
 ## 6. 审核通过条件

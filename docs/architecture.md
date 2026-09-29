@@ -25,7 +25,7 @@
 
 资源与测试：`resources/{application.yml,schema.sql,openapi.json,META-INF/spring.factories}`；`db/init.sql`（建库建账号）；`eval/retrieval-cases.json`（评测用例）；`src/test/java/.../{knowledge,http,analytics,eval,cli}`（单测 + 三个 CLI 工具：`eval`、`calibrate`、`ingest`）。
 
-前端源码根 `web/src/`：`App.vue`（页面状态与布局）、`api.ts`（契约、SSE 与语音请求）、`format.ts`（回答排版：粗体/列表/分段，不产出 HTML）、`composables/useChat.ts`（问答状态机）、`composables/useSpeech.ts`（服务端 TTS 优先、浏览器合成降级）、`composables/useDictation.ts`（录音、重采样与 WAV 编码）、`storage.ts`、`components/{SourcePanel,AdminPanel,AvatarPortrait,AvatarFigure}.vue`、`styles.css`。
+前端源码根 `web/src/`：`App.vue`（页面状态与布局）、`api.ts`（契约、SSE 与语音请求）、`format.ts`（回答排版：粗体/列表/分段，不产出 HTML）、`composables/useChat.ts`（问答状态机）、`composables/useSpeech.ts`（服务端 TTS 优先、浏览器合成降级）、`composables/useDictation.ts`（录音、重采样与 WAV 编码）、`storage.ts`、`components/{SourcePanel,AdminPanel,KnowledgePanel,DiagnosticsPanel,StageDiagram,AvatarPortrait,AvatarFigure}.vue`（其中 `KnowledgePanel`/`DiagnosticsPanel`/`StageDiagram` 各有对应的 `.spec.ts` 单测）、`styles.css`。
 
 ## 2. 一次问答的时序
 
@@ -88,7 +88,7 @@ knowledge/  ──KnowledgeLoader──▶  块（title/zone/tags/正文）
 - **非语义向量不参与融合**：`bag` 是哈希兜底、不是相似度，融进去只会打乱关键词路排序，而 `mode` 仍如实上报 `keyword`——上报与行为不一致最难排查。此时它只做诊断上报。
 - **模式如实上报**：只有语义向量真的参与排序（兜底路径）才是 `hybrid`，否则 `keyword`（附 `degradedReason`）。语义路可用但没被用到的查询报 `keyword`，这是如实上报而不是降级。
 - **语义路可降级**：embedding 走外部服务，它不通时**不阻塞启动、也不报错给访客**——构建失败退回仅关键词并记 `degradedReason`；查询期失败只影响本次检索、计数进 `queryFailures`/`lastQueryError` 并在 `/api/health` 的 `embeddingReady=false` 上体现，下一次成功自愈。
-- **同义词**：内置 30 组在 `Synonyms`，可用 `knowledge/_meta/synonyms.tsv` 覆盖或走 `PUT /api/admin/synonyms` 在线替换；**查询期展开**，改完立即生效、无需重建索引。
+- **同义词**：内置 21 组在 `Synonyms`，可用 `knowledge/_meta/synonyms.tsv` 覆盖或走 `PUT /api/admin/synonyms` 在线替换；**查询期展开**，改完立即生效、无需重建索引。
 - **诊断出口**：`RetrievalDiagnostics` + `RetrievalVerdict` 把「为什么被拦/命中」翻成一句人话，由 `/api/admin/diagnostics` 暴露。
 - **换代原子性**：`HybridRetriever` 用 `volatile Snapshot(gen, keyword, ready)`，reload 时关键词快照与向量索引同代切换，检索中不会混代。
 
@@ -124,7 +124,7 @@ MySQL 表（`resources/schema.sql`，全部 `CREATE TABLE IF NOT EXISTS`）：
 
 | 文件 | 职责 |
 | --- | --- |
-| `App.vue` | 页面状态与布局：左 25% 讲解面板（上半虚拟形象、下半问答），右侧留白；闲置 3 分钟自动回到欢迎态；`avatarState`（等首字=thinking / 出字=speaking / 其余=idle） |
+| `App.vue` | 页面状态与布局：左 25% 讲解面板（上半虚拟形象、下半问答），右侧/下方另有讲解图 `StageDiagram`；闲置 3 分钟自动回到欢迎态；`avatarState`（等首字=thinking / 出字=speaking / 其余=idle） |
 | `api.ts` | 契约类型与调用；SSE 用 `fetch` 流式读取 + 逐帧解析（`EventSource` 只能 GET，提问要放 body）；跨 chunk 半帧重组；封装 TTS/ASR 请求；中文/TS 类型与后端字段一一对应 |
 | `composables/useChat.ts` | 问答状态机：发送、流式增量、失败不抹掉已收到的半句、来源、推荐问题、反馈 |
 | `composables/useSpeech.ts` | 语音播报：服务端 MiMo TTS 优先，失败当场退回浏览器合成；只读回答、流式结束整段读、长文按句切片、开关落 localStorage |
@@ -133,7 +133,7 @@ MySQL 表（`resources/schema.sql`，全部 `CREATE TABLE IF NOT EXISTS`）：
 | `format.ts` | 回答排版：`**粗体**`→加粗片段、`1.`/`·` 列表→悬挂缩进、空行分段；只产出结构交给模板渲染，模型输出里的尖括号只是文字 |
 | `components/AvatarPortrait.vue` | 虚拟形象：立绘优先（`public/avatar-guide.png`），`AvatarFigure.vue`（手写 SVG）兜底；外部只吃 `state` 属性，换 3D/Live2D 只改内部 |
 | `components/SourcePanel.vue` | 来源折叠面板（「查看来源（N）」） |
-| `components/AdminPanel.vue` | 运营抽屉：统计、未覆盖问题、反馈 CSV |
+| `components/AdminPanel.vue` | 运营抽屉：统计、未覆盖问题、反馈 CSV；并挂载 `KnowledgePanel`（知识清单、reload、同义词热更新）与 `DiagnosticsPanel`（检索诊断） |
 
 布局约束：浅色极简、白底无边框卡片、大留白；不引 UI 框架、不用 emoji。
 

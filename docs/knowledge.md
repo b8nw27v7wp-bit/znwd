@@ -32,7 +32,7 @@ Markdown，可选 YAML frontmatter：
 
 ```markdown
 ---
-title: 光伏清洁无人机产品概述
+title: 两栖光伏清洁机器人产品概述
 zone: pv-clean
 tags: pv-clean,光伏,清洁
 ---
@@ -60,7 +60,7 @@ tags: pv-clean,光伏,清洁
       "aliases": ["光伏医生", "巡检", "诊断", "数字孪生", "热斑", "积灰"],
       "suggestions": ["光伏医生系统是什么？", "无人机巡检能发现哪些故障？"] }
   ],
-  "media": [{ "mediaId": "exhibit-pv-clean", "title": "光伏清洁无人机展项", "zoneId": "pv-clean" }]
+  "media": [{ "mediaId": "exhibit-pv-clean", "title": "光伏清洁机器人展项", "zoneId": "pv-clean" }]
 }
 ```
 
@@ -133,14 +133,14 @@ python -c "import json,urllib.parse,urllib.request as u; q=urllib.parse.quote('�
 
 ## 6. 同义词维护
 
-内置 30 组（`Synonyms.java`，含「叶片/风叶/桨叶」「巡检/检查/缺陷/裂纹」等），可用外部覆盖表替换或在线维护——**改完对下一个问题立即生效，不需要重建索引**。
+内置 21 组（`Synonyms.java`，含「清洁/清洗/除尘」「巡检/检查/复检」等），可用外部覆盖表替换或在线维护——**改完对下一个问题立即生效，不需要重建索引**。
 
 1. **覆盖表文件**：`knowledge/_meta/synonyms.tsv`
 
    ```text
    # 主词<TAB>备选词（逗号分隔），一行一条
-   叶片	风叶,桨叶
-   塔筒	塔架,风机塔
+   清洁	清洗,除尘
+   巡检	检查,复检
    ```
 
 2. **在线接口**：
@@ -152,7 +152,7 @@ python -c "import json,urllib.parse,urllib.request as u; q=urllib.parse.quote('�
    # 整表替换（persist=true 写回 synonyms.tsv；false 只改内存）
    curl -X PUT http://127.0.0.1:8787/api/admin/synonyms \
      -H "authorization: Bearer $ADMIN_TOKEN" -H "content-type: application/json" \
-     -d '{"entries":{"叶片":["叶片","风叶","桨叶"],"塔筒":["塔筒","塔架"]},"persist":true}'
+     -d '{"entries":{"清洁":["清洁","清洗","除尘"],"巡检":["巡检","检查","复检"]},"persist":true}'
    ```
 
 规则与坑：
@@ -258,4 +258,4 @@ ingestedAt: 2026-09-21
 | 帮我写一首关于夏天的诗 | **`noHit=true`、`sources=[]`、`provider=gate`**（闸门拦下） |
 | 今天上海天气怎么样？ | 同上（域外问题不该硬答） |
 
-验证命令：`curl -s -X POST http://127.0.0.1:8787/api/chat -H "content-type: application/json" -d '{"message":"叶片检测要停机吗？"}'`（中文没问题，因为是 JSON body 而不是 query）。
+验证命令：`curl -s -X POST http://127.0.0.1:8787/api/chat -H "content-type: application/json" -d '{"message":"清洁作业流程是怎样的？"}'`（中文没问题，因为是 JSON body 而不是 query；原「叶片检测要停机吗？」属已退役风场展区的历史示例）。

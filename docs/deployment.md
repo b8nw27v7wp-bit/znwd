@@ -183,7 +183,10 @@ mysql -u root -p < server/db/init.sql
 | `GET /api/admin/uncovered` | 有 | 未覆盖问题清单（补资料的靶子） |
 | `GET /api/admin/feedback-stats?format=csv` | 有 | 反馈汇总 / CSV 导出 |
 | `GET /api/admin/diagnostics?q=…` | 有 | **诊断某句话为什么被拦/命中**，给出离阈值还差多少 |
+| `GET /api/admin/synonyms` | 有 | 查看同义词覆盖表（内置 + TSV 覆盖，含来源与条目） |
+| `PUT /api/admin/synonyms` | 有 | 整表替换同义词（默认 `persist=true` 写回 `knowledge/_meta/synonyms.tsv`，立即生效） |
 | `POST /api/knowledge/reload` | 有 | 重载知识、重建索引、清答案缓存 |
+| `GET /api/knowledge/list` | 有 | 知识清单：文件/块数、检索模式、同义词摘要 |
 
 日常巡检建议：
 

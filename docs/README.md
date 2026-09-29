@@ -18,6 +18,7 @@
 | [HERMES_HANDOFF.md](./HERMES_HANDOFF.md) | 当前工作区、已完成修复、验证结果和未验证项的交接记录 |
 | [CODE_REVIEW_HANDOFF.md](./CODE_REVIEW_HANDOFF.md) | 按严重级别汇总的代码审核结论、遗留风险和发布条件 |
 | [REPAIR_PLAN.md](./REPAIR_PLAN.md) | 一体机部署前后的 P0/P1/P2 修复任务与验收标准 |
+| [plan.md](./plan.md) | 语音播报修复计划（2026-09-22 历史快照，P0/P1/P2 已完成） |
 | [optimization-backlog.md](./optimization-backlog.md) | 已修问题、待做项、已知取舍 |
 | [security.md](./security.md) | 安全口径：已加固项、已核查项、已接受的风险、上线检查清单 |
 | [security-testing.md](./security-testing.md) | 边界与安全测试用例：编号、输入、期望、实测结果，以及明确接受的风险 |
@@ -39,7 +40,7 @@ server/                # Spring Boot：HTTP / RAG / LLM / MySQL
   db/init.sql          # 建库建账号（首次部署执行一次）
   indexes/             # 本地向量索引（不入库，可重建）
   src/main/java/com/znwd/hostess/
-web/                   # Vue 3 + Vite：左 1/3 形象 + 下方对话
+web/                   # Vue 3 + Vite：左约 1/4 形象 + 下方对话
 tools/                 # mvn（Maven 包装脚本）、smoke.py（接口契约冒烟）、
                        # security.py（边界与安全用例）、db-check.py（库层脱敏与最小权限核查）、
                        # offline-check.py（「除大模型、embedding 与可选语音服务外一律本地」不变量）、

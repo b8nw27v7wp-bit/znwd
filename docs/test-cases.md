@@ -253,7 +253,7 @@ python tools/db-check.py
 | TC-UI-13 | 点「重新开始」 | 调 `DELETE /api/sessions/:id`、换新 sessionId、清屏、停朗读；重置期间（resetting）输入禁用、拒新 ask；重置失败也清本地并可继续用 | P0 | vitest `useChat.spec` + 手工 |
 | TC-UI-14 | 闲置 180 秒不操作 | 自动复位（清屏换会话），回到初始欢迎态 | P2 | `App.spec` TC-UI-14（假定时器推进 180s，含手势重置计时器） |
 | TC-UI-15 | URL 不带 `?admin=1` / 带 `?admin=1` | 无运营入口；带参才出现抽屉，且不刷新不丢 | P1 | vitest `App.spec` |
-| TC-UI-16 | 三档分辨率（1280×800 / 1600×900 / 1920×1080） | 左 1/3 形象+对话、右 2/3 讲解图布局不塌（对照 `.run/` 存档截图） | P2 | 手工 |
+| TC-UI-16 | 三档分辨率（1280×800 / 1600×900 / 1920×1080） | 左约 1/4（`--panel-width: 25%`）形象+对话、右侧讲解图布局不塌（对照 `.run/` 存档截图） | P2 | 手工 |
 | TC-UI-17 | 全程观察 console 与网络面板 | 无未捕获异常、无 404 静态资源；`VITE_API_BASE_URL` 配置后 API 前缀拼接正确（去尾斜杠、不双写 `/api`） | P1 | `apiUrl.spec` TC-UI-17（前缀拼接 4 条；console/404 仍手工） |
 | TC-UI-18 | 中文输入法组字中按回车（选词那一下） | **不提交**，草稿留在输入框；组字结束后的回车才提交——否则半截拼音会被当成问题发出去 | P1 | `App.spec` 输入法组字用例 |
 
@@ -362,7 +362,7 @@ python tools/db-check.py
 | TC-DB(统计对账) | `tools/db-check.py` D09a–k + CI | 已覆盖（2026-09-29 补） |
 | TC-SES(TTL) / TC-DGR(会话上限、轮次裁剪) | `SessionStoreTest`（JUnit，`mvn test`） | 已覆盖（2026-09-29 补） |
 | TC-SSE(超时 UI) / TC-UI(展区竞态、health 降级、闲置复位、API 前缀、输入法组字) / TC-SES(前端令牌带回) | `App.spec` / `useChat.spec` / `apiUrl.spec`（vitest） | 已覆盖（2026-09-29 补） |
-| **前后端连通性（真前端模块 → 真后端）** | `web/src/__live__/live-backend.itest.ts` + `web/vitest.live.config.ts`（16 条） | 需后端在跑；**不进 CI、不进默认 `npm test`**（文件名是 `.itest.ts` 且 tsconfig 排除） |
+| **前后端连通性（真前端模块 → 真后端）** | `web/src/__live__/live-backend.itest.ts` + `web/vitest.live.config.ts`（17 条） | 需后端在跑；**不进 CI、不进默认 `npm test`**（文件名是 `.itest.ts` 且 tsconfig 排除） |
 | TC-UI(真实点击与布局、真机语音) / TC-DGR(故障注入：LLM·库·语音断网) / TC-SES(重启恢复) / TC-DEP(反代、一体机开机自启·备份·断电重启) / TC-PERF(长跑) | 手工 | 仍需人工或到机器上做 |
 
 ### 3.2 缺口补齐记录（2026-09-29）
@@ -384,7 +384,7 @@ python tools/db-check.py
 - **会话归属**（TC-SES-11、TC-SEC-08）：**已收紧（2026-09-29）**——问答响应下发 `sessionToken`；`GET/DELETE /api/sessions/{id}` **会话存在时**不带或不匹配一律 404（不承认该 id 有效，否则等于给枚举器）；**会话不存在时**按原语义回：`GET` 404、`DELETE` 200 `{ok:false}`。`ChatWebContractTest` 4 条单测 + `tools/security.py` S19/S19a–d + `tools/smoke.py` 12) 组 + `useChat.spec` 会话归属令牌组（前端）盯着。残留取舍（令牌持有者等价于会话所有者）见 `docs/security-testing.md`。
 - **语义兜底「只重排还是可增候选」**（影响 TC-KB-02/13 对 `retrieval=hybrid` 的判定）：**已决策——允许语义新增候选，文档已对齐代码**（`docs/architecture.md`/`docs/knowledge.md` 已改写）；改动任一侧时仍要同步本文与 `docs/api.md`。
 - **`MIN_VECTOR_SCORE=0.75` 实际关闭了向量兜底**：当前线上正常应见 `retrieval=keyword`；`hybrid` 只在真语义参与排序时出现。
-- **文档数字**：活文档按实际运行输出统一（后端单测 **163**、前端单测 **142**、冒烟 **100**、安全 **98**（1 跳过）、库层 **19**、离线 **7**、检索评测 **145**）；历史快照保留原数字，**一律以实际运行输出为准**。
+- **文档数字**：活文档按实际运行输出统一（后端单测 **167**、前端单测 **144**、冒烟 **100**、安全 **91**（主实例，7 跳过；四实例 99/0/0）、库层 **19**、离线 **7**（1 跳过）、检索评测 **145**）；历史快照保留原数字，**一律以实际运行输出为准**。
 
 ## 4. 执行顺序与通过标准
 

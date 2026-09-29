@@ -27,18 +27,18 @@ cd server && ../tools/mvn -B test        # 等价于 mvn -B test
 | 目的 | 命令（工作目录） | 预期输出 |
 | --- | --- | --- |
 | 起后端 | `cd server && ../tools/mvn spring-boot:run` | `Tomcat started on port 8787` / `Started HostessApplication`；随后轮询 `/api/health`，等 `ok=true`、`ready=true` 再跑接口检查 |
-| 单测 | `cd server && ../tools/mvn -B test` | `Tests run: 123, Failures: 0, Errors: 0` |
+| 单测 | `cd server && ../tools/mvn -B test` | `Tests run: 167, Failures: 0, Errors: 0` |
 | 检索评测 | `cd server && ../tools/mvn -B test-compile exec:java@eval -Dexec.args="--no-write --baseline=docs/eval/baseline-java.json"` | 逐例对比已提交基线：top1/top3、闸门指标、漏答数与每条 `top1Path` 都不得退化；当前基线为 145 条计分用例、top1/top3 均 `1.0`、闸门漏答 `0` |
 | 阈值标定 | `cd server && ../tools/mvn -B test-compile exec:java@calibrate` | 在域最弱 8 条、域外降序、区间与建议、**语义兜底标定**（域外最高余弦 vs 待救用例）；**区间判据与闸门口径不一致，先读 `docs/eval.md` 的说明**；`--grid` 再加 36 组参数网格；`--gate-check` 判两条线（关键词域外越线退出码 3、语义余弦越线退出码 4，CI 用的就是这条）；报告落 `docs/eval/calibration-*.json` |
 | 资料入库 | `cd server && ../tools/mvn -B -q test-compile exec:java@ingest -Dexec.args="--src ./inbox --zone <展区id>"`（`--dry-run` 先看目标路径） | `完成：N/M 入库`；扫描件 PDF 与 `.doc` 明确报错；用法见 `docs/knowledge.md` §8 |
-| 接口冒烟 | `python tools/smoke.py`（需服务在跑，`BASE=http://…` 可改目标；管理块要 `ADMIN_TOKEN`） | `通过 60 项，失败 0 项`（语音未启用；语音启用 63 项，分档口径见 §7） |
+| 接口冒烟 | `python tools/smoke.py`（需服务在跑，`BASE=http://…` 可改目标；管理块要 `ADMIN_TOKEN`） | `通过 100 项，失败 0 项`（带 `ADMIN_TOKEN`、语音启用；分档口径见 §7） |
 | 问答内容验收 | `python tools/acceptance.py`（需服务 + 真模型在跑；`TAGS=fix,fact` 可只跑一组） | `通过 40 项，失败 0 项`（内容层：该答的答对、该拒的拒、资料里没有的不许编；CI 跑不了，要真模型） |
-| 边界与安全 | `python tools/security.py`（同上；非回环越权与误配置组见 `docs/security-testing.md`） | `通过 49 项，失败 0 项`（只跑主实例）／`57 项`（另起两个实例时） |
-| 库层核查 | `python tools/db-check.py`（需本机 mysql 客户端：`MYSQL_BIN` 或候选路径 `D:/mysql-cli/mysql-8.4.0-winx64/bin/mysql.exe`；缺客户端整组 SKIP） | `通过 8 项，失败 0 项` |
+| 边界与安全 | `python tools/security.py`（同上；非回环越权与误配置组见 `docs/security-testing.md`） | 主实例 `91 通过 / 0 失败 / 7 跳过`（缺第二/误配置/开发态实例）；四实例全跑 `99 通过 / 0 失败 / 0 跳过` |
+| 库层核查 | `python tools/db-check.py`（需本机 mysql 客户端：`MYSQL_BIN` 或候选路径 `D:/mysql-cli/mysql-8.4.0-winx64/bin/mysql.exe`；缺客户端整组 SKIP） | `通过 19 项，失败 0 项` |
 | 本地化不变量 | `python tools/offline-check.py`（`--runtime` 追加运行期核查） | O04 后端出网白名单只含 LLM、embedding、MiMo 语音三个适配器；其它网络调用即失败 |
 | 前端 dev | `cd web && npm install && npm run dev` | `VITE v6 ready`，`:5173`，`/api` 代理到 8787 |
 | 前端构建 | `cd web && npm run build` | `vue-tsc -b` 类型检查 + `vite build`，产物 `web/dist` |
-| 前端单测 | `cd web && npm test` | `134 passed`（11 个测试文件，含 jsdom 下的组件接线测试） |
+| 前端单测 | `cd web && npm test` | `144 passed`（12 个测试文件，含 jsdom 下的组件接线测试） |
 | 打包后端 | `cd server && ../tools/mvn -B -DskipTests package` | `server/target/hostess-server.jar` |
 
 评测/标定是**改语料、改同义词、改打分参数后的必跑项**；检索评测还要通过 `docs/eval/baseline-java.json` 的逐例门禁，口径见 `docs/eval.md`。
@@ -92,19 +92,32 @@ MySQL 首次使用：把 `server/db/init.sql` 里两处 `CHANGE_ME_znwd` 改成�
 
 ## 7. 测试与 CI
 
+### 当前口径（2026-09-29 复跑）
+
+本机全量复跑实测，作为唯一出处，供其它文档引用：
+
+| 检查项 | 命令 | 结果 |
+| --- | --- | --- |
+| 后端单测 | `mvn -B test` | 167 项，0 失败/错误/跳过 |
+| 前端单测 | `npm test` | 144 项 / 12 个文件 |
+| 前端构建 | `npm run build`（vue-tsc+vite） | 通过 |
+| 接口冒烟 | `python tools/smoke.py`（带 `ADMIN_TOKEN`、语音启用） | 100 通过 / 0 失败 / 0 跳过 |
+| 边界安全 | `python tools/security.py` | 主实例 91 通过 / 0 失败 / 7 跳过（S16–S18、S16c、M01–M03 需另起 `SECOND_BASE`/`MISCONFIG_BASE`/`DEV_RELAXED_BASE` 三个实例）；四个实例全跑时 99 通过 / 0 失败 / 0 跳过 |
+| 库层 | `python tools/db-check.py` | 19 通过 / 0 失败 / 0 跳过 |
+| 离线不变量 | `python tools/offline-check.py --runtime` | 7 通过 / 0 失败 / 1 跳过（O07 仅在 `LLM_PROVIDER=mock` 下有判据） |
+| 内容验收 | `python tools/acceptance.py` | 40 通过 / 0 失败 |
+| 检索评测 | `exec:java@eval` | 145 条计分用例（+2 开放），top1/top3 = 1.0，`gateBlockedCount=0`，与 `baseline-java.json` 逐例不一致 0 |
+| 标定 | `exec:java@calibrate --gate-check` | 退出 0；关键词闸门按「排序分」口径 在域最低 6.438 / 域外最高 6.170，区间成立，余量 0.130 |
+| 真机连通性套件 | — | 17 条 |
+| 布局 | CSS | 实际是 `--panel-width: 25%`（约 1/4），不是 1/3 |
+
 ```bash
-cd server && ../tools/mvn -B test                     # 157 项：检索/HTTP/统计会话/同义词/诊断文案/配置接线/管理口令/降级写路径与裁剪/资料入库/请求体上限/来源面板规则/落库截断/限流键取值/语音/问答接口契约
-cd web && npm test                                     # 134 项（11 个文件）：SSE 解析、问答状态机、朗读与听写、回答排版、展区下拉、界面入口与播报接线、运营视图、对话主流程、来源面板、讲解图、检索诊断与知识面板（jsdom）
-python tools/smoke.py                                  # 60 项契约（需服务在跑；语音启用 63 项，分档口径见下）
+cd server && ../tools/mvn -B test                     # 167 项：检索/HTTP/统计会话/同义词/诊断文案/配置接线/管理口令/降级写路径与裁剪/资料入库/请求体上限/来源面板规则/落库截断/限流键取值/语音/问答接口契约
+cd web && npm test                                     # 144 项（12 个文件）：SSE 解析、问答状态机、朗读与听写、回答排版、展区下拉、界面入口与播报接线、运营视图、对话主流程、来源面板、讲解图、检索诊断与知识面板（jsdom）
+python tools/smoke.py                                  # 100 项契约（需服务在跑，带 ADMIN_TOKEN、语音启用；分档口径见下）
 ```
 
-冒烟项数按 `tools/smoke.py` 实际执行的 `check()` 分档（**带 `ADMIN_TOKEN` 才能跑满**，不带则管理块整组 SKIP）：
-
-| 分档 | 项数 | 条件 |
-| --- | --- | --- |
-| 默认 | **60** | 语音未启用（`AUDIO_PROVIDER=none` / `speechReady=false`）+ 带 `ADMIN_TOKEN` |
-| 语音启用 | **63** | `speechReady=true`，语音段换成「真出 WAV」的 6 条 |
-| 不带口令 | **36** + 管理块整组 SKIP | 管理块（含 `/api/knowledge/list` 的清单摘要）整组跳过。**2026-09-29 修**：清单摘要那条原来排在守卫之外，不带口令时拿 401 直接判 FAIL（同一份输出里管理块却记 SKIP），现已并入守卫之内 |
+冒烟项数以 `tools/smoke.py` 真实输出为准（**带 `ADMIN_TOKEN` 且语音启用才能跑满 100 项**）：带 `ADMIN_TOKEN` + 语音启用时 100 通过 / 0 失败 / 0 跳过；不带口令时管理块整组 SKIP，语音未启用时语音段按 `speechReady` 走 503 可判定分支，项数相应变化。
 
 `CHANGELOG.md`、`docs/archive/` 等历史快照里的 56 / 61 / 64 是改动前的口径，保留原样。
 

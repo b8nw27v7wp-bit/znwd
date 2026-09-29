@@ -42,7 +42,7 @@
 - 配了 `ADMIN_TOKEN` → 必须带 `Authorization: Bearer <token>`；比对走 `MessageDigest.isEqual` 常量时间比较（不是 `String.equals`，避免逐字节试探口令）。
 - 没配 → **默认拒绝**（`REQUIRE_ADMIN_TOKEN=true`）；只有显式设为 `false` 且请求来自回环地址时才放行。回环判断使用连接对端 `remoteAddr`，不使用服务接收连接的 `localAddr`，因此同机反向代理不会绕过默认鉴权。
 
-需要鉴权：`GET /api/stats`、`POST /api/knowledge/reload`、`GET /api/admin/*`、`PUT /api/admin/synonyms`。
+需要鉴权：`GET /api/stats`、`POST /api/knowledge/reload`、`GET /api/admin/*`、`PUT /api/admin/synonyms`、`GET /api/knowledge/list`。
 
 ### 限流
 
@@ -55,6 +55,8 @@
 ```
 
 ## POST /api/chat — 问答（非流式）
+
+> 本文多数示例沿用已退役的风场展区问法与 `wind-inspect`，属历史示例；现行展区只有 `pv-clean` / `pv-doctor` / `project`。
 
 ```json
 { "message": "叶片检测要停机吗？", "sessionId": "demo-1" }
@@ -254,7 +256,7 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 | `version` | 后端版本（当前 `1.3.0`） |
 | `knowledgeChunks` | 已加载知识块数 |
 | `llmProvider` | LLM 提供方 |
-| `speech` / `speechReady` | 语音 provider（`none`\|`mimo`）/ **服务端语音是否已启用**。`mimo` 且有 base URL 时为 true，但不代表上游此刻一定可达；`false` 时前端播报走浏览器内置合成 |
+| `speech` / `speechReady` | 语音 provider（`none`\|`mimo`）/ **服务端语音是否已启用**。`mimo` 且 base URL、API key 都非空时为 true，但不代表上游此刻一定可达；`false` 时前端播报走浏览器内置合成 |
 | `retrieval` | 检索统计对象，见下 |
 | `knowledgeDir` / `dataDir` | 实际生效目录（排查「路径错位」先看这里） |
 | `activeSessions` / `answerCacheSize` | 活跃会话数 / 答案缓存条目数 |
@@ -335,7 +337,7 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 实测样例（当前 219 块语料、阈值 6.3 / 0.75，语义路已接上）：
 
 ```json
-// GET /api/admin/diagnostics?q=有客户了吗   （被闸门误拦的真实问句，余弦 0.6389 不够兜底阈值）
+// GET /api/admin/diagnostics?q=有客户了吗   （该样例为补同义词前的历史输出：当时被闸门误拦、余弦 0.6389 不够兜底阈值）
 {
   "gated": true, "mode": "keyword", "reason": "below_threshold", "semantic": true, "degraded": false,
   "keywordGateScore": 4.9037, "keywordBestScore": 4.9037, "vectorBestCosine": 0.6389, "candidates": 16,
@@ -362,7 +364,7 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 
 ```json
 {
-  "count": 23,
+  "count": 21,
   "source": "builtin",
   "file": "E:\\znwd\\knowledge\\_meta\\synonyms.tsv",
   "entries": [ { "key": "叶片", "alternatives": ["叶片", "风叶", "桨叶"] } ],
@@ -389,7 +391,7 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 | `lines` / `entries` | — | 二选一；都空则 400 |
 | `persist` | `true` | `true` 写回 `knowledge/_meta/synonyms.tsv`；`false` 只改内存（重启即失） |
 
-响应：`{ "ok": true, "count": 24, "source": "…tsv", "persistedTo": "…tsv", "persistRequested": true, "reloadRequired": false }`
+响应：`{ "ok": true, "count": 22, "source": "…tsv", "persistedTo": "…tsv", "persistRequested": true, "reloadRequired": false }`
 
 - 同义词在**查询期展开**，改完对下一个问题立即生效，**不需要重建索引**（`reloadRequired` 恒为 `false`）。
 - 落盘失败时 `persistedTo` 为 `null`，服务端日志报错（内存已生效，不假装成功）。
@@ -407,7 +409,7 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
   "fileCount": 17, "chunkCount": 219,
   "retrieval": { "…同 /api/health 的 retrieval…": "" },
   "zones": ["…"],
-  "synonyms": { "count": 23, "source": "builtin", "file": "…synonyms.tsv" },
+  "synonyms": { "count": 21, "source": "builtin", "file": "…synonyms.tsv" },
   "docs": [ { "path": "01_光伏清洁机器人/产品概述.md", "title": "两栖光伏清洁机器人产品概述", "zone": "pv-clean", "zoneTitle": "光伏清洁机器人", "chunks": 11 } ]
 }
 ```
@@ -427,7 +429,7 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 - 路径、响应字段名、SSE 事件序列（`meta`→`delta`→`done`）与 `noHit`/`sources` 语义**必须与重构前的 Node 版一致**：前端、评测脚本、一体机部署脚本都按这套写，悄悄改字段比服务起不来更难查。
 - 唯一已知差异（刻意的修正）：`/api/suggestions` 的 `items` 是**字符串数组**；前端曾按对象取 `question`，那会让大屏出现空白推荐按钮，现已在 `web/src/api.ts` 按字符串对齐。
 - 新增能力（`/api/admin/diagnostics`、`/api/admin/synonyms`、`/api/health/summary`、`/api/knowledge/list` 的 `synonyms` 字段、`/api/speech/*` 两个语音接口与 `health.speech`/`health.speechReady`）均为纯增量，不动老字段。
-- 改完接口跑 `python tools/smoke.py`（契约检查：语音未启用 60 项，启用时 63 项，均需带 `ADMIN_TOKEN` 才跑满管理块——`/api/knowledge/list` 与 `/api/admin/*` 一样要口令。语音段按 `speechReady` 分别校验「真出 WAV」与「503 可判定」两条路径）。
+- 改完接口跑 `python tools/smoke.py`（契约检查：带 `ADMIN_TOKEN`、语音启用时满跑 100 项——`/api/knowledge/list` 与 `/api/admin/*` 一样要口令。语音段按 `speechReady` 分别校验「真出 WAV」与「503 可判定」两条路径）。
 - 改检索后跑 `exec:java@eval --no-write --baseline=docs/eval/baseline-java.json`；CI 用同一基线逐例守住 top1 路径、top1/top3、闸门指标与漏答数，另以 `calibrate --gate-check` 守域外不越线。
 
 ## curl 示例
