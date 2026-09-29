@@ -1,11 +1,12 @@
 package com.znwd.hostess.knowledge;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -32,6 +33,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class SemanticRetrievalTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    /**
+     * 每个用例一个**独立**索引文件名（同一目录内），既保留「残留文件会让 tryLoad 命中上一轮数据」这道防线，
+     * 又不再往系统临时目录扔垃圾：以前每次调用都 {@code Files.createTempDirectory} 且从不清理，
+     * 实测一次全量单测留下上百个空目录（临时目录在 C 盘，长期跑 CI/本地会一直涨）。
+     */
+    @TempDir
+    static Path tmpDir;
+
+    private static final AtomicInteger SEQ = new AtomicInteger();
 
     @Test
     void 关键词过闸门时语义向量不得改动排序() throws Exception {
@@ -78,7 +89,7 @@ class SemanticRetrievalTest {
     }
 
     private static VectorStore store(EmbeddingProvider embedder) throws Exception {
-        Path indexFile = Files.createTempDirectory("znwd-semantic").resolve("vectors." + embedder.name() + ".json");
+        Path indexFile = tmpDir.resolve("vectors-" + SEQ.incrementAndGet() + "." + embedder.name() + ".json");
         return new VectorStore(embedder, indexFile, MAPPER, 32);
     }
 

@@ -70,9 +70,9 @@ class RagBackendSnapshotTest {
     }
 
     @Test
-    void 零词面语义命中必须返回向量命中而不是空结果() throws Exception {
+    void 零词面语义命中必须返回向量命中而不是空结果(@TempDir Path dir) throws Exception {
         VectorStore store = new VectorStore(new FixedEmbedder("m", "local", 2),
-                Files.createTempDirectory("znwd-zero-lexical").resolve("vectors.json"), MAPPER);
+                dir.resolve("vectors.json"), MAPPER);
         HybridRetriever retriever = new HybridRetriever(store, 999, 0.5);
         retriever.replace(List.of(chunk("a", "展区", List.of("标签"), "无人机巡检流程")));
 

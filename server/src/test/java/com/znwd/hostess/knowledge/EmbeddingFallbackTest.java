@@ -1,11 +1,12 @@
 package com.znwd.hostess.knowledge;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -30,6 +31,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class EmbeddingFallbackTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    /** 见 SemanticRetrievalTest 的同名说明：不再每次调用都往系统临时目录扔一个永不清理的目录 */
+    @TempDir
+    static Path tmpDir;
+
+    private static final AtomicInteger SEQ = new AtomicInteger();
 
     @Test
     void 向量构建失败时退回仅关键词且不抛出异常() throws Exception {
@@ -108,7 +115,8 @@ class EmbeddingFallbackTest {
     private static VectorStore newStore(EmbeddingProvider embedder, String tag, int batchSize,
                                         long queryRetryCooldownMs) throws Exception {
         // 每个用例一个临时索引文件：残留文件会让 tryLoad 命中上一轮数据，测试就成了看运气
-        Path indexFile = Files.createTempDirectory("znwd-embed-" + tag).resolve("vectors." + embedder.name() + ".json");
+        Path indexFile = tmpDir.resolve(tag + "-" + SEQ.incrementAndGet() + ".vectors."
+                + embedder.name() + ".json");
         return new VectorStore(embedder, indexFile, MAPPER, batchSize, queryRetryCooldownMs);
     }
 
