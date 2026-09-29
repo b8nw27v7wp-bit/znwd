@@ -203,11 +203,15 @@ describe('展厅页面：服务端语音接线', () => {
     await flushPromises();
     await askAndWait(wrapper);
 
+    // 两条断言都要等：`fetch` 打完到 `new Audio(...)` 之间还隔着 `await res.blob()`，
+    // 只等「请求发出去了」会在慢机器上抓到 audios 还是空的那一帧（CI 上实测就是这么红的）。
     await vi.waitFor(() => {
-      expect(calls.some((url) => url.includes('/api/speech/synthesize'))).toBe(true);
+      expect(calls.some((url) => url.includes('/api/speech/synthesize')), '合成请求要打到服务端').toBe(true);
+      expect(audios.length, '服务端播报要用 Audio 播').toBeGreaterThan(0);
     });
-    expect(audios.length, '服务端播报要用 Audio 播').toBeGreaterThan(0);
-    expect(wrapper.find('.local-set').text(), '运营视图要写明这一轮是谁发的声').toContain('服务端 TTS');
+    await vi.waitFor(() => {
+      expect(wrapper.find('.local-set').text(), '运营视图要写明这一轮是谁发的声').toContain('服务端 TTS');
+    });
 
     wrapper.unmount();
   });

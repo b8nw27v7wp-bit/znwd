@@ -44,6 +44,23 @@
 - 其余新增项数：`PromptStoreTest` 12、`OpenAiCompatChatModelTest` 8、`RagBackendSnapshotTest` 5、`SpeechParserTest`/`MimoSpeechModelTest` 各 10。
 - 后端单测 **123 → 157 项**；前端 **134 项（11 个文件）**。
 
+### Fixed — 首轮 CI 跑红后的两处真问题（2026-09-29）
+
+第一次 push 后 GitHub Actions 两个 job 都失败在「单测之后的步骤」，都不是环境问题：
+
+1. **`tools/smoke.py`：未启用语音时识别用例喂了非法载荷** → CI 报 `FAIL 未启用语音时识别同样 503`。
+   两条语音接口都是「先判入参形状，再看服务开不开」（`SpeechController`），拿一个非 WAV 的
+   `data:audio/wav;base64,aGVsbG8=` 去问「未启用是不是 503」，只会先拿到 400。改成喂**最小合法 WAV**
+   （44 字节头 + 2 字节采样，与 `tools/security.py` 的 Y08 同一条路子），本地用 `AUDIO_PROVIDER=none`
+   起实例实测通过。
+2. **`tools/smoke.py`：知识清单摘要断言排在管理员块守卫之外** → 不带 `ADMIN_TOKEN` 时该条拿 401 被判 FAIL，
+   而同一份输出里管理块自己记的是 SKIP（「少带口令」看起来像「清单坏了」）。改为并入守卫之内，
+   不带口令时与整块一起跳过：实测“不带口令”档从「36 通过 + 1 失败」变成 **36 通过 + 0 失败 + 1 组 SKIP**。
+3. **`web/src/App.spec.ts`：服务端语音接线用例是竞态** → CI 报 `服务端播报要用 Audio 播: expected 0 to be greater than 0`。
+   断言只等到 `/api/speech/synthesize` 请求发出，而 `await res.blob()` → `new Audio()` 还差两跳，慢机器上就抓到空数组。
+   改成把两条断言都放进 `vi.waitFor`。**本机给合成请求人为加 30ms 延迟复现了同一条失败**，再验证修法通过，
+   随后去掉延迟跑全量 134 项。
+
 ### 交付前全量复跑（2026-09-29，本机 Windows + 真 MiMo + 云端 bge-m3）
 
 | 环节 | 命令 | 结果 |

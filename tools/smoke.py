@@ -12,6 +12,7 @@
 所以不带 ADMIN_TOKEN 时那一块记 SKIP 并在汇总里报出来；带了口令却还是 401 则是**配置错**，
 按失败处理——不能让 17 条契约断言因为配错而无声消失。
 """
+import base64
 import json
 import os
 import sys
@@ -20,6 +21,14 @@ import urllib.parse
 import urllib.request
 
 BASE = os.environ.get("BASE", "http://127.0.0.1:8787").rstrip("/")
+# 最小合法 WAV（44 字节头 + 2 字节采样，16kHz/单声道/16bit）。两条语音接口都是
+# 「先判入参形状，再看服务开不开」（见 SpeechController：形状错就 400，跟开关无关），
+# 所以验「未启用时是不是 503」必须喂一个它能收下的载荷，否则拿到的是 400。
+MIN_WAV_DATA_URL = "data:audio/wav;base64," + base64.b64encode(
+    b"RIFF" + (38).to_bytes(4, "little") + b"WAVEfmt " + (16).to_bytes(4, "little")
+    + (1).to_bytes(2, "little") + (1).to_bytes(2, "little") + (16000).to_bytes(4, "little")
+    + (32000).to_bytes(4, "little") + (2).to_bytes(2, "little") + (16).to_bytes(2, "little")
+    + b"data" + (2).to_bytes(4, "little") + b"\x00\x00").decode("ascii")
 # 管理接口（诊断 / 同义词 / 知识清单）默认要口令：REQUIRE_ADMIN_TOKEN 默认 true，回环也不例外。
 ADMIN_TOKEN_ENV = os.environ.get("ADMIN_TOKEN", "").strip()
 ADMIN_HEADERS = {"authorization": f"Bearer {ADMIN_TOKEN_ENV}"} if ADMIN_TOKEN_ENV else {}
@@ -112,7 +121,7 @@ else:
     check("未启用时的错误码可判定", (as_json(raw) or {}).get("error") == "speech_unavailable",
           f"body={str(raw)[:160]}")
     check("未启用语音时识别同样 503",
-          request("POST", "/api/speech/recognize", {"audio": "data:audio/wav;base64,aGVsbG8="})[0] == 503)
+          request("POST", "/api/speech/recognize", {"audio": MIN_WAV_DATA_URL})[0] == 503)
 
 # 录音体积闸门在业务之前，与语音开关无关：3MB 的 base64 必须被 413 挡在门外
 status, body = request("POST", "/api/speech/recognize",
@@ -172,16 +181,12 @@ check("未知路由 404 + not_found", status == 404 and (as_json(body) or {}).ge
 # 9) 只读元数据接口
 # /api/knowledge/list 是管理面接口（会吐出 knowledgeDir / 索引文件绝对路径与全部文档清单），
 # 和下面第 10 块一样要口令，所以从公开只读接口这一组里拿出去、带 ADMIN_HEADERS 验。
+# **它的断言必须写在管理员块的守卫之内**：以前它放在守卫之前，不带 ADMIN_TOKEN 时直接拿 401 判成
+# FAIL（看着像「清单坏了」，其实只是没带口令），而同一时刻管理块自己记的是 SKIP。
 for path in ("/api/suggestions", "/api/suggestions?zone=wind-inspect", "/api/zones",
              "/api/openapi.json"):
     status, _ = request("GET", path)
     check(f"{path} 200", status == 200, f"status={status}")
-
-status, body = request("GET", "/api/knowledge/list", headers=ADMIN_HEADERS)
-meta = as_json(body) or {}
-check("清单里带同义词表摘要", status == 200 and isinstance(meta.get("synonyms"), dict)
-      and meta["synonyms"].get("count", 0) > 0,
-      f"status={status} synonyms={meta.get('synonyms')}")
 
 # 10) 管理员接口：检索诊断 + 同义词热更新
 # 原来这里只 print 一行 SKIP 就把整块 17 条断言跳过，汇总里既不算过也不算跳过——
@@ -198,6 +203,13 @@ elif status == 401:
          "未设 ADMIN_TOKEN，服务按设计拒绝匿名访问；设上它才能验这一块")
     ADMIN_SKIPPED = True
 if not ADMIN_SKIPPED:
+    # 知识清单（管理面）：块数、展区分布与同义词表摘要
+    status, body = request("GET", "/api/knowledge/list", headers=ADMIN_HEADERS)
+    meta = as_json(body) or {}
+    check("清单里带同义词表摘要", status == 200 and isinstance(meta.get("synonyms"), dict)
+          and meta["synonyms"].get("count", 0) > 0,
+          f"status={status} synonyms={meta.get('synonyms')}")
+
     q_in = urllib.parse.quote("光伏清洁无人机是做什么的？")
     status, body = request("GET", f"/api/admin/diagnostics?q={q_in}", headers=ADMIN_HEADERS)
     diag = as_json(body) or {}

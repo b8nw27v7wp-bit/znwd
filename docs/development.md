@@ -104,7 +104,7 @@ python tools/smoke.py                                  # 60 项契约（需服�
 | --- | --- | --- |
 | 默认 | **60** | 语音未启用（`AUDIO_PROVIDER=none` / `speechReady=false`）+ 带 `ADMIN_TOKEN` |
 | 语音启用 | **63** | `speechReady=true`，语音段换成「真出 WAV」的 6 条 |
-| 不带口令 | 37 | 管理块整组 SKIP；其中 `/api/knowledge/list` 已按管理面接口要求口令，会 401 |
+| 不带口令 | **36** + 管理块整组 SKIP | 管理块（含 `/api/knowledge/list` 的清单摘要）整组跳过。**2026-09-29 修**：清单摘要那条原来排在守卫之外，不带口令时拿 401 直接判 FAIL（同一份输出里管理块却记 SKIP），现已并入守卫之内 |
 
 `CHANGELOG.md`、`docs/archive/` 等历史快照里的 56 / 61 / 64 是改动前的口径，保留原样。
 
