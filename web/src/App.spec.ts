@@ -183,10 +183,16 @@ function stubServerSpeech(audios: FakeAudioEl[], calls: string[]): void {
         );
       }
       if (url.includes('/api/speech/synthesize')) {
-        return new Response(new Blob([new Uint8Array([82, 73, 70, 70])], { type: 'audio/wav' }), {
+        // 刻意用普通对象而不是 `new Response(new Blob(...))`：CI（Node 22）+ jsdom 下，
+        // undici 的 Response 构造器拿到 jsdom 的 Blob 会让 `res.blob()` 永远不返回——
+        // 表现是「合成请求发出去了，但一个 Audio 都没建，日志里也没有任何降级原因」。
+        // 本机 Node 26 不会暴露这个差异（所以本地一直是绿的）。useSpeech.spec 用的一直是
+        // 这个写法，跨 Node 版本都稳；改这里请保持同样的形态。
+        return {
+          ok: true,
           status: 200,
-          headers: { 'content-type': 'audio/wav' },
-        });
+          blob: async () => new Blob([new Uint8Array([82, 73, 70, 70])], { type: 'audio/wav' }),
+        } as unknown as Response;
       }
       throw new Error(`unexpected fetch: ${url}`);
     }),
