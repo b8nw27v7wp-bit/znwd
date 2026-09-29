@@ -462,6 +462,8 @@ export interface DiagnosticsHit {
   keywordScore: number | null;
   vectorScore: number | null;
   snippet: string | null;
+  matchedTokens?: number;
+  matched?: string[];
 }
 
 export interface DiagnosticsInfo {
@@ -476,6 +478,8 @@ export interface DiagnosticsInfo {
   thresholds: { minKeywordScore: number | null; minVectorScore: number | null };
   distanceToGate: number | null;
   verdict: string | null;
+  semantic?: boolean;
+  degraded?: boolean;
   hits: DiagnosticsHit[];
 }
 
