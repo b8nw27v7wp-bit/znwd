@@ -643,8 +643,7 @@ describe('缺口用例补全', () => {
   it('TC-SSE-11：流式回答超时后运营视图可见友好错误，大屏不白屏', async () => {
     vi.useFakeTimers();
     installSpeech();
-    // 流永远不结束 → 触发前端 180s 超时
-    const neverStream = new Promise<never>(() => {});
+    // 流永远不结束（不 close、不 enqueue）→ 只有前端自己的 180s 超时能结束它
     const hangController = new AbortController();
     stubFetchWith((url) => {
       if (url.includes('/api/chat/stream')) {
@@ -734,6 +733,30 @@ describe('缺口用例补全', () => {
     expect(wrapper.text()).toContain('可以直接问');
 
     vi.useRealTimers();
+    wrapper.unmount();
+  });
+
+  /**
+   * 输入法组字：中文场景必踩。
+   * 回车在中文输入法里也用来「确认候选词」，不判断组字状态就会把半截文本当问题发出去。
+   */
+  it('输入法组字状态下按回车不提交，组字结束后的回车才提交', async () => {
+    installSpeech();
+    const wrapper = mount(App);
+    await flushPromises();
+    const textarea = wrapper.find('textarea');
+    await textarea.setValue('叶片检测要停机吗');
+
+    await textarea.trigger('keydown', { key: 'Enter', isComposing: true });
+    await flushPromises();
+    expect(wrapper.findAll('.msg').length, '组字中的回车不该发出去').toBe(0);
+    expect((wrapper.find('textarea').element as HTMLTextAreaElement).value, '草稿要留着').toBe('叶片检测要停机吗');
+
+    await textarea.trigger('keydown', { key: 'Enter' });
+    await flushPromises();
+    expect(wrapper.findAll('.msg').length, '组字结束后的回车应正常提交').toBeGreaterThan(0);
+    expect(wrapper.text()).toContain('不需要停机');
+
     wrapper.unmount();
   });
 });

@@ -13,7 +13,7 @@
 
   <groupId>com.znwd</groupId>
   <artifactId>hostess-server</artifactId>
-  <version>1.0.0</version>
+  <version>1.3.0</version>
   <name>znwd-hostess-server</name>
   <description>产品展厅 AI 虚拟讲解员后端（Spring Boot + Hybrid RAG）</description>
 

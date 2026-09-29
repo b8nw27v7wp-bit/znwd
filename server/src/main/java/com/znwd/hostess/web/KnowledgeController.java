@@ -2,8 +2,10 @@ package com.znwd.hostess.web;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -262,7 +264,21 @@ public class KnowledgeController {
             try {
                 Path file = knowledge.synonymsFile();
                 Files.createDirectories(file.getParent());
-                Files.writeString(file, Synonyms.toTsv(), StandardCharsets.UTF_8);
+                // 先写同目录临时文件、再原子改名。直接 writeString 覆盖的话，写一半断电就是**截断文件**，
+                // 下次启动读到坏文件会静默回退内置同义词表——运营改的词无声消失，现场只表现为「答得不对」。
+                // 同目录改名才是原子的（跨盘会退化成复制），所以临时文件必须放在同目录。
+                // 库里是展厅一体机，断电是常态，这一步不能省。
+                Path tmp = Files.createTempFile(file.getParent(), "synonyms-", ".tsv.tmp");
+                try {
+                    Files.writeString(tmp, Synonyms.toTsv(), StandardCharsets.UTF_8);
+                    try {
+                        Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                    } catch (AtomicMoveNotSupportedException e) {
+                        Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
+                    }
+                } finally {
+                    Files.deleteIfExists(tmp);
+                }
                 persistedTo = file.toString();
             } catch (IOException e) {
                 // 内存已生效，落盘失败只是"重启后丢失"，如实上报而不是假装成功

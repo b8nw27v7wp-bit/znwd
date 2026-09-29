@@ -205,7 +205,11 @@ python tools/smoke.py
 # 2) 停服务，替换 server/target/hostess-server.jar 与 web/dist
 # 3) 启动，确认 GET /api/health 的 version/ok/ready/knowledgeChunks/storageAvailable 正常
 # 4) POST /api/knowledge/reload（新版本若改了分块或打分，必须重建索引）
-# 5) python tools/smoke.py 全绿后再放开展厅使用
+# 5) 检索评测（不写报告，验证 top1/top3 仍为 1.0 且与基线无回归）
+cd server && ../tools/mvn -B test-compile exec:java@eval -Dexec.args="--no-write --baseline=docs/eval/baseline-java.json"
+# 6) 闸门余量核查（域外最高分不得越线，否则退出码 4）
+cd server && ../tools/mvn -B test-compile exec:java@calibrate -Dexec.args="--gate-check --no-write"
+# 7) python tools/smoke.py 全绿后再放开展厅使用
 ```
 
 回滚：换回旧 jar + 旧 `web/dist`，重启即可；若新旧版本的索引格式不同，删掉 `server/indexes/` 让它按旧代码重建。数据表是增量兼容的（只增字段/表），不需要回滚数据库。

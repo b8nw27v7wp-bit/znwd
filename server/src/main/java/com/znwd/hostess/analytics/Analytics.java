@@ -191,6 +191,7 @@ public class Analytics {
         out.put("uptimeSec", (System.currentTimeMillis() - startedAt) / 1000);
         out.put("chatTotal", chatTotal);
         out.put("ragHits", ragHits);
+        // 错误行一律 mode=llm_only（见 ChatRunService.logError()），永远不会是 rag，所以这里不会双扣
         out.put("llmOnly", chatTotal - ragHits - errors);
         out.put("noHit", noHits);
         out.put("rewritten", rewritten);

@@ -131,6 +131,11 @@ public class CoreConfig {
                     + "语音不可用，前端走浏览器内置播报");
             return new DisabledSpeechModel("语音缺少 base-url");
         }
+        if (props.audioApiKey().isBlank()) {
+            log.warn("[audio] AUDIO_PROVIDER=mimo 但拿不到 api-key（AUDIO_API_KEY 与 LLM_API_KEY 都为空），"
+                    + "语音不可用，前端走浏览器内置播报");
+            return new DisabledSpeechModel("语音缺少 api-key");
+        }
         AppProperties.Audio audio = props.audio();
         log.info("[audio] provider=mimo tts={} asr={} voice={} lang={} baseUrl={}",
                 audio.ttsModel(), audio.asrModel(), props.audioVoice(), audio.asrLanguage(), props.audioBaseUrl());

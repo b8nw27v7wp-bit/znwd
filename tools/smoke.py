@@ -193,8 +193,18 @@ for path in ("/api/suggestions", "/api/suggestions?zone=wind-inspect", "/api/zon
 # 原来这里只 print 一行 SKIP 就把整块 17 条断言跳过，汇总里既不算过也不算跳过——
 # CI 实际少跑了三分之一的用例还报「通过」。改成：带了口令就必须真能用（配置错 = 失败），
 # 没带才记 SKIP 并在汇总里报出来。
-status, probe_body = request("GET", "/api/admin/diagnostics?q=ping", headers=ADMIN_HEADERS)
+# 管理接口前提探测：429（限流）不等于接口坏了，退避重试后再判定。
 ADMIN_SKIPPED = False
+for _probe_attempt in range(3):
+    status, probe_body = request("GET", "/api/admin/diagnostics?q=ping", headers=ADMIN_HEADERS)
+    if status == 429:
+        time.sleep(min(10 * (_probe_attempt + 1), 20))  # ≤20s 退避
+        continue
+    break
+else:
+    # 3 次都是 429
+    status, probe_body = 429, probe_body
+
 if status == 401 and ADMIN_TOKEN_ENV:
     check("管理接口用 ADMIN_TOKEN 应放行（否则下面 17 条全被跳过）", False,
           f"带口令访问 /api/admin/diagnostics 得到 401；检查 ADMIN_TOKEN 与被测实例是否同源：{probe_body[:120]}")
@@ -202,6 +212,10 @@ if status == 401 and ADMIN_TOKEN_ENV:
 elif status == 401:
     skip("管理员接口整块（诊断契约 / 同义词读·写·热生效·回滚）",
          "未设 ADMIN_TOKEN，服务按设计拒绝匿名访问；设上它才能验这一块")
+    ADMIN_SKIPPED = True
+elif status == 429:
+    skip("管理员接口整块（诊断契约 / 同义词读·写·热生效·回滚）",
+         "被限流（429），不是接口坏了；设 ADMIN_TOKEN 并稍后重试")
     ADMIN_SKIPPED = True
 if not ADMIN_SKIPPED:
     # 知识清单（管理面）：块数、展区分布与同义词表摘要
@@ -430,7 +444,10 @@ if not ADMIN_SKIPPED:
     time.sleep(2)  # 给限流窗口滑动
 
     # POST /api/knowledge/reload
-    status, body = request("POST", "/api/knowledge/reload", headers=ADMIN_HEADERS)
+    # 超时给足：reload 要重建索引并逐条重算向量（真云端 embedding 下几十秒很正常，
+    # 前端自己的客户端也是 120s，见 web/src/api.ts 的 KNOWLEDGE_RELOAD_TIMEOUT_MS）。
+    # 用默认 40s 的话，慢一点就抛 socket 超时，看着像接口坏了。
+    status, body = request("POST", "/api/knowledge/reload", headers=ADMIN_HEADERS, timeout=150)
     _reload = as_json(body) or {}
     check("reload 200", status == 200, f"status={status} body={body[:200]}")
     for _f in ("ok", "knowledgeChunks", "generation", "retrieval", "synonyms", "files"):

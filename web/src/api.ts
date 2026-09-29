@@ -66,6 +66,12 @@ export interface ChatDone extends ChatMeta {
   answer: string;
   latencyMs: number;
   usage?: Usage | null;
+  /**
+   * 会话归属令牌：服务端给这个 sessionId 发的一次性所有权凭证。
+   * 只有 done 帧带（meta 帧不带）。GET/DELETE /api/sessions/{id} 要原样带回，
+   * 不带或带错一律 404——服务端靠它区分「这是我的会话」与「有人在枚举别人的 id」。
+   */
+  sessionToken?: string | null;
 }
 
 export interface Message {
@@ -191,12 +197,21 @@ export async function sendFeedback(payload: {
   }
 }
 
-export async function resetSession(sessionId: string): Promise<void> {
+/**
+ * 清掉服务端这个会话的上下文（换人用）。
+ *
+ * 带令牌是必须的：服务端对下发过令牌的会话，GET/DELETE 不带或不匹配一律回 404，
+ * 于是「换人清上下文」会静默失败——上一轮的对话还留在服务端。
+ * 令牌为空时不带头（从未下发过令牌的老会话按设计仍然放行）。
+ */
+export async function resetSession(sessionId: string, token?: string | null): Promise<void> {
   const timeout = requestTimeout(undefined, 10_000);
   try {
+    const headers: Record<string, string> = {};
+    if (token) headers['x-session-token'] = token;
     const res = await awaitWithAbort(
       fetch(apiUrl(`/api/sessions/${encodeURIComponent(sessionId)}`), {
-        method: 'DELETE', signal: timeout.signal,
+        method: 'DELETE', headers, signal: timeout.signal,
       }),
       timeout.signal,
     );

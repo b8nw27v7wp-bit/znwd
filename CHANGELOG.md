@@ -106,6 +106,49 @@
 - **`DELETE /api/sessions/{id}` 的两种语义**：会话存在但令牌不符 → 404（403 等于承认这个 id 有效，反而成了枚举器）；会话不存在 → 200 `{ok:false}`（`SessionStore.mayAccess()` 对不存在的会话一律放行）。
 - **`/api/stats` 只能比增量**：它的计数是启动时从 `chat_log` 恢复的累计值，而 `db-check.py` 收尾会删掉自己的探测行，累计口径天然对不上。`chat_log` 的 `error` 列**无法从黑盒触发**（参数校验在 `chat.run()` 之前就返回 400），该路径继续由 `AnalyticsSessionTest` 覆盖。
 
+### 第二轮审核与修复（2026-09-29）
+
+六个只读审核单元分模块过了一遍（检索·RAG / LLM·embedding·语音 / Web·鉴权 / 会话·统计·持久化·配置 / 前端 / 脚本·CI·文档），
+下面只记**核实后成立**与**核实后不成立**的——审核报告本身也会误报，照单全改会把好代码改坏。
+
+**修掉的真缺陷**
+
+| 缺陷 | 位置 | 现场后果 | 修法 |
+| --- | --- | --- | --- |
+| 前端从不带会话令牌 | `web/src/api.ts`、`composables/useChat.ts` | 服务端收紧后 `DELETE /api/sessions/{id}` 不带令牌一律 404——「换人清上下文」在服务端等于没做，而大屏照样清屏、现场看不出来 | `done` 帧收 `sessionToken` → 内存 + sessionStorage（`znwd.sessionToken`）；`startOver` 删会话时带回 `X-Session-Token`；换会话丢弃旧令牌 |
+| `.env` 首行 BOM 静默失效 | `config/DotEnvPropertySource` | `strip()` 不把 U+FEFF 当空白，Windows 编辑器存成「UTF-8 with BOM」时首行 key 配了不生效 | 解析前去掉行首 BOM；新增 `DotEnvBomTest` 4 条（BOM + CRLF + 引号 + 行尾注释） |
+| 同义词落盘非原子 | `web/KnowledgeController` | 直接 `writeString` 覆盖，写一半断电即截断文件，下次启动静默回退内置词表 | 同目录临时文件 + `ATOMIC_MOVE`（带跨盘回退） |
+| 中文输入法组字时回车即提交 | `web/src/App.vue` | 选词那一下会把半截拼音当问题发出去（展厅全中文场景必踩） | `keydown` 跳过 `isComposing`（并挡旧浏览器 `keyCode===229`）+ `App.spec` 用例 |
+| 语音缺 key 仍上报可用 | `config/CoreConfig`、`AppProperties` | `AUDIO_PROVIDER=mimo` 但拿不到 key 时 health 报 `speechReady=true`、每次调用拼 `Bearer null` 上游 401，前端不会退回浏览器合成 | 启动即降级 `DisabledSpeechModel` 并 WARN；`audioEnabled()` 也要求 key 非空（key 缺失时 health 报 false）。key 存在时行为不变（空则回落 `LLM_API_KEY`） |
+| 向量检索降级静默 | `knowledge/HybridRetriever` | 语义路坏了不打日志，运维只能看到「答得不对」 | 限流 WARN（每实例 ≤1 条/60 秒） |
+| pom 版本与 API 版本不一致 | `server/pom.xml` | artifact 坐标 1.0.0 ≠ `/api/health` 报的 1.3.0 | 统一 1.3.0（`finalName` 不变，jar 名不受影响） |
+| smoke 管理块遇 429 假失败 | `tools/smoke.py` | 本地连跑 security 后整个管理块报 FAIL，看着像接口坏了 | 前提探测退避重试 3 次，仍 429 记 SKIP 并写明原因；401 语义不变 |
+| smoke reload 用例超时只有 40s | `tools/smoke.py` | 真云端 embedding 下重建索引可能超过 40s，抛 socket 超时（前端客户端本身用 120s） | reload 请求超时放宽到 150s（本机实测单次 0.2s，但慢网/慢模型下要留足） |
+| CI 诱饵密钥不全 | `.github/workflows/ci.yml` | `secrets()` 比对 5 个名字而只造了 1 个，另几条泄漏断言退化成查字符串 | 补 `EMBED_API_KEY`/`AUDIO_API_KEY` 诱饵；**`ADMIN_TOKEN` 刻意不造**——`server/.env` 是应用真实的配置回退，写进去会让「忘配口令」的 MISCONFIG 实例与「开发态回环免口令」实例变成「配了口令」（`AdminGuard` 一旦发现有口令就走比对分支、无视回环与 `REQUIRE_ADMIN_TOKEN`），8797 回环访问会从 200 变 401，M01–M03/S16c/S16d 连同 CI 前置自检一起失效 |
+| 升级清单缺评测与标定 | `docs/deployment.md` | 升级后漏跑 eval/calibrate | 补两步（命令照本文复跑表原样） |
+
+**核实后不成立（不改代码，记录以免下次重复报）**
+
+- `llmOnly = chatTotal - ragHits - errors` 不会双扣：失败请求在 `ChatRunService.logError()` 里一律按 `mode=llm_only` 记账，永远不是 rag。已在 `Analytics.stats()` 补一条不变式注释说明这件事。
+- `application.yml` 三处 `api-key` 本来就是 `${LLM_API_KEY:}` / `${EMBED_API_KEY:}` / `${AUDIO_API_KEY:}` 变量引用——审核工具的输出把变量名渲染成了 `***`，看起来像字面串。
+- CI 的库层环境变量继承、admin token 同源、脚本无 `|| true` 吞退出码：逐条自证无误。
+- 其余为设计取舍或低风险项：`PromptStore` 外部路径穿越（需先能改 `.env`）、`/api/health` 暴露内部路径（已记录的可接受风险）、限流桶 LRU 淘汰（展厅规模不触发）、反馈接口不做会话归属校验（只影响「能读到最后一条提问」，有限流兜底）。
+
+**顺带修掉一个会红 CI 的类型错误**：`App.spec` 的 TC-SSE-11 里有个未使用变量，`vue-tsc -b` 报 TS6133——vitest 不做类型检查，所以写测试时没暴露，CI 的前端 job（类型检查 + 构建）会挂。
+
+**本轮复跑（本机，新 jar + 真 MiMo + 云端 bge-m3 + 本机 MySQL，串行）**
+
+| 环节 | 结果 |
+| --- | --- |
+| 后端单测 | **167 项** 0 失败 0 错误（163 + DotEnvBomTest 4） |
+| 前端 | `npm test` **144 项**（12 文件）全绿；`npm run build`（vue-tsc + vite）通过 |
+| 接口冒烟 | **100 通过 / 0 失败 / 0 跳过** |
+| 边界与安全 | **99 通过 / 0 失败 / 0 跳过**（四实例：主 8787 + B 8799 + 误配置 8798 + 开发态 8797） |
+| 库层核查 | **19 通过 / 0 失败 / 0 跳过** |
+| 离线不变量·运行时 | **7 通过 / 0 失败 / 1 跳过**（O07 按设计只在 `LLM_PROVIDER=mock` 下有判据） |
+
+会话令牌链路对着真后端实跑确认：问答下发 32 位令牌 → 不带令牌 GET 404 → 带令牌 GET 200 → 带令牌 DELETE 200 `{ok:true}` → 删后 GET 404，与前端新代码的调用方式逐条对齐。
+
 ### 文档口径统一
 
 - 单测/前端/冒烟项数、语料块数（**219 块 / 17 篇**）、域外最高余弦（0.6826 → **0.6252**）、闸门余量（→ **0.130**）、

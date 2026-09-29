@@ -160,9 +160,9 @@ public record AppProperties(
         return llm == null || llm.apiKey() == null ? "" : llm.apiKey();
     }
 
-    /** 语音是否可用：provider=mimo 且拿得到 base-url 才算数 */
+    /** 语音是否可用：provider=mimo 且拿得到 base-url 和 api-key 才算数 */
     public boolean audioEnabled() {
-        return audioProvider().equals("mimo") && !audioBaseUrl().isBlank();
+        return audioProvider().equals("mimo") && !audioBaseUrl().isBlank() && !audioApiKey().isBlank();
     }
 
     public String audioVoice() {

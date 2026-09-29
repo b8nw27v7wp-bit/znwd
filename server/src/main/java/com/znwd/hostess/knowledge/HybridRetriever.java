@@ -7,8 +7,15 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class HybridRetriever {
+
+    private static final Logger log = LoggerFactory.getLogger(HybridRetriever.class);
+    /** 向量检索降级 WARN 限流：每个实例最多每 60 秒输出一条，防止刷屏 */
+    private static volatile long lastVectorDegradedLogMs;
+    private static final long VECTOR_DEGRADED_LOG_INTERVAL_MS = 60_000;
 
     public static final double DEFAULT_MIN_KEYWORD_SCORE = 6.3;
     public static final double DEFAULT_MIN_VECTOR_SCORE = 0.75;
@@ -112,6 +119,11 @@ public class HybridRetriever {
             } catch (RuntimeException e) {
                 raw = List.of();
                 semantic = false;
+                long now = System.currentTimeMillis();
+                if (now - lastVectorDegradedLogMs > VECTOR_DEGRADED_LOG_INTERVAL_MS) {
+                    lastVectorDegradedLogMs = now;
+                    log.warn("[retrieval] 向量检索失败，本问题只走关键词：{}（{}）", e.getClass().getSimpleName(), e.getMessage());
+                }
             }
         }
         List<VectorHit> eligible = semantic ? alignVectorHits(raw, current.keyword().list()) : List.of();

@@ -13,6 +13,12 @@ import { readStorage, removeStorage, writeStorage } from '../storage';
 
 const SESSION_KEY = 'znwd.sessionId';
 const ZONE_KEY = 'znwd.zone';
+/**
+ * 会话归属令牌：**只放内存与 sessionStorage**，不进 URL、不进日志。
+ * 为什么不用 localStorage：令牌是「这一个会话」的凭证，同一台机换个标签页/换个人就不该带着别人的令牌；
+ * 隐私模式下 sessionStorage 取不到也不影响——内存里那份还在，只是刷新页面后要重新拿。
+ */
+const SESSION_TOKEN_KEY = 'znwd.sessionToken';
 /** 技术问题留存条数：只给运营视图看，页面上一律不显示 */
 const ERROR_LOG_SIZE = 20;
 
@@ -30,6 +36,7 @@ export function useChat() {
   const streaming = ref(false);
   const resetting = ref(false);
   const sessionId = ref<string>(readSessionId());
+  const sessionToken = ref<string>(readStorage('session', SESSION_TOKEN_KEY) ?? '');
   const zone = ref<string | null>(readStorage('local', ZONE_KEY));
   const suggestions = ref<Suggestion[]>([]);
   const zones = ref<ZoneInfo[]>([]);
@@ -54,6 +61,18 @@ export function useChat() {
     const fresh = newSessionId();
     writeStorage('local', SESSION_KEY, fresh);
     return fresh;
+  }
+
+  /** 服务端在 done 帧里下发令牌：记在内存 + sessionStorage，供 DELETE /api/sessions/{id} 带回 */
+  function rememberToken(token: string): void {
+    sessionToken.value = token;
+    writeStorage('session', SESSION_TOKEN_KEY, token);
+  }
+
+  /** 会话换了（或已清掉）：旧令牌必须一并丢掉——它只对上一个会话有效 */
+  function forgetToken(): void {
+    sessionToken.value = '';
+    removeStorage('session', SESSION_TOKEN_KEY);
   }
 
   function invalidateStream(): void {
@@ -151,6 +170,10 @@ export function useChat() {
             sessionId.value = done.sessionId;
             writeStorage('local', SESSION_KEY, done.sessionId);
           }
+          // 令牌跟着会话走：拿到就存下来，换人清上下文时要原样带回服务端
+          if (typeof done.sessionToken === 'string' && done.sessionToken) {
+            rememberToken(done.sessionToken);
+          }
         },
       }, requestController.signal);
     } catch (e) {
@@ -221,9 +244,11 @@ export function useChat() {
     invalidateStream();
     try {
       const previousSessionId = sessionId.value;
+      const previousToken = sessionToken.value;
       let resetError = '';
       try {
-        await resetSession(previousSessionId);
+        // 带上令牌：服务端对下发过令牌的会话，不带就回 404，等于没清掉（换人失败但看不出来）
+        await resetSession(previousSessionId, previousToken || null);
       } catch (e) {
         resetError = e instanceof Error ? e.message : '重置会话失败';
         logError('（重置会话）', resetError);
@@ -232,6 +257,7 @@ export function useChat() {
       const fresh = newSessionId();
       sessionId.value = fresh;
       writeStorage('local', SESSION_KEY, fresh);
+      forgetToken();
       messages.value = [];
       sources.value = [];
       lastMeta.value = null;
@@ -249,6 +275,7 @@ export function useChat() {
     streaming,
     resetting,
     sessionId,
+    sessionToken,
     zone,
     zones,
     suggestions,

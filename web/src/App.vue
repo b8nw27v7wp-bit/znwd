@@ -200,7 +200,15 @@ const speechEngineLabel = computed(() => {
   }
 });
 
+/**
+ * 回车提交。
+ *
+ * 必须跳过输入法组字状态：中文输入法里「回车」也用来确认候选词，
+ * 不判断的话，参观者选词的那一下就会把半截拼音/候选文本当成问题发出去（展厅全中文场景，必踩）。
+ * `keyCode === 229` 是旧浏览器在组字中的标记，一起挡掉。
+ */
 function onKeydown(event: KeyboardEvent): void {
+  if (event.isComposing || event.keyCode === 229) return;
   if (event.key === 'Enter' && !event.shiftKey) {
     event.preventDefault();
     submit();
@@ -383,7 +391,7 @@ function assistantSourceLabel(mode?: string, provider?: string): string {
               @keydown="onKeydown"
             ></textarea>
             <button v-if="chat.streaming.value" class="send ghost" @click="chat.cancel()">停</button>
-            <button v-else class="send" :disabled="chat.resetting.value || !draft.trim()" @click="submit()">↑</button>
+            <button v-else class="send" aria-label="发送" :disabled="chat.resetting.value || !draft.trim()" @click="submit()">↑</button>
             <!-- 语音提问：按一下开始、再按一下结束并识别；不支持的机器上整颗按钮不出现 -->
             <button
               v-if="dictation.supported"

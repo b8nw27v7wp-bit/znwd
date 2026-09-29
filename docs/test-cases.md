@@ -150,7 +150,7 @@ python tools/db-check.py
 | TC-SES-08 | 累计超过 12 条消息历史后再问 | prompt 历史被裁剪（`MAX_HISTORY_MESSAGES=12`），回答不因超长历史失败 | P2 | 手工 |
 | TC-SES-09 | 有活跃会话时重启后端 | 未过期会话从 MySQL 恢复（GET 仍 200、历史仍在）；过期的被清理 | P1 | 手工 |
 | TC-SES-10 | 同一会话并发 6 个提问 | 全部 200/429，无 5xx；答案互不串台（前端代际隔离） | P1 | security B23 |
-| TC-SES-11 | 拿到猜测的 sessionId 直接 GET、DELETE | 可读可删——**已接受风险**（单屏展厅设计；公网/多用户前必须补票据，见 `docs/security.md`） | P1 | security S19（记录用例，预期为「已接受」而非「拦截」） |
+| TC-SES-11 | 拿到猜测的 sessionId 直接 GET、DELETE | ① 会话**存在且下发过令牌**：不带/带错 `X-Session-Token` 一律 404（不承认该 id 有效，403 反而成了枚举器）；② 会话**从未下发令牌**（重启恢复的老会话）：仍可读可删——这一条是已接受风险（单屏展厅设计，见 `docs/security.md`） | P1 | security S19/S19a–d + `ChatWebContractTest` + `useChat.spec` 会话归属令牌组（前端在 `done` 帧收令牌、DELETE 时带回） |
 
 ### TC-FBK 反馈
 
@@ -255,6 +255,7 @@ python tools/db-check.py
 | TC-UI-15 | URL 不带 `?admin=1` / 带 `?admin=1` | 无运营入口；带参才出现抽屉，且不刷新不丢 | P1 | vitest `App.spec` |
 | TC-UI-16 | 三档分辨率（1280×800 / 1600×900 / 1920×1080） | 左 1/3 形象+对话、右 2/3 讲解图布局不塌（对照 `.run/` 存档截图） | P2 | 手工 |
 | TC-UI-17 | 全程观察 console 与网络面板 | 无未捕获异常、无 404 静态资源；`VITE_API_BASE_URL` 配置后 API 前缀拼接正确（去尾斜杠、不双写 `/api`） | P1 | `apiUrl.spec` TC-UI-17（前缀拼接 4 条；console/404 仍手工） |
+| TC-UI-18 | 中文输入法组字中按回车（选词那一下） | **不提交**，草稿留在输入框；组字结束后的回车才提交——否则半截拼音会被当成问题发出去 | P1 | `App.spec` 输入法组字用例 |
 
 ### TC-SEC 边界与安全（映射 `tools/security.py`）
 
@@ -270,7 +271,7 @@ python tools/db-check.py
 | TC-SEC-05 | 管理口令 fail-closed 三情形 + 误配置实例 | 见 TC-ADM-01/02 | P0 | security S15–S18、M01–M03 |
 | TC-SEC-06 | 限流：同 IP 打满 30 次/分钟 → 429 + `retryAfterSec` + 统一信封；只读接口不受影响 | 429 可恢复（窗口滑过后成功）；`TRUST_FORWARDED_FOR=false` 时不因伪造 `X-Forwarded-For` 绕过 | P0 | security S20–S22 |
 | TC-SEC-07 | SSE 边界：坏 JSON、事件序列、反代响应头、客户端断开 | 见 TC-SSE-01~05 | P0 | security G01–G07 |
-| TC-SEC-08 | 任意 sessionId 可 GET/DELETE | **预期仍可**——已接受风险（单屏展厅）；`docs/security.md` 记录在案。若产品改为多用户/公网，此用例转 P0 反向拦截 | P1 | security S19（记录用例） |
+| TC-SEC-08 | 任意 sessionId 可 GET/DELETE | **已收紧（2026-09-29）**：下发过令牌的会话，不带/带错令牌 → 404；从未下发令牌的老会话仍放行（向后兼容）。若产品改为多用户/公网，此用例转 P0 反向拦截 | P1 | security S19/S19a–d + `ChatWebContractTest` 4 条 |
 | TC-SEC-09 | `uncovered_question`、`session_message` 存原文 | **预期存原文**——设计如此（运营补语料/会话恢复），与 chat_log 脱敏形成对比；DB 账号最小权限兜底 | P1 | db-check D07/D08（记录用例） |
 
 ### TC-DB 数据与隐私（映射 `tools/db-check.py`）
@@ -360,7 +361,7 @@ python tools/db-check.py
 | TC-CHAT(缓存) / TC-KB(reload+generation) / TC-SES(删除契约) / TC-FBK / TC-ADM(stats 字段与增量) | `tools/smoke.py` 11)–14) 组 + CI | 已覆盖（2026-09-29 补） |
 | TC-DB(统计对账) | `tools/db-check.py` D09a–k + CI | 已覆盖（2026-09-29 补） |
 | TC-SES(TTL) / TC-DGR(会话上限、轮次裁剪) | `SessionStoreTest`（JUnit，`mvn test`） | 已覆盖（2026-09-29 补） |
-| TC-SSE(超时 UI) / TC-UI(展区竞态、health 降级、闲置复位、API 前缀) | `App.spec` / `useChat.spec` / `apiUrl.spec`（vitest） | 已覆盖（2026-09-29 补） |
+| TC-SSE(超时 UI) / TC-UI(展区竞态、health 降级、闲置复位、API 前缀、输入法组字) / TC-SES(前端令牌带回) | `App.spec` / `useChat.spec` / `apiUrl.spec`（vitest） | 已覆盖（2026-09-29 补） |
 | TC-UI(真实点击与布局、真机语音) / TC-DGR(故障注入：LLM·库·语音断网) / TC-SES(重启恢复) / TC-DEP(反代、一体机开机自启·备份·断电重启) / TC-PERF(长跑) | 手工 | 仍需人工或到机器上做 |
 
 ### 3.2 缺口补齐记录（2026-09-29）
@@ -379,7 +380,7 @@ python tools/db-check.py
 
 ### 3.3 已知未决项与已定口径（写进用例预期，避免误判）
 
-- **会话归属**（TC-SES-11、TC-SEC-08）：**已收紧（2026-09-29）**——问答响应下发 `sessionToken`；`GET/DELETE /api/sessions/{id}` **会话存在时**不带或不匹配一律 404（不承认该 id 有效，否则等于给枚举器）；**会话不存在时**按原语义回：`GET` 404、`DELETE` 200 `{ok:false}`。`ChatWebContractTest` 4 条单测 + `tools/security.py` S19/S19a–d + `tools/smoke.py` 12) 组盯着。残留取舍（令牌持有者等价于会话所有者）见 `docs/security-testing.md`。
+- **会话归属**（TC-SES-11、TC-SEC-08）：**已收紧（2026-09-29）**——问答响应下发 `sessionToken`；`GET/DELETE /api/sessions/{id}` **会话存在时**不带或不匹配一律 404（不承认该 id 有效，否则等于给枚举器）；**会话不存在时**按原语义回：`GET` 404、`DELETE` 200 `{ok:false}`。`ChatWebContractTest` 4 条单测 + `tools/security.py` S19/S19a–d + `tools/smoke.py` 12) 组 + `useChat.spec` 会话归属令牌组（前端）盯着。残留取舍（令牌持有者等价于会话所有者）见 `docs/security-testing.md`。
 - **语义兜底「只重排还是可增候选」**（影响 TC-KB-02/13 对 `retrieval=hybrid` 的判定）：**已决策——允许语义新增候选，文档已对齐代码**（`docs/architecture.md`/`docs/knowledge.md` 已改写）；改动任一侧时仍要同步本文与 `docs/api.md`。
 - **`MIN_VECTOR_SCORE=0.75` 实际关闭了向量兜底**：当前线上正常应见 `retrieval=keyword`；`hybrid` 只在真语义参与排序时出现。
 - **文档数字**：活文档按实际运行输出统一（后端单测 **163**、前端单测 **142**、冒烟 **100**、安全 **98**（1 跳过）、库层 **19**、离线 **7**、检索评测 **145**）；历史快照保留原数字，**一律以实际运行输出为准**。

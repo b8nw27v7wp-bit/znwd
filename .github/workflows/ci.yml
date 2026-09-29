@@ -69,11 +69,22 @@ jobs:
       # 诱饵密钥。tools/security.py 的 S04/S06/S07/Y06b 断言「响应体里不含 server/.env 中
       # 密钥的片段」；新 checkout 没有 server/.env，片段集合是空的，于是那几条断言退化成
       # 「响应里不含字符串 LLM_API_KEY」——真泄了 key 也照样通过。造一个可预测的诱饵让它们真的有牙。
-      # 只写 LLM_API_KEY：CI 走 LLM_PROVIDER=mock，这个 key 永远不会被发出去；
-      # 刻意不写 DB_PASSWORD，免得和上面 env 里的真实库口令混淆（系统环境变量优先于 .env）。
+      # security.py secrets() 比对 LLM_API_KEY / EMBED_API_KEY / AUDIO_API_KEY / DB_PASSWORD / ADMIN_TOKEN，
+      # 这里只造前三个，另两个**故意不造**：
+      #   · DB_PASSWORD —— 免得和上面 env 里的真实库口令混淆（系统环境变量优先于 .env）；
+      #   · ADMIN_TOKEN —— server/.env 对应用是**真实的配置回退**，写进去会让「忘配口令」的
+      #     MISCONFIG 实例（8798）与「开发态回环免口令」实例（8797）变成「配了口令」：
+      #     AdminGuard 一旦发现有口令就走比对分支、无视 REQUIRE_ADMIN_TOKEN 与回环判定，
+      #     于是 8797 回环访问会从 200 变成 401 —— M01–M03 与 S16c/S16d 连同本步的前置自检一起失效。
+      # EMBED_API_KEY / AUDIO_API_KEY 安全：CI 未设 EMBED_PROVIDER（默认 bag）与 AUDIO_PROVIDER（默认 none），
+      # 诱饵不会被真的发出去。
       - name: 造诱饵密钥（让密钥泄漏断言真的在比对片段）
         run: |
-          printf 'LLM_API_KEY=ci-decoy-key-0123456789abcdef\n' > server/.env
+          cat > server/.env <<'EOF'
+          LLM_API_KEY=ci-decoy-key-0123456789abcdef
+          EMBED_API_KEY=ci-decoy-embed-0123456789abcdef
+          AUDIO_API_KEY=ci-decoy-audio-0123456789abcdef
+          EOF
           echo "已写诱饵 server/.env（不进版本库，见 .gitignore）"
 
       - name: 建库（执行 server/db/init.sql，只给最小权限）

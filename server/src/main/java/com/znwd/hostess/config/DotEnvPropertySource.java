@@ -53,29 +53,46 @@ public class DotEnvPropertySource implements EnvironmentPostProcessor {
                 continue;
             }
             try {
-                for (String rawLine : Files.readAllLines(path, StandardCharsets.UTF_8)) {
-                    String line = rawLine.strip();
-                    if (line.isEmpty() || line.startsWith("#")) {
-                        continue;
-                    }
-                    int eq = line.indexOf('=');
-                    if (eq <= 0) {
-                        continue;
-                    }
-                    String key = line.substring(0, eq).strip();
-                    String value = stripInlineComment(line.substring(eq + 1).strip());
-                    if (value.length() >= 2
-                            && ((value.startsWith("\"") && value.endsWith("\""))
-                                || (value.startsWith("'") && value.endsWith("'")))) {
-                        value = value.substring(1, value.length() - 1);
-                    }
-                    values.put(key, value);
-                }
+                values.putAll(parse(path));
             } catch (IOException ignored) {
                 // .env 可选：读不到就走 application.yml 默认值
             }
         }
         return values;
+    }
+
+    /**
+     * 从 .env 文件解析键值对。包级可见，供单测直接指定临时文件。
+     *
+     * <p>处理行首 BOM（U+FEFF）：Java 的 {@code strip()} 按 {@code Character.isWhitespace}
+     * 判定，U+FEFF 不属于空白字符，Windows 编辑器保存的 UTF-8 with BOM 会导致首行 key 静默失效。
+     */
+    static Map<String, Object> parse(Path path) throws IOException {
+        Map<String, Object> values = new LinkedHashMap<>();
+        for (String rawLine : Files.readAllLines(path, StandardCharsets.UTF_8)) {
+            String line = stripBom(rawLine).strip();
+            if (line.isEmpty() || line.startsWith("#")) {
+                continue;
+            }
+            int eq = line.indexOf('=');
+            if (eq <= 0) {
+                continue;
+            }
+            String key = line.substring(0, eq).strip();
+            String value = stripInlineComment(line.substring(eq + 1).strip());
+            if (value.length() >= 2
+                    && ((value.startsWith("\"") && value.endsWith("\""))
+                        || (value.startsWith("'") && value.endsWith("'")))) {
+                value = value.substring(1, value.length() - 1);
+            }
+            values.put(key, value);
+        }
+        return values;
+    }
+
+    /** 去掉行首 BOM（U+FEFF），只处理首字符，不触碰行中间的合法字符。 */
+    private static String stripBom(String line) {
+        return !line.isEmpty() && line.charAt(0) == '\uFEFF' ? line.substring(1) : line;
     }
 
     private static String stripInlineComment(String value) {

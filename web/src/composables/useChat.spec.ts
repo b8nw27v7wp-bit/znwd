@@ -58,6 +58,8 @@ function memoryStorage(): Storage {
 
 beforeEach(() => {
   vi.stubGlobal('localStorage', memoryStorage());
+  // 令牌存 sessionStorage（不是 localStorage）：测试里也要有它，否则取不到 storage 会静默退化成仅内存
+  vi.stubGlobal('sessionStorage', memoryStorage());
 });
 
 describe('问答状态机', () => {
@@ -295,5 +297,43 @@ describe('展区切换竞态', () => {
     // 再等 A 完成（generation 已变，A 的旧响应应被丢弃）
     await switchingA;
     expect(chat.suggestions.value, 'A 的旧响应不应覆盖 B').toEqual(['B问题']);
+  });
+});
+
+/**
+ * 会话归属令牌（服务端 2026-09-29 收紧）。
+ *
+ * 服务端对下发过令牌的会话：GET/DELETE 不带或不匹配一律 404。
+ * 前端要是把令牌丢了，「换人清上下文」就会 404 失败——而现场看不出来（大屏照样清屏），
+ * 上一轮的对话却还留在服务端。这条测试盯的就是这条链。
+ */
+describe('会话归属令牌', () => {
+  it('done 帧下发的令牌存进内存与 sessionStorage，startOver 删会话时带回服务端', async () => {
+    const deleteInits: RequestInit[] = [];
+    stubFetch({
+      '/api/sessions/': (init) => {
+        deleteInits.push(init ?? {});
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      },
+      '/api/suggestions': () => new Response(JSON.stringify({ items: [] }), { status: 200 }),
+      '/api/chat/stream': () => sse(
+        'event:meta\ndata:{"mode":"rag","provider":"mock","retrieval":"keyword","noHit":false,"sources":[]}\n\n',
+        'event:delta\ndata:{"text":"好"}\n\n',
+        'event:done\ndata:{"mode":"rag","provider":"mock","retrieval":"keyword","noHit":false,"cached":false,"sources":[],"answer":"好","latencyMs":1,"sessionToken":"tok-abc123"}\n\n',
+      ),
+    });
+
+    const chat = useChat();
+    expect(chat.sessionToken.value, '起手没有令牌').toBe('');
+
+    await chat.ask('问一句');
+    expect(chat.sessionToken.value, 'done 帧的令牌要收下来').toBe('tok-abc123');
+    expect(sessionStorage.getItem('znwd.sessionToken')).toBe('tok-abc123');
+
+    await chat.startOver();
+    const headers = (deleteInits[0]?.headers ?? {}) as Record<string, string>;
+    expect(headers['x-session-token'], '删会话必须带上令牌，否则服务端 404、上下文没清掉').toBe('tok-abc123');
+    expect(chat.sessionToken.value, '旧令牌只对旧会话有效，换会话后必须丢掉').toBe('');
+    expect(sessionStorage.getItem('znwd.sessionToken')).toBeNull();
   });
 });
