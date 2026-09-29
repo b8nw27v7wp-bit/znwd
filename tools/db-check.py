@@ -210,6 +210,189 @@ try:
     except Exception as e:
         skip("D08 未覆盖问题落库", f"{type(e).__name__}")
 
+    # ── D09: chat_log 统计字段与 /api/stats 对账（TC-DB-08） ────────────────
+    print("\n== 库层：chat_log 统计字段与 /api/stats 对账")
+    ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
+    if not ADMIN_TOKEN:
+        skip("D09 chat_log 与 /api/stats 对账", "未设 ADMIN_TOKEN 环境变量")
+    else:
+        stats_headers = {"Authorization": f"Bearer {ADMIN_TOKEN}"}
+
+        def api_stats():
+            req = urllib.request.Request(BASE + "/api/stats", headers=stats_headers)
+            with urllib.request.urlopen(req, timeout=30) as res:
+                return json.loads(res.read().decode("utf-8"))
+
+        def num(d, *path):
+            """从 /api/stats 的嵌套结构里取整数（tokens 是嵌套对象）。"""
+            cur = d
+            for k in path:
+                cur = (cur or {}).get(k) if isinstance(cur, dict) else None
+            return int(cur) if cur is not None else 0
+
+        # 记下基线（/api/stats 返回的是累计值）
+        try:
+            stats_before = api_stats()
+        except Exception as e:
+            stats_before = None
+            skip("D09 chat_log 与 /api/stats 对账", f"stats 请求失败：{type(e).__name__}: {e}")
+
+        if stats_before is not None:
+            # 两个探测会话：域内 RAG + 域外 noHit；追问发到 rag_sid（复用历史）
+            rag_sid = "dbcheck-stats-rag-" + uuid.uuid4().hex[:6]
+            nohit_sid = "dbcheck-stats-nohit-" + uuid.uuid4().hex[:6]
+            sent = []  # (sid, label)
+
+            # 1) 域内问题（期望 mode=rag, noHit=false）
+            try:
+                chat("清洁机器人怎么清洗光伏板", rag_sid)
+                sent.append((rag_sid, "rag"))
+            except Exception as e:
+                skip("D09 chat_log 与 /api/stats 对账", f"域内提问失败：{type(e).__name__}")
+
+            # 2) 域外问题（期望 noHit=true, provider=gate）
+            try:
+                chat("今天天气怎么样", nohit_sid)
+                sent.append((nohit_sid, "nohit"))
+            except Exception as e:
+                skip("D09 chat_log 与 /api/stats 对账", f"域外提问失败：{type(e).__name__}")
+
+            # 3) 追问发到 rag_sid（复用历史，期望 rewritten=true）
+            try:
+                chat("那个呢", rag_sid)
+                sent.append((rag_sid, "follow"))
+            except Exception as e:
+                skip("D09 chat_log 与 /api/stats 对账", f"追问提问失败：{type(e).__name__}")
+
+            # 等落库
+            time.sleep(1.0)
+
+            if len(sent) >= 3:
+                # 读 /api/stats
+                try:
+                    stats_after = api_stats()
+                except Exception as e:
+                    stats_after = None
+                    skip("D09 chat_log 与 /api/stats 对账", f"stats 请求失败：{type(e).__name__}")
+
+                if stats_after is not None:
+                    # SQL 聚合：按三个 session_id 过滤
+                    sid_sql = ",".join(f"'{s}'" for s, _ in sent)
+                    sql_rows = db.rows(
+                        f"SELECT COUNT(*), "
+                        f"COALESCE(SUM(mode='rag'),0), "
+                        f"COALESCE(SUM(no_hit=1),0), "
+                        f"COALESCE(SUM(rewritten=1),0), "
+                        f"COALESCE(SUM(error IS NOT NULL AND error != ''),0), "
+                        f"COALESCE(SUM(prompt_tokens),0), "
+                        f"COALESCE(SUM(completion_tokens),0), "
+                        f"COALESCE(SUM(total_tokens),0) "
+                        f"FROM chat_log WHERE session_id IN ({sid_sql})"
+                    )
+                    sql_count, sql_rag, sql_nohit, sql_rewritten, sql_errors, \
+                        sql_prompt, sql_completion, sql_total = [int(x) for x in sql_rows[0]]
+
+                    # 逐行核对 mode/noHit/rewritten（按 session_id 查找，不假定顺序）
+                    rag_row = db.rows(
+                        f"SELECT mode, no_hit, rewritten FROM chat_log "
+                        f"WHERE session_id='{rag_sid}' ORDER BY id DESC LIMIT 1"
+                    )
+                    nohit_row = db.rows(
+                        f"SELECT mode, no_hit FROM chat_log "
+                        f"WHERE session_id='{nohit_sid}' ORDER BY id DESC LIMIT 1"
+                    )
+                    # rag_sid 有两行：第一问 rag，追问 llm_only（域外追问可能走 llm_only）
+                    rag_rows_all = db.rows(
+                        f"SELECT session_id, mode, no_hit, rewritten "
+                        f"FROM chat_log WHERE session_id='{rag_sid}' ORDER BY id"
+                    )
+                    follow_row = rag_rows_all[-1] if rag_rows_all else None
+
+                    mode_ok = (rag_row and rag_row[0][0] == "rag" and
+                               nohit_row and nohit_row[0][0] == "llm_only")
+                    nohit_ok = (rag_row and rag_row[0][1] == "0" and
+                                nohit_row and nohit_row[0][1] == "1")
+                    rewritten_ok = (follow_row is not None and follow_row[3] == "1")
+                    check("D09a 逐行 mode 与 noHit 值正确",
+                          mode_ok and nohit_ok,
+                          f"rag={rag_row} nohit={nohit_row}")
+                    check("D09b 追问行 rewritten=1",
+                          rewritten_ok,
+                          f"follow 行={follow_row}")
+
+                    # 逐行字段形态（TC-DB-08 点名的 mode/provider/retrieval/latency_ms）
+                    field_rows = db.rows(
+                        f"SELECT provider, retrieval, latency_ms FROM chat_log "
+                        f"WHERE session_id='{rag_sid}' ORDER BY id LIMIT 1"
+                    )
+                    prov, retr, latency = (field_rows[0] if field_rows else ("", "", "0"))
+                    check("D09c rag 行有 provider/retrieval/latency_ms 且取值合法",
+                          bool(prov) and retr in ("hybrid", "keyword") and latency.isdigit() and int(latency) > 0,
+                          f"provider={prov} retrieval={retr} latency={latency}")
+
+                    # ── 与 /api/stats 对账（TC-DB-08 的正题） ──────────────────────
+                    # /api/stats 的计数是启动时从 chat_log 恢复的累计值，而本脚本会删掉自己写的探测行，
+                    # 所以累计值不能直接比，只能比**本次三条提问期间的增量**：stats 的增量必须等于
+                    # 同三个会话在库里的行数/汇总。前提是这一小段里没有别人在提问——CI 里
+                    # smoke → security → db-check 是串行执行的；有人在同时压这个实例时这里会真失败，
+                    # 那是事实，不要为了好看把判据放宽。
+                    d_chat = num(stats_after, "chatTotal") - num(stats_before, "chatTotal")
+                    d_rag = num(stats_after, "ragHits") - num(stats_before, "ragHits")
+                    d_nohit = num(stats_after, "noHit") - num(stats_before, "noHit")
+                    d_rewritten = num(stats_after, "rewritten") - num(stats_before, "rewritten")
+                    d_tokens = num(stats_after, "tokens", "total") - num(stats_before, "tokens", "total")
+                    d_calls = num(stats_after, "tokens", "calls") - num(stats_before, "tokens", "calls")
+                    d_errors = num(stats_after, "errors") - num(stats_before, "errors")
+
+                    check("D09d /api/stats chatTotal 增量 == 本次落库行数",
+                          d_chat == sql_count, f"stats+{d_chat} 库={sql_count}")
+                    check("D09e /api/stats ragHits 增量 == 库内 mode=rag 行数",
+                          d_rag == sql_rag, f"stats+{d_rag} 库={sql_rag}")
+                    check("D09f /api/stats noHit 增量 == 库内 no_hit=1 行数",
+                          d_nohit == sql_nohit, f"stats+{d_nohit} 库={sql_nohit}")
+                    check("D09g /api/stats rewritten 增量 == 库内 rewritten=1 行数（且确实改写了一次）",
+                          d_rewritten == sql_rewritten and sql_rewritten == 1,
+                          f"stats+{d_rewritten} 库={sql_rewritten}")
+                    check("D09h /api/stats tokens.total 增量 == 库内 total_tokens 汇总",
+                          d_tokens == sql_total, f"stats+{d_tokens} 库={sql_total}")
+                    sql_calls = int(db.rows(
+                        f"SELECT COALESCE(SUM(CASE WHEN total_tokens > 0 THEN 1 ELSE 0 END),0) "
+                        f"FROM chat_log WHERE session_id IN ({sid_sql})")[0][0])
+                    check("D09i /api/stats tokens.calls 增量 == 库内真的消耗了 tokens 的行数",
+                          d_calls == sql_calls, f"stats+{d_calls} 库={sql_calls}")
+                    check("D09j 错误计数对账（本次三条都成功 → 两边都不涨）",
+                          d_errors == 0 and sql_errors == 0, f"stats+{d_errors} 库={sql_errors}")
+
+            # ── 校验失败的请求：不得计入 chatTotal，也不该落 chat_log ──
+            try:
+                # 空 message 走参数校验（400 validation_error），不进 chat.run()，所以不记账
+                before_bad = num(api_stats(), "chatTotal")
+                err_payload = json.dumps({"message": ""}).encode("utf-8")
+                err_req = urllib.request.Request(BASE + "/api/chat", data=err_payload,
+                                                headers={"Content-Type": "application/json"})
+                try:
+                    urllib.request.urlopen(err_req, timeout=10)
+                except urllib.error.HTTPError:
+                    pass  # 期望 400（validation_error）
+                time.sleep(0.5)
+                after_bad = num(api_stats(), "chatTotal")
+                check("D09k 校验失败(400) 不计入 chatTotal",
+                      after_bad == before_bad, f"{before_bad} → {after_bad}")
+            except Exception as e:
+                skip("D09k 校验失败(400) 不计入 chatTotal", f"{type(e).__name__}: {e}")
+
+            # 清理 D09 探测数据
+            try:
+                if sent:
+                    cleanup_sids = ",".join(f"'{s}'" for s, _ in sent)
+                    db.run(f"DELETE FROM session_message WHERE session_id IN ({cleanup_sids})")
+                    db.run(f"DELETE FROM session WHERE id IN ({cleanup_sids})")
+                    db.run(f"DELETE FROM chat_log WHERE session_id IN ({cleanup_sids})")
+                    db.run(f"DELETE FROM uncovered_question WHERE session_id IN ({cleanup_sids})")
+                print("\n（D09 探测数据已清理）")
+            except RuntimeError as e:
+                print(f"\n（D09 清理失败：{e}）")
+
     # 清理本次探测产生的行（库是展厅的，别留测试数据）
     try:
         db.run(f"DELETE FROM session_message WHERE session_id IN ('{sid}','{no_hit_sid}')")

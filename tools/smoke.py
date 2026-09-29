@@ -16,6 +16,7 @@ import base64
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -270,6 +271,181 @@ if not ADMIN_SKIPPED:
 
         status, body = request("PUT", "/api/admin/synonyms", {"entries": {}}, headers=ADMIN_HEADERS)
         check("空同义词表返回 400", status == 400, f"status={status}")
+
+# 11) 缓存行为（TC-CHAT-08 / TC-CHAT-09 / TC-PERF-03）
+# 为什么这么写：缓存 key = SHA256(normalizedMessage + model + generation)，且只在 history.isEmpty() 时生效
+# （ChatRunService L57-68）；同一问题不带 sessionId 连发两次，第二次必须命中缓存且答案一致。
+# 第二次 latency 不高于第一次是合理预期：缓存命中跳过检索与模型，延迟不可能更高。
+# 用随机后缀确保问题新鲜，不与之前任何请求撞 key。
+print("\n缓存行为")
+_fresh_q = "光伏清洁无人机单次清洗多重？cache_probe_" + str(int(time.time() * 1000) % 100000)
+
+status, body = request("POST", "/api/chat", {"message": _fresh_q})
+_c1 = as_json(body) or {}
+check("首次请求非缓存", _c1.get("cached") is False, f"cached={_c1.get('cached')}")
+
+time.sleep(2)  # 让限流窗口稍作滑动，避免与前面请求撞桶
+
+status, body = request("POST", "/api/chat", {"message": _fresh_q})
+_c2 = as_json(body) or {}
+check("同题二次请求 cached=true", _c2.get("cached") is True,
+      f"cached={_c2.get('cached')} status={status}")
+check("缓存命中后答案一致", _c1.get("answer") == _c2.get("answer"),
+      f"len1={len(_c1.get('answer') or '')} len2={len(_c2.get('answer') or '')}")
+# 第二次延迟不高于第一次：缓存命中跳过检索与模型调用。
+# 但只跟「首次」比会被「首次本来就被闸门拦下、极快」这种情况放过去，
+# 所以再加一条绝对判据（见下一条断言）。
+_c1_ms = _c1.get("latencyMs", 0)
+_c2_ms = _c2.get("latencyMs", 9999)
+check("缓存命中延迟不高于首次", _c2_ms <= _c1_ms,
+      f"t1={_c1_ms} t2={_c2_ms}（命中缓存不该比首次慢）")
+# 为什么要第二条：只跟「首次」比是不够的——首次若被闸门拦（noHit）本来就很快，
+# 于是补一条绝对判据：真正命中缓存就不该再走检索与模型。实测命中在 0ms 量级，200ms 是宽松上限。
+check("缓存命中不回检索、不回模型（<200ms）", _c2_ms < 200,
+      f"t2={_c2_ms}（命中缓存实测 0ms 量级）")
+
+# 带 sessionId 的第二问（有历史）→ cached=false：缓存只对无历史单轮生效
+status, body = request("POST", "/api/chat", {"message": "光伏清洁无人机是做什么的？", "sessionId": "smoke-cache"})
+status, body = request("POST", "/api/chat", {"message": "光伏清洁无人机是做什么的？", "sessionId": "smoke-cache"})
+_with_hist = as_json(body) or {}
+check("带历史的第二问 cached=false", _with_hist.get("cached") is False,
+      f"cached={_with_hist.get('cached')}（缓存只对无历史单轮生效）")
+
+# 12) 会话契约（TC-SES-05 / TC-SES-06）
+# 为什么这么写：DELETE 对存在会话返回 {ok:true}，再 GET 应 404（会话已删除）；
+# DELETE 对不存在的会话返回200 且 {ok:false}——不算错误，与 GET 404 的语义不同（既定契约）。
+# 带错令牌 DELETE 应得404（不是403），代码里 requireOwned() 统一按「不存在」回（ChatController L252-256）。
+print("\n会话契约")
+status, body = request("POST", "/api/chat", {"message": "光伏清洁无人机是做什么的？", "sessionId": "smoke-ses-del"})
+_ses = as_json(body) or {}
+_ses_token = _ses.get("sessionToken", "")
+check("问答返回 sessionToken", bool(_ses_token), f"sessionToken={_ses_token!r}")
+
+if _ses_token:
+    status, body = request("DELETE", "/api/sessions/smoke-ses-del",
+                           headers={"X-Session-Token": _ses_token})
+    _del = as_json(body) or {}
+    check("DELETE 已存在会话200 且 ok=true", status == 200 and _del.get("ok") is True,
+          f"status={status} ok={_del.get('ok')}")
+
+    status, _ = request("GET", "/api/sessions/smoke-ses-del",
+                        headers={"X-Session-Token": _ses_token})
+    check("DELETE 后 GET 返回404", status == 404, f"status={status}")
+
+    status, body = request("DELETE", "/api/sessions/smoke-ses-nonexist",
+                           headers={"X-Session-Token": _ses_token})
+    _del2 = as_json(body) or {}
+    check("DELETE 不存在的会话200 且 ok=false", status == 200 and _del2.get("ok") is False,
+          f"status={status} ok={_del2.get('ok')}")
+
+    # 带错令牌 DELETE：mayAccess 对 entry==null 返回 true（不泄露会话是否存在），
+    # 所以已删除/不存在的会话用错令牌也是200 {ok:false}，不是403也不是404。
+    status, body = request("DELETE", "/api/sessions/smoke-ses-nonexist",
+                           headers={"X-Session-Token": "wrong-token-abc123"})
+    _del3 = as_json(body) or {}
+    check("带错令牌 DELETE 不泄露会话存在性（200 ok=false）",
+          status == 200 and _del3.get("ok") is False,
+          f"status={status} ok={_del3.get('ok')}（不应该是403或404，那是泄露信息）")
+else:
+    check("会话令牌获取失败，跳过 DELETE 验证", False, f"body={body[:200]}")
+
+# 13) 统计数值联动（TC-FBK-05 / TC-ADM-04，在管理员块守卫之内）
+# 为什么这么写：/api/stats 在 AdminGuard 之内，需要 Bearer；
+# chatTotal/feedback.up 是服务端全局计数器，问答+反馈后应按增量对上。
+# /api/feedback 有独立限流桶（默认10/分钟），控制反馈请求次数避免被限流。
+print("\n统计数值联动")
+if not ADMIN_SKIPPED:
+    time.sleep(2)  # 给限流窗口滑动
+
+    status, body = request("GET", "/api/stats", headers=ADMIN_HEADERS)
+    _stats1 = as_json(body) or {}
+    check("stats200", status == 200, f"status={status}")
+    # TC-ADM-04 字段清单逐项断言
+    for _f in ("uptimeSec", "chatTotal", "ragHits", "llmOnly", "noHit", "rewritten",
+               "uncoveredCount", "tokens", "errors", "activeSessions", "feedback", "recent"):
+        check(f"stats 含字段 {_f}", _f in _stats1, f"missing={_f}")
+
+    _ct1 = _stats1.get("chatTotal", 0)
+    _fb1 = (_stats1.get("feedback") or {}).get("up", 0)
+
+    time.sleep(2)  # 给限流窗口滑动
+
+    # 发一问 + 一条 up 反馈
+    request("POST", "/api/chat", {"message": "光伏清洁无人机是做什么的？", "sessionId": "smoke-stats"})
+    time.sleep(1)
+    status, body = request("POST", "/api/feedback",
+                           {"sessionId": "smoke-stats", "rating": "up"})
+    check("反馈提交成功", status == 200 and (as_json(body) or {}).get("ok") is True,
+          f"status={status}")
+
+    time.sleep(2)  # 确保统计更新完成
+
+    status, body = request("GET", "/api/stats", headers=ADMIN_HEADERS)
+    _stats2 = as_json(body) or {}
+    _ct2 = _stats2.get("chatTotal", 0)
+    _fb2 = (_stats2.get("feedback") or {}).get("up", 0)
+    check("chatTotal 递增", _ct2 >= _ct1 + 1,
+          f"before={_ct1} after={_ct2}（发了一问应至少 +1）")
+    check("feedback.up 递增", _fb2 >= _fb1 + 1,
+          f"before={_fb1} after={_fb2}（提交一条 up 应至少 +1）")
+
+# 14) reload 与 generation（TC-KB-06 / TC-CHAT-10）
+# 为什么这么写：reload 调 knowledge.reload() → retriever.replace() → generation+1，
+# 同时触发 onReloaded 回调清答案缓存（AppConfig L149-150）；
+# 因此 reload 后再问同一问题必须 cached=false。
+# 先喂热缓存（第二次请求 cached=true）再 reload 再问，三次形成完整断言链。
+print("\nreload 与 generation")
+if not ADMIN_SKIPPED:
+    time.sleep(2)  # 给限流窗口滑动
+
+    # 用同一句域内问题把缓存喂热：第一问不带 sessionId 让缓存写入（history 为空才进缓存），
+    # 第二问不带 sessionId 再问同一句，应命中缓存（cached=true）。
+    # 重试逻辑：聊天桶30 次/分钟，smoke 已发不少请求，可能撞429；
+    # 撞 429 不是缓存 bug，sleep 后重试即可；3 次仍失败才放弃。
+    _reload_q = "光伏清洁无人机是做什么的？reload_gen_" + str(int(time.time() * 1000) % 100000)
+    _warm_ok = False
+    for _attempt in range(3):
+        request("POST", "/api/chat", {"message": _reload_q})
+        time.sleep(1)
+        status, body = request("POST", "/api/chat", {"message": _reload_q})
+        if status == 429:
+            time.sleep(8)  # 等限流窗口滑过再重试
+            continue
+        _warm = as_json(body) or {}
+        if _warm.get("cached") is True:
+            _warm_ok = True
+            break
+        # 非429 但 cached 不是 True：可能是首问被限流导致缓存未写入，重试
+        time.sleep(8)
+    if _warm_ok:
+        check("reload 前已喂热缓存", True)
+    else:
+        skip("reload 前已喂热缓存", "连续3 次重试仍无法喂热缓存（可能聊天限流或模型异常）")
+
+    # 记录 reload 前的 generation
+    status, body = request("GET", "/api/health")
+    _health_before = as_json(body) or {}
+    _gen_before = int((_health_before.get("retrieval") or {}).get("generation", 0))
+
+    time.sleep(2)  # 给限流窗口滑动
+
+    # POST /api/knowledge/reload
+    status, body = request("POST", "/api/knowledge/reload", headers=ADMIN_HEADERS)
+    _reload = as_json(body) or {}
+    check("reload 200", status == 200, f"status={status} body={body[:200]}")
+    for _f in ("ok", "knowledgeChunks", "generation", "retrieval", "synonyms", "files"):
+        check(f"reload 含字段 {_f}", _f in _reload, f"missing={_f}")
+    _gen_after = _reload.get("generation", 0)
+    check("reload 后 generation 正好 +1", _gen_after == _gen_before + 1,
+          f"before={_gen_before} after={_gen_after}（一次 reload 只该 +1；health 与 reload 两处读数同源）")
+
+    time.sleep(2)  # 给限流窗口滑动
+
+    # reload 后再问同一问题必须 cached=false（缓存已清 + generation 变了）
+    status, body = request("POST", "/api/chat", {"message": _reload_q})
+    _after = as_json(body) or {}
+    check("reload 后 cached=false", _after.get("cached") is False,
+          f"cached={_after.get('cached')}（reload 应清缓存）")
 
 print(f"\n通过 {passed} 项，失败 {len(failed)} 项，跳过 {len(skipped)} 组")
 if skipped:

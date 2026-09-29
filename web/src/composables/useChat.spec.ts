@@ -237,3 +237,63 @@ describe('问答状态机', () => {
     expect(() => useChat()).not.toThrow();
   });
 });
+
+/**
+ * TC-UI-09：展区快速连续切换时，旧请求不能覆盖新请求的结果。
+ *
+ * useChat 用 suggestionsGeneration 递增做代际隔离：先启动的请求如果后返回，
+ * 会发现 generation 已变而丢弃结果——这是竞态窗口内保证「最终一致」的关键路径。
+ *
+ * 测试方法：直接调用 setZone 两次（不通过 DOM），验证 generation guard 的保护。
+ * 不用 fake timers——它会阻塞 vitest 的 Promise 微任务调度导致 await 挂起。
+ */
+describe('展区切换竞态', () => {
+  it('快速连续切换展区：最终显示最后一次选择的推荐问题，旧响应不覆盖', async () => {
+    // 模拟带延迟的 fetch：zone A 慢、zone B 快
+    const zoneResults: Record<string, string[]> = { A: ['A问题'], B: ['B问题'] };
+    const zoneDelays: Record<string, number> = { A: 200, B: 20 };
+
+    // stubFetch 的 handler 只收 init（RequestInit），拿不到 URL；
+    // 这里直接 stub fetch 自己实现按 URL 分发。
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/health')) {
+          return new Response(JSON.stringify(health), { status: 200 });
+        }
+        if (url.includes('/api/zones')) {
+          return new Response(JSON.stringify({ zones: [] }), { status: 200 });
+        }
+        if (url.includes('/api/suggestions')) {
+          const zone = url.includes('zone=')
+            ? decodeURIComponent(url.split('zone=')[1]!.split('&')[0]!)
+            : null;
+          const items = zone ? (zoneResults[zone] ?? []) : [];
+          const delay = zone ? (zoneDelays[zone] ?? 0) : 0;
+          return new Promise<Response>((resolve) => {
+            setTimeout(() => {
+              resolve(new Response(JSON.stringify({ items, zone }), { status: 200 }));
+            }, delay);
+          });
+        }
+        throw new Error(`unexpected fetch: ${url}`);
+      }),
+    );
+
+    const chat = useChat();
+    await chat.bootstrap();
+
+    // 快速连续切换：A → B（A 慢、B 快，B 应先完成）
+    const switchingA = chat.setZone('A');
+    const switchingB = chat.setZone('B');
+
+    // 等 B 先完成
+    await switchingB;
+    expect(chat.suggestions.value, 'B 的推荐问题应已就绪').toEqual(['B问题']);
+
+    // 再等 A 完成（generation 已变，A 的旧响应应被丢弃）
+    await switchingA;
+    expect(chat.suggestions.value, 'A 的旧响应不应覆盖 B').toEqual(['B问题']);
+  });
+});

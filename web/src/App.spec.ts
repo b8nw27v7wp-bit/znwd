@@ -599,3 +599,141 @@ describe('展厅页面：语音失败可见与手势解锁', () => {
     wrapper.unmount();
   });
 });
+
+/** 默认的 fetch 桩：health / zones / suggestions 正常，chat/stream 返回正常流 */
+function defaultFetchHandler(url: string): Response {
+  if (url.includes('/api/health')) {
+    return new Response(
+      JSON.stringify({ ok: true, knowledgeChunks: 134, llmProvider: 'mock', embedding: 'bag', retrieval: 'keyword', storage: 'mysql', storageAvailable: true, activeSessions: 0, minRelevanceScore: 6.3, uptimeSec: 1 }),
+      { status: 200 },
+    );
+  }
+  if (url.includes('/api/zones')) return new Response(JSON.stringify({ zones: [{ id: 'wind-inspect', title: '风场检测' }, { id: 'pv-clean', title: '光伏清洁' }] }), { status: 200 });
+  if (url.includes('/api/suggestions')) return new Response(JSON.stringify({ items: ['叶片检测要停机吗？'] }), { status: 200 });
+  if (url.includes('/api/chat/stream')) {
+    return sse(
+      'event:meta\ndata:{"mode":"rag","provider":"mock","retrieval":"keyword","noHit":false,"cached":false,"sources":[]}\n\n',
+      'event:delta\ndata:{"text":"正常回答"}\n\n',
+      'event:done\ndata:{"mode":"rag","provider":"mock","retrieval":"keyword","noHit":false,"cached":false,"sources":[],"answer":"正常回答","latencyMs":10}\n\n',
+    );
+  }
+  if (url.includes('/api/feedback')) return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  if (url.includes('/api/sessions/')) return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  throw new Error(`unexpected fetch: ${url}`);
+}
+
+/** 可覆盖部分端点的 fetch 桩：handler 返回 undefined 时走 defaultFetchHandler */
+function stubFetchWith(handler: (url: string) => Response | undefined): void {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      return handler(url) ?? defaultFetchHandler(url);
+    }),
+  );
+}
+
+/**
+ * 缺口用例补全（TC-SSE-11 / TC-UI-11 / TC-UI-14）
+ *
+ * 这三条都是展厅现场的降级路径：后端挂了、回答卡了、没人碰了，
+ * 页面都不能白屏或出未捕获异常——展厅是无人值守的，现场出错只能事后发现。
+ */
+describe('缺口用例补全', () => {
+  it('TC-SSE-11：流式回答超时后运营视图可见友好错误，大屏不白屏', async () => {
+    vi.useFakeTimers();
+    installSpeech();
+    // 流永远不结束 → 触发前端 180s 超时
+    const neverStream = new Promise<never>(() => {});
+    const hangController = new AbortController();
+    stubFetchWith((url) => {
+      if (url.includes('/api/chat/stream')) {
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              const onAbort = () => { try { controller.close(); } catch {} };
+              hangController.signal.addEventListener('abort', onAbort, { once: true });
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'text/event-stream' } },
+        );
+      }
+      return defaultFetchHandler(url);
+    });
+    const wrapper = mountWithAdmin();
+    await flushPromises();
+
+    await wrapper.find('textarea').setValue('超时测试问题');
+    await wrapper.find('textarea').trigger('keydown', { key: 'Enter' });
+    await flushPromises();
+
+    // 推进 180s → 前端超时中止 → 错误写入 chat.errors
+    await vi.advanceTimersByTimeAsync(180_000);
+    await flushPromises();
+
+    // 运营视图里能看到这条超时故障（友好错误文案）
+    const log = wrapper.find('.tech-log');
+    expect(log.exists()).toBe(true);
+    expect(log.text()).toContain('超时');
+
+    // 大屏不白屏、不崩溃（textarea 仍存在）
+    expect(wrapper.find('textarea').exists()).toBe(true);
+
+    vi.useRealTimers();
+    wrapper.unmount();
+  });
+
+  it('TC-UI-11：后端 health 不可达时页面仍能打开，存储状态文案为「未知（后端未响应）」', async () => {
+    installSpeech();
+    stubFetchWith((url) => {
+      if (url.includes('/api/health')) throw new Error('fetch failed');
+      return defaultFetchHandler(url);
+    });
+    const wrapper = mount(App);
+    await flushPromises();
+
+    // 页面正常渲染，不白屏
+    expect(wrapper.find('textarea').exists()).toBe(true);
+    expect(wrapper.text()).toContain('展厅虚拟讲解员');
+
+    // 打开运营视图，存储状态为「未知（后端未响应）」
+    const admin = mountWithAdmin();
+    await flushPromises();
+    expect(admin.find('.local-set').text()).toContain('未知（后端未响应）');
+    admin.unmount();
+    wrapper.unmount();
+  });
+
+  it('TC-UI-14：闲置180秒触发自动复位，期间有操作则计时器重置', async () => {
+    vi.useFakeTimers();
+    installSpeech();
+    const wrapper = mount(App);
+    await flushPromises();
+    // 真发一问（假定时器下桩 fetch 是同步 resolve 的，这里不能等 vi.waitFor——它自己也要定时器）
+    await wrapper.find('textarea').setValue('叶片检测要停机吗？');
+    await wrapper.find('textarea').trigger('keydown', { key: 'Enter' });
+    await flushPromises();
+
+    const sessionBefore = localStorage.getItem('znwd.sessionId');
+    expect(wrapper.findAll('.msg').length, '先要有一轮对话才谈得上复位').toBeGreaterThan(0);
+
+    // 期间有操作（展厅里有人碰屏幕）→ 计时器重置：从这次手势起算 179 秒不该复位
+    window.dispatchEvent(new Event('pointerdown'));
+    await vi.advanceTimersByTimeAsync(179_000);
+    await flushPromises();
+    expect(wrapper.findAll('.msg').length, '手势后未到 180s 不该复位').toBeGreaterThan(0);
+    expect(localStorage.getItem('znwd.sessionId'), '未到点不该换会话').toBe(sessionBefore);
+
+    // 越过 180s（手势后 179s + 2s）→ 自动复位：清屏、换会话、回欢迎态
+    await vi.advanceTimersByTimeAsync(2_000);
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(0); // 让 startOver 里的 DELETE / 推荐问题两个异步链走完
+    await flushPromises();
+    expect(wrapper.findAll('.msg').length, '闲置超时后应清屏').toBe(0);
+    expect(localStorage.getItem('znwd.sessionId'), '复位应换新会话').not.toBe(sessionBefore);
+    expect(wrapper.text()).toContain('可以直接问');
+
+    vi.useRealTimers();
+    wrapper.unmount();
+  });
+});

@@ -84,6 +84,28 @@
 - **`tools/security.py` 的证据类用例（S10/S11、B08/B10）读 `DATA_DIR/events.jsonl`**：实例若用自定义 `DATA_DIR` 起，
   跑安全用例时要把同一个 `DATA_DIR` 传给它，否则会表现成「日志脱敏取证失败」（是取不到证据，不是脱敏坏了）。
 
+### 补完 7 条「建议自动化」缺口（2026-09-29）
+
+`docs/test-cases.md` §3.2 列的 7 条缺口全部落地，该文 §3.1 的覆盖标记同步改成实际载体：
+
+| 缺口 | 载体 | 新增断言 |
+| --- | --- | --- |
+| 缓存行为（TC-CHAT-08/09、TC-PERF-03） | `tools/smoke.py` 11) | 5 条：二发 `cached=true`、答案一致、延迟不高于首次、带历史 `cached=false` |
+| 会话契约（TC-SES-05/06） | `tools/smoke.py` 12) | 5 条：带令牌删已存在会话 → `{ok:true}`、随后 GET 404、不存在会话删 → 200 `{ok:false}` |
+| 统计数值联动（TC-FBK-05、TC-ADM-04） | `tools/smoke.py` 13) | 17 条：`/api/stats` 12 字段逐项 + 问答与反馈的增量 |
+| reload 与 generation（TC-KB-06、TC-CHAT-10） | `tools/smoke.py` 14) | 10 条：喂热 → reload 字段齐全且 `generation` +1 → 同题再问 `cached=false` |
+| 会话 TTL/上限（TC-SES-04、TC-DGR-12） | `SessionStoreTest`（JUnit 6 条） | 过期会话不可读 / 201 个会话淘汰最旧 / 10 轮只留最近 6 轮 / 令牌语义 / null 入参 |
+| 前端缺口（TC-SSE-11、TC-UI-09/11/14/17） | `App.spec`、`useChat.spec`、`apiUrl.spec`（+8 条） | 180s 流超时、展区切换竞态、health 不可达降级、闲置复位（假定时器真推 180s）、`VITE_API_BASE_URL` 前缀拼接 |
+| 统计口径对账（TC-DB-08） | `tools/db-check.py` D09a–k | `/api/stats` **增量** == 本次探测会话在 `chat_log` 的行数与汇总 |
+
+复跑结果（本机，真 MiMo + 云端 bge-m3 + 本机 MySQL）：后端单测 **163**、前端 **142**、冒烟 **100**、库层 **19**，均 0 失败。
+三条关键断言做了变异验证——把期望翻反、把 `IDLE_RESET_MS` 改成 1s、把 `TTL_MS` 改成 1000 分钟，均按预期变红，随后已还原。
+
+两条实测口径（避免下次误判）：
+
+- **`DELETE /api/sessions/{id}` 的两种语义**：会话存在但令牌不符 → 404（403 等于承认这个 id 有效，反而成了枚举器）；会话不存在 → 200 `{ok:false}`（`SessionStore.mayAccess()` 对不存在的会话一律放行）。
+- **`/api/stats` 只能比增量**：它的计数是启动时从 `chat_log` 恢复的累计值，而 `db-check.py` 收尾会删掉自己的探测行，累计口径天然对不上。`chat_log` 的 `error` 列**无法从黑盒触发**（参数校验在 `chat.run()` 之前就返回 400），该路径继续由 `AnalyticsSessionTest` 覆盖。
+
 ### 文档口径统一
 
 - 单测/前端/冒烟项数、语料块数（**219 块 / 17 篇**）、域外最高余弦（0.6826 → **0.6252**）、闸门余量（→ **0.130**）、

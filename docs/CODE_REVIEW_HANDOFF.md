@@ -5,6 +5,8 @@
 > **远端 CI 两条流水线全绿**（run `36512516950`，提交 `267af84`），证据与口径见
 > `CHANGELOG.md` 顶部的「未发布 — 2026-09-29」一节。仍未验证的只有目标一体机上的
 > 开机自启/备份/断电重启演练。
+> `docs/test-cases.md` §3.2 的 7 条「建议自动化」缺口已于 2026-09-29 全部补齐
+> （smoke 11–14 组、db-check D09a–k、SessionStoreTest、三个前端 spec），细节见 `CHANGELOG.md` 同名一节。
 
 更新时间：2026-09-24（状态行于 2026-09-29 复核）
 适用分支：`feature/virtual-receptionist`
