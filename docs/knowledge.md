@@ -78,7 +78,7 @@ tags: pv-clean,光伏,清洁
 | 块标题 | 每块带所在标题；同一标题的后续块标「标题（续）」+ 正文，避免脱离上下文后语义漂移 |
 | 块 id | `<相对路径>#<序号>` |
 
-**一篇长文会被切成多块**（当前 215 块、17 篇）——这是为什么来源列表里可能看到同一文档的多条：每一块算一条来源（与旧实现一致）。
+**一篇长文会被切成多块**（当前 219 块、17 篇）——这是为什么来源列表里可能看到同一文档的多条：每一块算一条来源（与旧实现一致）。
 写作时**用 `##` 分节**、每节一个主题，检索精度会明显更好；把整篇写成一个超长段落反而会被滑窗切碎。
 
 **问句式小节标题（实测最有效的一招）**：把访客的原话问句直接做 `##` 标题，答案只写原文事实。
@@ -108,7 +108,7 @@ tags: pv-clean,光伏,清洁
 | 中文切分 | **bigram**（单字不给分：否则「今天上海天气怎么样」会比很多真问题分还高，什么都能答）；**不跨标点/空格边界取相邻二字** |
 | 同义词扩展 | 扩展词按 **0.45** 降权（扩展是提示不是要求），原查询词权重 1；表里只放同义词与同域复合词，**不放话题联想词** |
 | 向量路 | `EMBED_PROVIDER=bag`（特征哈希，`semantic=false`，不参与融合）或 `openai_compat`（真语义；**只做诊断与「关键词不过闸门时的余弦兜底」，不参与普通查询排序**——实测参与会把 top1 顶掉两例，见 `docs/architecture.md` §3） |
-| 融合 | RRF（两路都命中时有微小加成；仅兜底路径生效） |
+| 融合 | RRF（两路都命中时有微小加成；仅兜底路径生效）。兜底时语义命中是**新增候选**——向量独有的条目直接进融合结果，不是只对关键词候选重排（已决策：文档对齐代码，见 `docs/architecture.md` §3）；线上问答与诊断都走带闸门的调用，新增候选还要余弦 ≥ `MIN_VECTOR_SCORE`，而它当前 = `0.75` = 等效关闭，所以生产实际走不到这一步 |
 | 闸门 | 关键词最高分 < `MIN_RELEVANCE_SCORE`（当前 **6.3**）且语义余弦 < `MIN_VECTOR_SCORE`（当前 **0.75** = 关闭兜底）→ `noHit=true` |
 | 来源面板 | 命中片段先按**资料文件**去重、再剔除关键词分低于本次最高分 50% 的块（`RagPipeline.SOURCE_KEEP_RATIO`）——门槛用关键词分而不是融合分：RRF 融合分在相邻名次间几乎无差别（实测 0.0164 / 0.0161 / 0.0159） |
 
@@ -169,7 +169,7 @@ python -c "import json,urllib.parse,urllib.request as u; q=urllib.parse.quote('�
 # 2) 重载（重建关键词 + 向量索引，清空答案缓存）
 curl -X POST http://127.0.0.1:8787/api/knowledge/reload -H "authorization: Bearer $ADMIN_TOKEN"
 # 3) 核对装载结果
-curl -s http://127.0.0.1:8787/api/knowledge/list        # chunkCount、retrieval.mode、各文件块数
+curl -s -H "authorization: Bearer $ADMIN_TOKEN" http://127.0.0.1:8787/api/knowledge/list   # chunkCount、retrieval.mode、各文件块数（需管理口令）
 # 4) 抽查一在域一域外：在域应 gated=false，域外应 gated=true 且 distanceToGate>0
 # 5) 重新标定（阈值是相对量：chunk 数一变，IDF 跟着变、分数整体平移，不重标就可能把该答的问题拦掉）
 cd server && ../tools/mvn -B test-compile exec:java@calibrate

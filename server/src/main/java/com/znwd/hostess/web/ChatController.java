@@ -44,16 +44,22 @@ public class ChatController {
     /** 模型思考期长时，避免中间设备/代理把连接判为僵死 */
     private static final long HEARTBEAT_SECONDS = 15;
 
+    /** 会话访问令牌的载体名：响应字段与查询参数同名，头按 HTTP 惯例加 X- 前缀 */
+    public static final String SESSION_TOKEN_HEADER = "X-Session-Token";
+
     private final ChatRunService chat;
     private final SessionStore sessions;
     private final Analytics analytics;
     private final RateLimiter limiter;
+    private final RateLimiter feedbackLimiter;
     private final JsonlStore logStore;
     private final AppProperties props;
     private final TaskExecutor sseExecutor;
     private final ScheduledExecutorService heartbeat;
 
-    public ChatController(ChatRunService chat, SessionStore sessions, Analytics analytics, RateLimiter limiter,
+    public ChatController(ChatRunService chat, SessionStore sessions, Analytics analytics,
+                          @Qualifier("chatRateLimiter") RateLimiter limiter,
+                          @Qualifier("feedbackRateLimiter") RateLimiter feedbackLimiter,
                           JsonlStore logStore, AppProperties props,
                           @Qualifier("sseExecutor") TaskExecutor sseExecutor,
                           ScheduledExecutorService heartbeat) {
@@ -61,6 +67,7 @@ public class ChatController {
         this.sessions = sessions;
         this.analytics = analytics;
         this.limiter = limiter;
+        this.feedbackLimiter = feedbackLimiter;
         this.logStore = logStore;
         this.props = props;
         this.sseExecutor = sseExecutor;
@@ -69,11 +76,13 @@ public class ChatController {
 
     @PostMapping("/api/chat")
     public Map<String, Object> chat(@RequestBody(required = false) Object body, HttpServletRequest request) {
-        rateLimit(request);
+        rateLimit(limiter, request);
         RequestParser.ChatInput input = parse(body);
         long started = System.currentTimeMillis();
         try {
-            return chat.run(input.message(), input.sessionId());
+            Map<String, Object> out = new LinkedHashMap<>(chat.run(input.message(), input.sessionId()));
+            attachSessionToken(out, input.sessionId());
+            return out;
         } catch (RuntimeException e) {
             log.error("[chat] 问答失败 requestId={}", RequestId.current(), e);
             chat.logError(input.sessionId(), input.message(), started, ApiError.INTERNAL_ERROR);
@@ -85,8 +94,9 @@ public class ChatController {
     @PostMapping(value = "/api/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter stream(@RequestBody(required = false) Object body, HttpServletRequest request,
                             HttpServletResponse response) {
-        rateLimit(request);
+        rateLimit(limiter, request);
         RequestParser.ChatInput input = parse(body);
+        long started = System.currentTimeMillis();
 
         // 反代（nginx/Caddy）不得缓冲流式响应，否则前端看不到逐字效果
         response.setHeader("cache-control", "no-cache, no-transform");
@@ -117,7 +127,10 @@ public class ChatController {
 
                     @Override
                     public void done(Map<String, Object> done) {
-                        send(emitter, "done", done);
+                        // 令牌挂在最后一帧上：会话归属随回答一起交给前端（非流式挂在响应字段里）
+                        Map<String, Object> payload = new LinkedHashMap<>(done);
+                        attachSessionToken(payload, input.sessionId());
+                        send(emitter, "done", payload);
                     }
                 });
                 emitter.complete();
@@ -126,6 +139,7 @@ public class ChatController {
                 emitter.complete();
             } catch (RuntimeException e) {
                 log.error("[chat] SSE 问答失败 requestId={}", RequestId.current(), e);
+                chat.logError(input.sessionId(), input.message(), started, ApiError.INTERNAL_ERROR);
                 try {
                     send(emitter, "error", ApiError.payload(ApiError.INTERNAL_ERROR, "服务内部错误", RequestId.current()));
                 } catch (RuntimeException ignored) {
@@ -140,11 +154,12 @@ public class ChatController {
     }
 
     @GetMapping("/api/sessions/{sessionId}")
-    public Map<String, Object> session(@PathVariable String sessionId) {
+    public Map<String, Object> session(@PathVariable String sessionId, HttpServletRequest request) {
         String id = RequestParser.normalizeSessionId(sessionId);
         if (id == null) {
             throw ApiException.validation("sessionId is required");
         }
+        requireOwned(id, request);
         SessionStore.Peek peek = sessions.peek(id);
         if (peek == null) {
             throw ApiException.notFound("session not found or expired");
@@ -157,11 +172,12 @@ public class ChatController {
     }
 
     @DeleteMapping("/api/sessions/{sessionId}")
-    public Map<String, Object> resetSession(@PathVariable String sessionId) {
+    public Map<String, Object> resetSession(@PathVariable String sessionId, HttpServletRequest request) {
         String id = RequestParser.normalizeSessionId(sessionId);
         if (id == null) {
             throw ApiException.validation("sessionId is required");
         }
+        requireOwned(id, request);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("ok", sessions.reset(id));
         out.put("sessionId", id);
@@ -172,8 +188,8 @@ public class ChatController {
     public Map<String, Object> feedback(
             @RequestBody(required = false) Map<String, Object> body,
             HttpServletRequest request) {
-        // 反馈也过同一套按 IP 限流：否则可以刷统计/反馈（接口无鉴权，是公开写口）
-        rateLimit(request);
+        // 反馈是无鉴权的公开写口，比 /api/chat 更容易刷（统计口径会被灌水）：走独立的、更严的限流桶
+        rateLimit(feedbackLimiter, request);
         Object rating = body == null ? null : body.get("rating");
         if (!FeedbackEntry.UP.equals(rating) && !FeedbackEntry.DOWN.equals(rating)) {
             throw ApiException.validation("rating must be 'up' or 'down'");
@@ -215,11 +231,36 @@ public class ChatController {
         return null;
     }
 
-    private void rateLimit(HttpServletRequest request) {
-        Long wait = limiter.allow(ClientIp.of(request.getHeader("x-forwarded-for"),
+    /** 限流桶按端点拆开（chat / feedback 各算各的），命中回 429 并带上建议等待秒数 */
+    private void rateLimit(RateLimiter bucket, HttpServletRequest request) {
+        Long wait = bucket.allow(ClientIp.of(request.getHeader("x-forwarded-for"),
                 request.getRemoteAddr(), props.trustForwardedFor()));
         if (wait != null) {
             throw ApiException.rateLimited(wait);
+        }
+    }
+
+    /** 会话访问令牌：优先读 X-Session-Token 头，读不到再看 ?sessionToken= 查询串 */
+    private String sessionToken(HttpServletRequest request) {
+        String header = request.getHeader(SESSION_TOKEN_HEADER);
+        if (header != null && !header.isBlank()) {
+            return header.strip();
+        }
+        return request.getParameter("sessionToken");
+    }
+
+    /** 归属校验：令牌不匹配按「不存在」回 404（回 403 等于承认这个 sessionId 有效） */
+    private void requireOwned(String sessionId, HttpServletRequest request) {
+        if (!sessions.mayAccess(sessionId, sessionToken(request))) {
+            throw ApiException.notFound("session not found or expired");
+        }
+    }
+
+    /** 会话令牌随问答响应下发；没建过会话（sessionId 为空）就无令牌可发 */
+    private void attachSessionToken(Map<String, Object> out, String sessionId) {
+        String token = sessions.tokenFor(sessionId);
+        if (token != null) {
+            out.put("sessionToken", token);
         }
     }
 

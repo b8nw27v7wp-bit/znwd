@@ -1,5 +1,7 @@
 package com.znwd.hostess.analytics;
 
+import java.lang.reflect.Proxy;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -8,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import com.znwd.hostess.domain.ChatLogEntry;
 import com.znwd.hostess.domain.FeedbackEntry;
 import com.znwd.hostess.llm.LlmUsage;
+import com.znwd.hostess.repository.SessionMapper;
 import com.znwd.hostess.session.SessionStore;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -30,6 +33,32 @@ class AnalyticsSessionTest {
         assertTrue(store.reset("s1"));
         assertNull(store.peek("s1"));
         assertEquals(0, store.history("s1").size());
+    }
+
+    @Test
+    void 超过六轮后数据库序号仍单调递增() {
+        List<Integer> sequences = new ArrayList<>();
+        SessionMapper mapper = (SessionMapper) Proxy.newProxyInstance(
+                SessionMapper.class.getClassLoader(), new Class<?>[] {SessionMapper.class},
+                (proxy, method, args) -> {
+                    if (method.getName().equals("insertMessage")) {
+                        sequences.add((Integer) args[1]);
+                    }
+                    if (method.getName().equals("toString")) {
+                        return "sessionMapperStub";
+                    }
+                    if (method.getReturnType() == int.class) {
+                        return 0;
+                    }
+                    return null;
+                });
+        SessionStore store = new SessionStore(mapper, null);
+
+        for (int i = 0; i < 7; i++) {
+            store.append("s-seq", "问" + i, "答" + i);
+        }
+
+        assertEquals(List.of(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13), sequences);
     }
 
     @Test
@@ -107,6 +136,9 @@ class AnalyticsSessionTest {
         assertTrue(csv.startsWith("at,sessionId,rating,question,comment"));
         assertTrue(csv.contains("\"叶片检测要停机吗？\""));
         assertTrue(csv.contains("\"回答太笼统\""), "CSV 需转义引号");
+
+        analytics.logFeedback(new FeedbackEntry(4, "s4", "down", "=1+1", "报价"));
+        assertTrue(analytics.feedbackCsv().contains("\"'=1+1\""), "CSV 公式前缀必须中和");
     }
 
     @Test

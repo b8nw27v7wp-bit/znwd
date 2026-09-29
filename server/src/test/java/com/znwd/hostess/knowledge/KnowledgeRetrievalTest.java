@@ -43,6 +43,13 @@ class KnowledgeRetrievalTest {
     }
 
     @Test
+    void 中等长度单段也必须切到上限以内() {
+        List<String> chunks = TextChunker.chunkText("甲".repeat(600), 500, 80);
+        assertTrue(chunks.size() > 1);
+        assertTrue(chunks.stream().allMatch(chunk -> chunk.length() <= 500));
+    }
+
+    @Test
     void 单字命中不再给分_域外问题无候选() {
         Retriever retriever = new Retriever();
         retriever.replace(List.of(new KnowledgeChunk("a#0", "参观须知", "90_通识/参观须知.md",

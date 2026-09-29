@@ -44,7 +44,19 @@
 | **闸门余量挂进 CI** | `Calibrate` 增加 `--gate-check`：域外最高分（排序分口径，与 `HybridRetriever` 判闸门同判据）不得越过生效阈值，越线退出码 3；CI 在检索评测之后加一步。**刻意不用「区间是否成立」当判据**——当前语料下区间本就不成立，拿它当失败条件只会让 CI 长期红着、没人看 | 实测：阈值 6.3 时守住退 0（余量 0.081）；故意 `MIN_RELEVANCE_SCORE=6.0` 时越线退 3。单测 60 → **64 项** |
 | 文档同步 | `docs/development.md`（单测/前端项数、`--gate-check`）、`docs/eval.md`（标定参数与退出码、单测项数）、`docs/api.md`（413 错误码）、`README.md`（单测项数） | — |
 
-## 待做
+## 已完成（第十二轮：交付前收口，2026-09-29）
+
+| 项 | 内容 | 验证 |
+| --- | --- | --- |
+| **零断言探针 → 正式契约用例** | 删掉 `ProbeWebTest`（只 `println`、不断言，且漏 mock 新加的 `feedbackRateLimiter`，整类上下文加载失败＝本地单测长期 5 条 ERROR），换成 `ChatWebContractTest` 13 条 | `mvn test` **157 项**（149 里的 5 红消失，净增 8 条有效用例）；覆盖错误信封 404/415/405、两类 400 文案差异、SSE 帧序与 `done` 带令牌、会话归属、反馈独立桶 |
+| **`tools/security.py` 按新契约改写 S19** | 旧断言「知道 `sessionId` 就能删（200）」在会话令牌落地后必然红；改成 5 条：令牌下发 / 无令牌删 404 / 错令牌删 404 / 持令牌读 200 / 持令牌删 200 | 四实例实测 **98 通过 / 0 失败 / 1 跳过**（S21 限流窗口时序抖动） |
+| **文档口径按实际输出统一** | 单测 123→157、前端 104→134、语料 215→**219 块/17 篇**、域外最高余弦 0.6826→**0.6252**、闸门余量→**0.130**、P1 会话所有权状态、`docs/eval.md` 新增第七版标定结论 | 全仓 grep 复核；`README.md`、`docs/*.md`、`server/.env.example` 同步 |
+| **`.env.example` 补漏** | 补上 `FEEDBACK_RATE_PER_MIN`（application.yml 有、模板缺）；阈值注释里的旧语料规模改成 219 块口径 | 与 `application.yml` 逐键对齐 |
+
+> 本轮**没有改任何业务逻辑**：改的是测试载体（探针→契约用例）、检查脚本的期望（S19）与文档口径。
+> 唯一的行为性改动是上一批（会话令牌 / 反馈独立桶 / 话术外置 / 运营面板），本轮把它们跑成了可交付证据。
+
+## 待做（更新于 2026-09-29）
 
 1. **（可选）指标暴露**：已带 `spring-boot-starter-actuator`（只暴露 `health,info`）；接多屏/后台要 Prometheus 指标时再接 `micrometer-registry-prometheus`。单机展厅当前 `/api/health` + `/api/stats` 够用。
 2. ~~近域域外漏放~~ **已处理（第十一轮）**：`near-3`「扫地机器人多少钱？」/ `near-4`「这个机器人能送外卖吗？」词面命中的
@@ -53,7 +65,7 @@
    「资料中没有家用扫地机器人等其他品类产品的说明，也没有任何产品报价」。闸门仍会放行这类问题，但现在答的是有依据的话，
    不是模型自由发挥（此前实测会自己补一句「建议联系销售部门」——资料里没有这句）。
 3. **（可选）语义兜底口子**：`MIN_VECTOR_SCORE=0.75` 等于关着。等补语料把误拦降到 0 之后重跑 `calibrate`，
-   看「待救在域最低余弦」是否终于高过「域外最高余弦」（当前 0.6389 < 0.6826），成立才谈开口子。
+   看「待救在域最低余弦」是否终于高过「域外最高余弦」（2026-09-29 复标：待救 0 条、余弦 0.0000 < 域外最高 **0.6252**），成立才谈开口子。
 
 ## 已完成（第十一轮：补语料 + 误拦/漏放收口）
 
@@ -75,6 +87,10 @@
 | **兜底阈值按余弦重标：0.35 → 0.75** | 新增「近域域外样本」（`EvalSupport.OUT_OF_DOMAIN_NEAR`：词面与语料高度重叠、余弦天然偏高的问题），标定输出域外最高余弦与「待救在域最低余弦」。实测域外最高 **0.6826** > 待救 **0.6389**，区间不成立 → 取「域外不越线」的点 = 关闭兜底 | `calibrate --gate-check` 新增一条线：域外最高余弦 ≥ 生效阈值 → 退出码 4（实测 0.6826 < 0.75 守住退 0）。四处同步：`.env` / `application.yml` / `HybridRetriever.DEFAULT_MIN_VECTOR_SCORE` / CI |
 | **语义路可降级，不拖垮展板** | embedding 走外网后：构建失败不再让启动失败，而是记 `degradedReason` 退回仅关键词；查询期失败只影响本次检索、计数进 `queryFailures`/`lastQueryError`，`semantic` 转 false、下一次成功自愈；`/api/health` 加 `embeddingReady` 一眼可见 | 真机实测：把 `EMBED_BASE_URL` 指到死端口起服务 → 启动正常（索引从本地文件加载）、问答照常答对、health 报 `embeddingReady=false` + 原因；新增 3 条单测（`EmbeddingFallbackTest`）。`offline-check.py` 的判据改成「除大模型与 embedding 外一律本地 + 这两个依赖不可用时仍能答」 |
 | 契约与文档 | `/api/health` 加 `embeddingReady`；`retrieval.vector` 加 `degradedReason`/`queryFailures`/`lastQueryError`；版本 `1.2.0` → `1.3.0`；`EMBED_BATCH_SIZE` 可配 | 冒烟 **56/56**、离线检查 7/7、单测 **83 项**全绿；文档同步 `architecture/eval/api/deployment/knowledge/development/README/.env.example` |
+
+> 本表是**历史快照**（数字与结论保留当时原貌）。其中「只对关键词候选重排、不新增候选」已被后续产品决策取代：
+> 现行契约是**允许语义新增候选**（文档对齐代码），见 `docs/architecture.md` §3、`docs/knowledge.md` §5；
+> 「`MIN_VECTOR_SCORE=0.75` 等效关闭兜底」的结论不变。本文件数字与最新活文档（单测 123、前端 104、冒烟 60/63）不一致时，以活文档为准。
 
 ## 已完成（第三轮：文档与配置换成新栈）
 

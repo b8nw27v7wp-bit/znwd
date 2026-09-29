@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Message } from '../api';
 import { useChat } from './useChat';
 
 /**
@@ -116,7 +117,11 @@ describe('问答状态机', () => {
     stubFetch({
       '/api/sessions/': () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
       '/api/suggestions': () => new Response(JSON.stringify({ items: [] }), { status: 200 }),
-      '/api/chat/stream': () => sse('event:done\ndata:{"mode":"rag","provider":"mock","retrieval":"keyword","noHit":false,"cached":false,"sources":[],"answer":"好","latencyMs":1}\n\n'),
+      '/api/chat/stream': () => sse(
+        'event:meta\ndata:{"mode":"rag","provider":"mock","retrieval":"keyword","noHit":false,"sources":[]}\n\n',
+        'event:delta\ndata:{"text":"好"}\n\n',
+        'event:done\ndata:{"mode":"rag","provider":"mock","retrieval":"keyword","noHit":false,"cached":false,"sources":[],"answer":"好","latencyMs":1}\n\n',
+      ),
     });
     const chat = useChat();
     const before = chat.sessionId.value;
@@ -127,5 +132,108 @@ describe('问答状态机', () => {
     expect(chat.sessionId.value).not.toBe(before);
     expect(localStorage.getItem('znwd.sessionId')).toBe(chat.sessionId.value);
     expect(chat.messages.value.length).toBe(0);
+  });
+
+  it('startOver 先中止旧流，旧请求的 signal 不会恢复当前状态', async () => {
+    let streamController: ReadableStreamDefaultController<Uint8Array> | undefined;
+    let streamSignal: AbortSignal | undefined;
+    stubFetch({
+      '/api/chat/stream': (init) => {
+        streamSignal = init?.signal as AbortSignal | undefined;
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              streamController = controller;
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'text/event-stream' } },
+        );
+      },
+      '/api/sessions/': () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
+      '/api/suggestions': () => new Response(JSON.stringify({ items: [] }), { status: 200 }),
+    });
+
+    const chat = useChat();
+    const asking = chat.ask('旧问题');
+    await vi.waitFor(() => expect(streamController).toBeTruthy());
+    const oldSession = chat.sessionId.value;
+    const resetting = chat.startOver();
+    expect(streamSignal?.aborted).toBe(true);
+
+    await resetting;
+    await asking;
+    expect(chat.sessionId.value).not.toBe(oldSession);
+    expect(chat.messages.value).toHaveLength(0);
+  });
+
+  it('startOver 完成前拒绝新 ask，避免重置期间产生新流', async () => {
+    let releaseReset: (() => void) | undefined;
+    const resetResponse = new Promise<Response>((resolve) => {
+      releaseReset = () => resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/api/sessions/')) return resetResponse;
+      if (url.includes('/api/suggestions')) return new Response(JSON.stringify({ items: [] }), { status: 200 });
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const chat = useChat();
+    const resetting = chat.startOver();
+    expect(chat.resetting.value).toBe(true);
+    await chat.ask('重置期间的问题');
+    expect(chat.messages.value).toHaveLength(0);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/chat/stream'))).toBe(false);
+
+    releaseReset?.();
+    await resetting;
+    expect(chat.resetting.value).toBe(false);
+  });
+
+  it('反馈 HTTP 失败时回滚乐观标记', async () => {
+    stubFetch({
+      '/api/feedback': () => new Response(JSON.stringify({ message: '反馈失败' }), { status: 503 }),
+    });
+    const chat = useChat();
+    const message: Message = { id: 'm1', role: 'assistant', content: '回答' };
+    chat.messages.value.push(message);
+
+    await chat.rate(message, 'up');
+
+    expect(chat.feedback.value.m1).toBeUndefined();
+    expect(chat.error.value).toBe('反馈失败');
+  });
+
+  it('重置 HTTP 失败时仍清理本地状态并保留错误', async () => {
+    stubFetch({
+      '/api/sessions/': () => new Response(JSON.stringify({ message: '重置失败' }), { status: 500 }),
+      '/api/suggestions': () => new Response(JSON.stringify({ items: [] }), { status: 200 }),
+    });
+    const chat = useChat();
+    const oldSession = chat.sessionId.value;
+    chat.messages.value.push({ id: 'm1', role: 'user', content: '保留我' });
+
+    await chat.startOver();
+
+    expect(chat.sessionId.value).not.toBe(oldSession);
+    expect(localStorage.getItem('znwd.sessionId')).toBe(chat.sessionId.value);
+    expect(chat.messages.value).toHaveLength(0);
+    expect(chat.error.value).toBe('重置失败');
+  });
+
+  it('localStorage 抛错时仍可创建并使用会话', () => {
+    vi.stubGlobal('localStorage', {
+      getItem: () => {
+        throw new Error('storage denied');
+      },
+      setItem: () => {
+        throw new Error('storage denied');
+      },
+      removeItem: () => {
+        throw new Error('storage denied');
+      },
+    });
+    expect(() => useChat()).not.toThrow();
   });
 });

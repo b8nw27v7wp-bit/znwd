@@ -22,6 +22,14 @@ const STATS = {
 };
 const UNCOVERED = { items: [{ question: '你们有多少客户', at: 1790044695025 }] };
 const FEEDBACK = { up: 28, down: 0, topDown: [] };
+const KNOWLEDGE_LIST = {
+  knowledgeDir: 'E:\\znwd\\knowledge',
+  fileCount: 1,
+  chunkCount: 3,
+  synonyms: { count: 1, source: 'builtin', file: null },
+  docs: [{ path: '01_光伏清洁机器人/产品概述.md', title: '产品概述', zone: 'pv-clean', zoneTitle: '光伏清洁机器人', chunks: 3 }],
+};
+const SYNONYMS = { count: 1, source: 'builtin', file: null, entries: [], tsv: '叶片\t风叶' };
 
 function stubApi(options: { unauthorized?: boolean } = {}) {
   vi.stubGlobal(
@@ -32,6 +40,8 @@ function stubApi(options: { unauthorized?: boolean } = {}) {
       if (url.includes('/api/stats')) return new Response(JSON.stringify(STATS), { status: 200 });
       if (url.includes('/api/admin/uncovered')) return new Response(JSON.stringify(UNCOVERED), { status: 200 });
       if (url.includes('/api/admin/feedback-stats')) return new Response(JSON.stringify(FEEDBACK), { status: 200 });
+      if (url.includes('/api/knowledge/list')) return new Response(JSON.stringify(KNOWLEDGE_LIST), { status: 200 });
+      if (url.includes('/api/admin/synonyms')) return new Response(JSON.stringify(SYNONYMS), { status: 200 });
       throw new Error(`unexpected fetch: ${url}`);
     }),
   );
@@ -116,6 +126,24 @@ describe('运营视图：统计、未覆盖问题与口令', () => {
     await flushPromises();
 
     expect(wrapper.find('.snippet').text()).toContain('请求失败（500）');
+    wrapper.unmount();
+  });
+
+  it('知识库子面板与统计共用同一口令：knowledge 接口也带 authorization', async () => {
+    const wrapper = mount(AdminPanel);
+    await flushPromises();
+
+    await wrapper.find('input[type="password"]').setValue('shared-token');
+    await wrapper.find('button.linkish').trigger('click');
+    await flushPromises();
+
+    const knowledgeCalls = calls().filter(([url]) => String(url).includes('/api/knowledge/list'));
+    expect(knowledgeCalls.length).toBeGreaterThan(0);
+    // 提交口令后的那一次（列表最后一条）必须带上 authorization
+    const last = knowledgeCalls[knowledgeCalls.length - 1]!;
+    expect((last[1]!.headers as Record<string, string>).authorization).toBe('Bearer shared-token');
+    // 口令提交后子面板拿的是 committed 值，不是输入框里的半截字
+    expect(wrapper.text()).toContain('01_光伏清洁机器人/产品概述.md');
     wrapper.unmount();
   });
 });

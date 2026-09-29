@@ -1,6 +1,11 @@
 package com.znwd.hostess.http;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 
 /** LRU 答案缓存。key 里带模型名与索引 generation：reload 之后旧代答案不会被误命中。 */
@@ -34,13 +39,16 @@ public class LruCache<V> {
         map.clear();
     }
 
-    /** 缓存 key：模型 + 索引代数 + 归一化后的问题 */
+    /** 缓存 key：模型 + 索引代数 + 完整规范化问题的 SHA-256 */
     public static String answerCacheKey(String message, String model, long generation) {
-        String normalized = message.strip().toLowerCase();
-        if (normalized.length() > 300) {
-            normalized = normalized.substring(0, 300);
+        String normalized = message == null ? "" : message.strip().toLowerCase(Locale.ROOT);
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(normalized.getBytes(StandardCharsets.UTF_8));
+            return model + "::g" + generation + "::" + HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 unavailable", e);
         }
-        return model + "::g" + generation + "::" + normalized;
     }
 
     /** 缓存条目（只放「单轮且无历史」的回答：多轮上下文不同，复用得靠 session 历史判断） */

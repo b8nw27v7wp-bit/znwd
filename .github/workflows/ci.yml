@@ -5,11 +5,25 @@ on:
     branches: ['**']
   pull_request:
 
+permissions:
+  contents: read
+
+# 同一分支连推时只留最新一次，避免两个 backend job 各带一个 MySQL 容器把 runner 排队。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   backend:
     name: 后端（编译 + 单测 + 检索评测 + 接口冒烟 + 边界安全 + 库层）
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # shell: bash 才会带上 -o pipefail。GitHub 在 Linux 上默认是 `bash -e {0}`——**没有** pipefail，
+    # 管道只看最后一个命令的退出码：下面 `sed … | mysql` 那一步里 sed 失败时 mysql 读空 stdin
+    # 照样成功，建库静默跳过，报出来的是一个裸 MySQL 错误而不是「init.sql 没跑成」。
+    defaults:
+      run:
+        shell: bash
     # MySQL 服务容器：以前 CI 里没有库，落库路径（会话恢复、chat_log 脱敏、未覆盖问题）全都不被覆盖。
     # 这里**不**用镜像自带的 MYSQL_DATABASE/MYSQL_USER 建库，而是照 docs/deployment.md 的两步来：
     # 先执行 server/db/init.sql 建库建最小权限账号，再把它写进 DB_PASSWORD —— 顺带把这份部署脚本也测了。
@@ -52,19 +66,32 @@ jobs:
           java-version: '21'
           cache: maven
 
+      # 诱饵密钥。tools/security.py 的 S04/S06/S07/Y06b 断言「响应体里不含 server/.env 中
+      # 密钥的片段」；新 checkout 没有 server/.env，片段集合是空的，于是那几条断言退化成
+      # 「响应里不含字符串 LLM_API_KEY」——真泄了 key 也照样通过。造一个可预测的诱饵让它们真的有牙。
+      # 只写 LLM_API_KEY：CI 走 LLM_PROVIDER=mock，这个 key 永远不会被发出去；
+      # 刻意不写 DB_PASSWORD，免得和上面 env 里的真实库口令混淆（系统环境变量优先于 .env）。
+      - name: 造诱饵密钥（让密钥泄漏断言真的在比对片段）
+        run: |
+          printf 'LLM_API_KEY=ci-decoy-key-0123456789abcdef\n' > server/.env
+          echo "已写诱饵 server/.env（不进版本库，见 .gitignore）"
+
       - name: 建库（执行 server/db/init.sql，只给最小权限）
         run: |
+          set -euo pipefail
           # init.sql 里 @'localhost' 在容器里匹配不上（来源是 docker 网关 IP），换成 @'%'——
           # 这是 CI 与单机部署的唯一差异，其余（权限集合、口令注入方式）与生产一致。
           sed -e "s/CHANGE_ME_znwd/$APP_DB_PASSWORD/g" -e "s/@'localhost'/@'%'/g" server/db/init.sql \
             | mysql -h 127.0.0.1 -uroot -p"$MYSQL_ROOT_PASSWORD"
+          # 顺手确认应用库真的建出来了（init.sql 静默失败时要在这里停住，而不是等到后面报「库没连上」）
+          mysql -h 127.0.0.1 -uroot -p"$MYSQL_ROOT_PASSWORD" -N -e "SELECT 1" znwd
           mysql -h 127.0.0.1 -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SHOW GRANTS FOR 'znwd'@'%'"
 
       - name: 单元测试
         run: mvn -B -f server/pom.xml test
 
       - name: 检索评测（同一批用例，不写报告）
-        run: mvn -B -q -f server/pom.xml test-compile exec:java@eval -Dexec.args="--no-write"
+        run: mvn -B -q -f server/pom.xml test-compile exec:java@eval -Dexec.args="--no-write --baseline=docs/eval/baseline-java.json"
 
       # 守的是「域外问题不被硬答」这条线：闸门判据是排序分（含同义词扩展），
       # 域外最高分一旦超过生效阈值，展厅就会对域外问题张口就答——比误拦更难收拾。
@@ -78,74 +105,150 @@ jobs:
 
       - name: 起服务并跑接口冒烟（此时库可用，落库路径一起跑）
         run: |
+          set -euo pipefail
           java -jar server/target/hostess-server.jar --spring.main.banner-mode=off > /tmp/server.log 2>&1 &
           # 等「就绪」，不要只等「端口通」：端口在 ApplicationReadyEvent 之前就已经在监听，
           # 而知识库加载与数据库探活都在那个事件里做。实测过一次探测打在初始化之前——
           # health 回 knowledgeChunks=0、storageAvailable=false，冒烟当场挂，还报成「库没连上」。
+          # 用 python 判 JSON 而不是 grep：grep 依赖 Jackson 的紧凑输出，一旦有人开了
+          # indent-output，所有断言会一起变成假阴性。
+          ready=0
           for i in $(seq 1 60); do
             if curl -sf http://127.0.0.1:8787/api/health -o /tmp/health.json \
-              && grep -q '"storageAvailable":true' /tmp/health.json \
-              && ! grep -q '"knowledgeChunks":0' /tmp/health.json; then
+              && python3 -c "import json,sys; h=json.load(open('/tmp/health.json')); sys.exit(0 if (h.get('ok') and h.get('ready') and h.get('storageAvailable') and h.get('knowledgeChunks',0)>0) else 1)"; then
+              ready=1
               break
             fi
             sleep 1
           done
-          cat /tmp/health.json; echo
-          grep -q '"storageAvailable":true' /tmp/health.json || { echo "库没连上，落库用例没意义"; exit 1; }
-          if grep -q '"knowledgeChunks":0' /tmp/health.json; then echo "知识库没加载（0 块），检索用例没意义"; exit 1; fi
-          python3 tools/smoke.py
+          cat /tmp/health.json 2>/dev/null || echo "(服务没起来，连 /tmp/health.json 都没有)"
+          echo
+          if [ "$ready" != 1 ]; then
+            echo "服务在 60s 内没达到 ok+ready+storageAvailable+knowledgeChunks>0，上面是最后一次 health"
+            tail -40 /tmp/server.log || true
+            exit 1
+          fi
+          # 故意打一下管理面：证明 ADMIN_TOKEN 与本实例同源，否则 smoke.py 会把整块管理断言记成失败
+          ADMIN_TOKEN="$ADMIN_TOKEN" python3 tools/smoke.py
         env:
           LLM_PROVIDER: mock
           HOST: 127.0.0.1
           PORT: '8787'
           # 固定事件日志目录：下面两步要按同一路径核对「提问原话没落盘」
           DATA_DIR: /tmp/data-a
+          # 主实例必须配口令：REQUIRE_ADMIN_TOKEN 默认 true，主实例即使来自回环也一律 401。
+          # 之前这里没设，smoke.py 的 17 条管理契约断言全部静默跳过、security.py 的 B16
+          # 拿着 401 当成「topK 越界处理变了」而 4 连失败。
+          ADMIN_TOKEN: ci-only-token-not-a-secret
+          # 让 security.py 的 G07（中途断开不留 ERROR/堆栈）能读到服务日志
+          SERVER_LOG: /tmp/server.log
 
-      # 边界与安全用例。非回环那几组要另外两个实例，都用本机的非回环地址访问：
-      #   B: HOST=0.0.0.0 + ADMIN_TOKEN —— 验「非回环请求必须带对口令」（S16–S18）
-      #   C: HOST=0.0.0.0 但故意不配口令 —— 验误配置下是 fail-closed 而不是把管理接口交给局域网（M01–M03）
-      # 三个实例各用各的 DATA_DIR，避免事件日志互相插队。
+      # 边界与安全用例。非回环那几组要另外几个实例，都用本机的非回环地址访问：
+      #   B: HOST=0.0.0.0 + ADMIN_TOKEN      —— 验「非回环请求必须带对口令」（S16–S18）
+      #   C: HOST=0.0.0.0 但故意不配口令      —— 验误配置下是 fail-closed 而不是把管理接口交给局域网（M01–M03）
+      #   D: HOST=0.0.0.0 + 不配口令 + REQUIRE_ADMIN_TOKEN=false
+      #      —— 唯一能把 AdminGuard 里「非回环」这一条判据单独拎出来验的组合（S16c/S16d）。
+      #         B 配了口令、D 走的是 adminTokenRequired()，两者都盖不住这一条：
+      #         把 `|| !isLoopback(remoteAddr)` 整句删掉，B/C 的用例照样全绿。
+      # 注意 BASE 不设 —— 默认打 127.0.0.1:8787，即上一步起的主实例（它有口令，
+      # 与本步的 ADMIN_TOKEN 同值）。这几个实例各用各的 DATA_DIR，避免事件日志互相插队。
       - name: 边界与安全用例（含非回环越权与误配置 fail-closed）
         run: |
+          set -euo pipefail
           HOSTIP=$(hostname -I | awk '{print $1}')
+          test -n "$HOSTIP" || { echo "取不到本机非回环地址，S16–S18 / M01–M03 / S16c 无法验 fail-closed"; exit 1; }
           HOST=0.0.0.0 PORT=8799 ADMIN_TOKEN=$ADMIN_TOKEN DATA_DIR=/tmp/data-b \
             java -jar server/target/hostess-server.jar --spring.main.banner-mode=off > /tmp/server-b.log 2>&1 &
           HOST=0.0.0.0 PORT=8798 DATA_DIR=/tmp/data-c \
-            java -jar server/target/hostess-server.jar --spring.main.banner-mode=off > /tmp/server-c.log 2>&1 &
-          for port in 8799 8798; do
+            env -u ADMIN_TOKEN java -jar server/target/hostess-server.jar --spring.main.banner-mode=off > /tmp/server-c.log 2>&1 &
+          # D 也要真的没有口令：env -u 只清 ADMIN_TOKEN，REQUIRE_ADMIN_TOKEN 是这一步显式给的
+          HOST=0.0.0.0 PORT=8797 REQUIRE_ADMIN_TOKEN=false DATA_DIR=/tmp/data-d \
+            env -u ADMIN_TOKEN java -jar server/target/hostess-server.jar --spring.main.banner-mode=off > /tmp/server-d.log 2>&1 &
+          for port in 8799 8798 8797; do
             for i in $(seq 1 60); do
-              # 同样等「就绪」：这两个实例也要加载知识库，探测未就绪时 security.py 的问答案例会失败
+              # 同样等「就绪」：这几个实例也要加载知识库，探测未就绪时 security.py 的问答案例会失败
               if curl -sf "http://127.0.0.1:$port/api/health" -o "/tmp/health-$port.json" \
-                && ! grep -q '"knowledgeChunks":0' "/tmp/health-$port.json"; then
+                && python3 -c "import json,sys; h=json.load(open('/tmp/health-$port.json')); sys.exit(0 if (h.get('ready') and h.get('ok') and h.get('knowledgeChunks',0)>0) else 1)"; then
                 break
               fi
               sleep 1
             done
+            grep -q '"ready":true' "/tmp/health-$port.json" || { echo "实例 $port 未 ready"; exit 1; }
+            grep -q '"ok":true' "/tmp/health-$port.json" || { echo "实例 $port 健康检查未通过"; exit 1; }
+            if grep -q '"knowledgeChunks":0' "/tmp/health-$port.json"; then
+              echo "实例 $port 知识库没加载（0 块）"
+              exit 1
+            fi
           done
+          # 前提自检：$HOSTIP 必须是「非回环」且「能连上」。取到回环地址或地址不通的话，
+          # 下面所有 ADMIN_PATHS 断言会因为 URL 构造失败而变成 URLError，
+          # 报出来的却像是「接口行为变了」。
+          curl -sf "http://$HOSTIP:8799/api/health" -o /tmp/nonloop.json \
+            || { echo "$HOSTIP 不是可达的非回环地址，非回环那几组会空跑"; exit 1; }
           echo "非回环地址：$HOSTIP"
-          SECOND_BASE="http://$HOSTIP:8799" MISCONFIG_BASE="http://$HOSTIP:8798" \
+          # 前提自检：实例 C 必须真的没口令。带上正确口令能通，说明 ADMIN_TOKEN 没被 env -u 摘掉。
+          ccode=$(curl -s -o /dev/null -w '%{http_code}' -H "authorization: Bearer $ADMIN_TOKEN" \
+            "http://$HOSTIP:8798/api/stats")
+          [ "$ccode" = 401 ] || { echo "实例 8798 竟接受了口令（$ccode），说明 ADMIN_TOKEN 没被 env -u 摘掉"; exit 1; }
+          # 前提自检：实例 D 必须真的处在「无口令 + REQUIRE_ADMIN_TOKEN=false」这个开发态，
+          # 否则 S16c 验的就不是「非回环判据」而是别的东西（S16d 的回环对照会先红）。
+          dcode=$(curl -s -o /dev/null -w '%{http_code}' "http://$HOSTIP:8797/api/stats")
+          [ "$dcode" = 401 ] || { echo "实例 8797 非回环访问返回 $dcode，应为 401（该实例用于隔离非回环判据）"; exit 1; }
+          dloop=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:8797/api/stats")
+          [ "$dloop" = 200 ] || { echo "实例 8797 回环访问返回 $dloop，应为 200（开发态对照）"; exit 1; }
+          BASE="http://127.0.0.1:8787" SECOND_BASE="http://$HOSTIP:8799" MISCONFIG_BASE="http://$HOSTIP:8798" \
+            DEV_RELAXED_BASE="http://$HOSTIP:8797" DEV_HOST_IP="$HOSTIP" \
             python3 tools/security.py
         env:
           LLM_PROVIDER: mock
           DATA_DIR: /tmp/data-a
           ADMIN_TOKEN: ci-only-token-not-a-secret
+          SERVER_LOG: /tmp/server.log
 
       # 库层核查：落库之后到底存了什么。放在安全用例之后——那一步收尾会等限流窗口滑过去，
       # 这里再发提问不会被 429 挡住。
       - name: 库层核查（脱敏形态与最小权限）
         run: python3 tools/db-check.py
 
-      - name: 失败时打印三个实例的日志
-        if: failure()
+      # 运行期不变量：O06（检索模式自洽）与 O07（mock 下 LLM 不外呼）只在 --runtime 时才跑，
+      # 而这个 job 的主实例还活着，所以在这里补一次——否则它们在 CI 里从不存在，
+      # 「一体机只有 LLM 出网」这条要求少了一半可执行检查。
+      - name: 本地化不变量·运行期（O06/O07）
+        run: python3 tools/offline-check.py --runtime
+        env:
+          BASE: http://127.0.0.1:8787
+          LLM_PROVIDER: mock
+
+      # 失败诊断。if: always() 而不是 failure()：被取消的 job 也要留下日志，
+      # 否则最需要看的那次运行恰好什么都不剩。
+      - name: 结束时打印各实例日志
+        if: always()
         run: |
-          for f in /tmp/server.log /tmp/server-b.log /tmp/server-c.log; do
+          for f in /tmp/server.log /tmp/server-b.log /tmp/server-c.log /tmp/server-d.log; do
             echo "===== $f ====="; tail -40 "$f" 2>/dev/null || true
           done
+
+      # 之前整条流水线没有任何产物上传：surefire 报告、逐例评测表、四个实例的日志
+      # 全部随 runner 一起消失，Spring Boot 起不来时只剩 tail -40 三行。
+      - name: 上传日志与测试报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-logs
+          path: |
+            server/target/surefire-reports/
+            /tmp/server*.log
+            /tmp/health*.json
+          if-no-files-found: warn
+          retention-days: 14
 
   frontend:
     name: 前端（类型检查 + 构建 + 单测）
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
 
@@ -169,5 +272,7 @@ jobs:
 
       # 部署一体机的要求是「除大模型外一律本地」，这条容易被一次顺手引 CDN 破坏，
       # 所以放在构建之后跑：产物、后端源码出网入口、依赖清单一起查。
+      # 运行期那两条（O06/O07）需要活着的实例，在 backend job 里跑（主实例还活着），
+      # 这里只跑静态那几条。
       - name: 本地化不变量（除 LLM 外一律本地）
         run: python3 tools/offline-check.py

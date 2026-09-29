@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -17,6 +18,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.znwd.hostess.util.Hashing;
 
 /**
  * JSONL 事件日志（问答/反馈/错误），超过阈值按天轮转。
@@ -64,8 +66,24 @@ public class JsonlStore {
         if (message instanceof String s && !rest.containsKey("messagePreview")) {
             rest.putAll(MessageLog.fields(s, previewMode));
         }
+        for (String key : List.of("question", "comment", "answerPreview")) {
+            if (rest.containsKey(key)) {
+                rest.put(key, protectText(rest.get(key)));
+            }
+        }
         rest.putIfAbsent("at", System.currentTimeMillis());
         return rest;
+    }
+
+    private Object protectText(Object value) {
+        if (!(value instanceof String text) || text.isEmpty()) {
+            return value;
+        }
+        if (previewMode) {
+            return text.substring(0, Math.min(80, text.length()));
+        }
+        return Hashing.hashStr(text) + "#" + text.length() + "#"
+                + text.substring(0, Math.min(20, text.length()));
     }
 
     public void append(Map<String, Object> obj) {

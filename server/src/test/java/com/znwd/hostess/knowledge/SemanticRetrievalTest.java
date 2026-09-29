@@ -24,7 +24,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <ul>
  *   <li>关键词路过闸门时，<b>语义向量不参与排序</b>（关键词路在这套语料上 137/137，没理由让它改答案）；</li>
  *   <li>只有关键词没过闸门、余弦又达标时，语义向量才接管排序（兜底）；</li>
- *   <li>向量只对关键词候选重排，不新增候选——扩候选是闸门的事。</li>
+ *   <li>语义向量<b>允许新增候选</b>：关键词没召回到、但余弦达标的块可以补进候选集（RRF 融合时按新候选
+ *       入列，HybridRetriever 的 additionalCandidates 就是数它的），新候选同样要过 minVectorScore 这道
+ *       闸门——补候选不等于放宽关键词闸门。</li>
  * </ul>
  */
 class SemanticRetrievalTest {

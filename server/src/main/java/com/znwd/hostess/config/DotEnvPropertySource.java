@@ -63,7 +63,7 @@ public class DotEnvPropertySource implements EnvironmentPostProcessor {
                         continue;
                     }
                     String key = line.substring(0, eq).strip();
-                    String value = line.substring(eq + 1).strip();
+                    String value = stripInlineComment(line.substring(eq + 1).strip());
                     if (value.length() >= 2
                             && ((value.startsWith("\"") && value.endsWith("\""))
                                 || (value.startsWith("'") && value.endsWith("'")))) {
@@ -76,5 +76,35 @@ public class DotEnvPropertySource implements EnvironmentPostProcessor {
             }
         }
         return values;
+    }
+
+    private static String stripInlineComment(String value) {
+        boolean singleQuoted = false;
+        boolean doubleQuoted = false;
+        boolean escaped = false;
+        for (int i = 0; i < value.length(); i++) {
+            char current = value.charAt(i);
+            if (escaped) {
+                escaped = false;
+                continue;
+            }
+            if (current == '\\' && doubleQuoted) {
+                escaped = true;
+                continue;
+            }
+            if (current == '\'' && !doubleQuoted) {
+                singleQuoted = !singleQuoted;
+                continue;
+            }
+            if (current == '"' && !singleQuoted) {
+                doubleQuoted = !doubleQuoted;
+                continue;
+            }
+            if (current == '#' && !singleQuoted && !doubleQuoted
+                    && (i == 0 || Character.isWhitespace(value.charAt(i - 1)))) {
+                return value.substring(0, i).strip();
+            }
+        }
+        return value;
     }
 }

@@ -47,7 +47,13 @@ public class KnowledgeController {
     }
 
     @GetMapping("/api/knowledge/list")
-    public Map<String, Object> list() {
+    public Map<String, Object> list(
+            @RequestHeader(value = "authorization", required = false) String authorization,
+            HttpServletRequest request) {
+        // 鉴权：这个接口会吐出 knowledgeDir / 向量索引文件的绝对路径、全部文档清单和同义词表位置，
+        // 是管理面信息。历史实现漏了守卫（同一文件里另外四个接口都有），现在补齐并由
+        // tools/security.py 的 ADMIN_PATHS 盯住 fail-closed。前端不使用本接口。
+        AdminGuard.require(authorization, props, request.getRemoteAddr());
         Map<String, KnowledgeService.FileStat> byFile = knowledge.byFile();
         List<Map<String, Object>> docs = new ArrayList<>();
         byFile.entrySet().stream()
@@ -78,7 +84,7 @@ public class KnowledgeController {
     public Map<String, Object> reload(
             @RequestHeader(value = "authorization", required = false) String authorization,
             HttpServletRequest request) {
-        AdminGuard.require(authorization, props, request.getLocalAddr());
+        AdminGuard.require(authorization, props, request.getRemoteAddr());
         try {
             int chunks = knowledge.reload();
             Map<String, Integer> perFile = new LinkedHashMap<>();
@@ -114,7 +120,7 @@ public class KnowledgeController {
             @RequestParam(value = "q", required = false) String q,
             @RequestParam(value = "topK", required = false, defaultValue = "4") int topK,
             HttpServletRequest request) {
-        AdminGuard.require(authorization, props, request.getLocalAddr());
+        AdminGuard.require(authorization, props, request.getRemoteAddr());
         if (q == null || q.isBlank()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, ApiError.VALIDATION_ERROR, "q is required");
         }
@@ -162,7 +168,7 @@ public class KnowledgeController {
     public Map<String, Object> getSynonyms(
             @RequestHeader(value = "authorization", required = false) String authorization,
             HttpServletRequest request) {
-        AdminGuard.require(authorization, props, request.getLocalAddr());
+        AdminGuard.require(authorization, props, request.getRemoteAddr());
         List<Map<String, Object>> entries = new ArrayList<>();
         Synonyms.asMap().forEach((key, alts) -> {
             Map<String, Object> row = new LinkedHashMap<>();
@@ -191,7 +197,7 @@ public class KnowledgeController {
             @RequestHeader(value = "authorization", required = false) String authorization,
             @RequestBody(required = false) Map<String, Object> body,
             HttpServletRequest request) {
-        AdminGuard.require(authorization, props, request.getLocalAddr());
+        AdminGuard.require(authorization, props, request.getRemoteAddr());
         if (body == null || body.isEmpty()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, ApiError.VALIDATION_ERROR, "请求体不能为空");
         }

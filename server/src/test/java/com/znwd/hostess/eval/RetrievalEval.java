@@ -220,7 +220,10 @@ public final class RetrievalEval {
             }
 
             if (baselinePath != null) {
-                compareBaseline(mapper, repoRoot, baselinePath, rows);
+                boolean baselinePassed = compareBaseline(mapper, repoRoot, baselinePath, summary, rows);
+                if (!baselinePassed) {
+                    throw new IllegalStateException("检索结果未通过已提交基线：docs/eval/baseline-java.json");
+                }
             }
 
             if (noWrite) {
@@ -243,8 +246,8 @@ public final class RetrievalEval {
     }
 
     /** 逐例对比历史基准：判定的是「同一个语料下 Java 是否复现了 Node 的 top1 选择」 */
-    private static void compareBaseline(ObjectMapper mapper, Path repoRoot, String baselinePath,
-                                        List<Map<String, Object>> rows) throws Exception {
+    private static boolean compareBaseline(ObjectMapper mapper, Path repoRoot, String baselinePath,
+                                           Map<String, Object> summary, List<Map<String, Object>> rows) throws Exception {
         Path path = Path.of(baselinePath);
         if (!path.isAbsolute()) {
             path = repoRoot.resolve(baselinePath);
@@ -254,6 +257,22 @@ public final class RetrievalEval {
                 });
         Map<String, Object> baseSummary = asMap(baseline.get("summary"));
         List<Map<String, Object>> baseRows = asRows(baseline.get("rows"));
+        boolean metricsPassed = true;
+        for (String metric : List.of("top1Rate", "top3Rate", "gatedTop1Rate", "gatedTop3Rate")) {
+            double current = number(summary.get(metric));
+            double base = number(baseSummary.get(metric));
+            if (current + 1e-9 < base) {
+                System.out.println("  REGRESSION " + metric + " current=" + current + " baseline=" + base);
+                metricsPassed = false;
+            }
+        }
+        int currentBlocked = (int) number(summary.get("gateBlockedCount"));
+        int baseBlocked = (int) number(baseSummary.get("gateBlockedCount"));
+        if (currentBlocked > baseBlocked) {
+            System.out.println("  REGRESSION gateBlockedCount current=" + currentBlocked
+                    + " baseline=" + baseBlocked);
+            metricsPassed = false;
+        }
         Map<String, Map<String, Object>> byId = new LinkedHashMap<>();
         for (Map<String, Object> r : baseRows) {
             byId.put(String.valueOf(r.get("id")), r);
@@ -281,6 +300,21 @@ public final class RetrievalEval {
         }
         System.out.println("  对比例数=" + compared + " top1 不一致=" + mismatch
                 + (mismatch == 0 ? " → 检索行为与历史实现一致" : " → 需排查差异来源"));
+        return metricsPassed && compared == rows.size() && baseRows.size() == rows.size() && mismatch == 0;
+    }
+
+    private static double number(Object value) {
+        if (value instanceof Number number) {
+            return number.doubleValue();
+        }
+        if (value == null) {
+            return 0;
+        }
+        try {
+            return Double.parseDouble(String.valueOf(value));
+        } catch (NumberFormatException e) {
+            throw new IllegalStateException("基线指标不是数字：" + value, e);
+        }
     }
 
     private static Map<String, Object> asMap(Object value) {

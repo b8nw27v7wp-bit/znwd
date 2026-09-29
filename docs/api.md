@@ -12,7 +12,7 @@
 | 编码 | UTF-8；`content-type: application/json` |
 | 空值 | Jackson 配了 `default-property-inclusion: non_null`——**值为 null 的字段不出现在响应里**，前端取字段要按可选处理 |
 | 请求 ID | 每个响应带 `x-request-id` 头（8 位），出错时同一值出现在错误信封里，便于对日志 |
-| CORS | 配了 `CORS_ORIGINS` 就按白名单（逗号分隔，可含 `*`）；**没配时只放行** `http(s)://localhost|127.0.0.1|[::1]|0.0.0.0`（任意端口）。未命中的 Origin 不回 `access-control-allow-origin`。响应带 `vary: Origin`，预检缓存 600s，允许方法 `GET,POST,DELETE,OPTIONS`，允许头 `content-type,authorization` |
+| CORS | 配了 `CORS_ORIGINS` 就按白名单（逗号分隔，可含 `*`）；**没配时只放行** `http(s)://localhost|127.0.0.1|[::1]|0.0.0.0`（任意端口）。未命中的 Origin 不回 `access-control-allow-origin`。响应带 `vary: Origin`，预检缓存 600s，允许方法 `GET,POST,PUT,DELETE,OPTIONS`，允许头 `content-type,authorization` |
 | 时间 | 毫秒时间戳（`long`），时区 `Asia/Shanghai` |
 
 ### 统一错误信封
@@ -27,24 +27,28 @@
 | --- | --- | --- |
 | 400 | `validation_error` | `message` 缺失/非字符串/空、body 不是 JSON 对象、`rating` 不是 `up`/`down`、诊断接口缺 `q`、同义词表为空 |
 | 400 | `validation_error` | 请求体不是合法 JSON（文案固定「请求体不是合法 JSON 对象」，**不会**复用 chat 的文案把排查方向指错） |
-| 401 | `unauthorized` | 管理接口口令不对；或生产未配 `ADMIN_TOKEN` |
+| 401 | `unauthorized` | 管理接口口令不对；或未配 `ADMIN_TOKEN` 且 `REQUIRE_ADMIN_TOKEN` 仍为默认 `true` |
 | 404 | `not_found` | 路由不存在（「接口不存在」）、会话不存在或已过期 |
-| 413 | `payload_too_large` | 请求体超过 64KB；或写请求没有 `Content-Length`（无法判定大小，一律按超限处理） |
+| 413 | `payload_too_large` | 请求体超限（`/api/speech/*` 为 2MB，其余 64KB）；或写请求没有 `Content-Length`（无法判定大小，一律按超限处理） |
 | 429 | `rate_limited` | 超出 `CHAT_RATE_PER_MIN`，额外带 `retryAfterSec` |
 | 500 | `internal_error` | 未预期异常；对外固定「服务内部错误」 |
+| 502 | `speech_failed` | 语音上游（MiMo）报错或超时：前端应当降级到浏览器内置播报，别把它当网络抖动重试 |
+| 503 | `speech_unavailable` | 语音未启用（`AUDIO_PROVIDER=none`）或拿不到 base-url |
 
 ### 鉴权（管理接口）
 
-`AdminGuard` 规则与旧实现一致：
+`AdminGuard` 当前规则：
 
 - 配了 `ADMIN_TOKEN` → 必须带 `Authorization: Bearer <token>`；比对走 `MessageDigest.isEqual` 常量时间比较（不是 `String.equals`，避免逐字节试探口令）。
-- 没配 → **本机回环访问**放行（开发态）；其余情况一律 401：生产（`NODE_ENV=production|prod|staging`）、显式 `REQUIRE_ADMIN_TOKEN=true`、或**请求来自非回环地址**（服务绑了 `0.0.0.0`/被反代暴露），拿不到客户端地址时同样拒绝。
+- 没配 → **默认拒绝**（`REQUIRE_ADMIN_TOKEN=true`）；只有显式设为 `false` 且请求来自回环地址时才放行。回环判断使用连接对端 `remoteAddr`，不使用服务接收连接的 `localAddr`，因此同机反向代理不会绕过默认鉴权。
 
 需要鉴权：`GET /api/stats`、`POST /api/knowledge/reload`、`GET /api/admin/*`、`PUT /api/admin/synonyms`。
 
 ### 限流
 
-按客户端 IP 的**滑动窗口**计数，默认 30 次/分钟（`CHAT_RATE_PER_MIN`），只作用于两个 chat 接口。反代场景取 `x-forwarded-for` 的第一个地址。
+按客户端 IP 的**滑动窗口**计数，默认 30 次/分钟（`CHAT_RATE_PER_MIN`），作用于两个 chat 接口与 `POST /api/speech/recognize`——一次语音提问就是一次提问，不该绕开配额。默认使用连接对端 `remoteAddr`；仅 `TRUST_FORWARDED_FOR=true` 时才取 `x-forwarded-for` 的第一个地址。
+
+`POST /api/speech/synthesize` 单独计数，默认 60 次/分钟（`AUDIO_SYNTH_RATE_PER_MIN`）：一次回答要按句合成多段，跟 chat 共用配额会被一条长回答吃光。
 
 ```json
 { "error": "rate_limited", "message": "too many requests", "retryAfterSec": 12, "requestId": "…" }
@@ -69,9 +73,10 @@
 | `sources` | array | 命中资料；未命中为 `[]` |
 | `mode` | string | `rag`（有资料）或 `llm_only`（无资料/拒答） |
 | `provider` | string | 出词的模型名；**闸门拒答时为 `gate`**（表示没调模型） |
-| `retrieval` | string | `hybrid`（语义向量参与融合）或 `keyword`（降级为纯关键词），如实上报 |
+| `retrieval` | string | `hybrid`（语义向量参与了本次排序）或 `keyword`（本次没用向量路），如实上报——`keyword` 不是降级 |
 | `noHit` | boolean | `true` = 相关性闸门未通过（知识库未覆盖） |
 | `sessionId` | string | 回显（未传则不出现） |
+| `sessionToken` | string | 会话访问令牌，证明「这个会话是自己的」；`GET/DELETE /api/sessions/{id}` 必须带回来，不匹配按不存在回 404。未传 `sessionId`（没建过会话）时不出现 |
 | `latencyMs` | number | 端到端耗时 |
 | `cached` | boolean | 命中答案缓存（缓存 key 含模型 + 索引 generation + 问题，reload 后不串代） |
 | `usage` | object | `{promptTokens, completionTokens, reasoningTokens, totalTokens}`；缓存命中与闸门拒答时没有 |
@@ -107,15 +112,20 @@ event:delta
 data: {"text":"叶片"}
 
 event:done
-data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"rag","provider":"mimo-v2.5","noHit":false,"retrieval":"keyword","cached":false,"usage":{"promptTokens":1466,"completionTokens":250,"totalTokens":1716}}
+data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"rag","provider":"mimo-v2.5","noHit":false,"retrieval":"keyword","cached":false,"rewrite":{"rewritten":false,"reason":"none","carriedTokens":[]},"usage":{"promptTokens":1466,"completionTokens":250,"totalTokens":1716}}
 ```
 
 | 帧 | data 字段 |
 | --- | --- |
 | `meta` | `mode`、`sources`、`provider`、`noHit`、`retrieval`、`rewrite{rewritten,reason,carriedTokens}`、`sessionId` |
 | `delta` | `text`（增量片段，逐字推送） |
-| `done` | `latencyMs`、`answer`（完整文本，便于前端校对）、`sources`、`mode`、`provider`、`noHit`、`retrieval`、`cached`、`usage?` |
+| `done` | `latencyMs`、`answer`（完整文本，便于前端校对）、`sources`、`mode`、`provider`、`noHit`、`retrieval`、`cached`、`rewrite{…}`、`usage?`、`sessionToken?`（会话访问令牌，见下节） |
 | `error` | `error`、`message`、`requestId`（与错误信封同形） |
+
+> `done` 是 `meta` 的**超集**，前端收到 done 会覆盖 meta 里的同名字段。所以凡是 meta 给过、
+> 前端还要继续读的字段，done 必须重复带上——`rewrite` 就踩过这个坑：它原先只在 meta 里，
+> 结果「已按上下文补全提问」的标记在流式结束那一刻被覆盖成 `undefined` 而消失。
+> 加字段时按这条对齐：**要么两帧都给，要么前端别在 done 之后读它**。
 
 其它行为：
 
@@ -127,17 +137,75 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 - 前端用 `fetch` + 流式读取（不是 `EventSource`：它只能 GET，而提问要放在 body）；跨 chunk 的半帧会缓存重组；**中途失败不会抹掉已收到的半句**。
 - 与非流式共用答案缓存：流式问过的单轮问题，再走 `POST /api/chat` 会 `cached: true`。
 
+## 语音（TTS / ASR）
+
+展厅的「会说话」与「能听懂」都走服务端（小米 MiMo，与对话同网关、同 key）：**key 不进前端**，音色与模型集中在服务端配置。`MimoSpeechModel` 是后端语音出网白名单中的第三个适配器（另两个是 LLM 与 embedding）；`AUDIO_PROVIDER=none` 默认不触发语音外呼。两个接口都是纯增量；未启用时返回 503，TTS 前端当场退回浏览器内置播报，展板不会哑掉。
+
+未启用（`AUDIO_PROVIDER=none`，默认）时：
+
+```json
+{ "error": "speech_unavailable", "message": "语音未启用（服务端 AUDIO_PROVIDER=none）", "requestId": "…" }
+```
+
+### POST /api/speech/synthesize — 文本转语音
+
+```json
+{ "text": "光伏清洁机器人采用无水清扫方案。" }
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `text` | string | 是 | 单句文本。空白、非字符串、超过 `AUDIO_MAX_CHARS`（默认 300 字）都是 400——**前端按句切片后再请求**，别把整篇回答塞进来（一次合成的时间随文本线性增长） |
+
+成功：`200` + `content-type: audio/wav`，body 即 WAV 字节（24kHz/单声道/16bit，可直接塞进 `<audio>`）。响应头 `x-znwd-speech: live|cache` 说明这段是现合成的还是命中服务端缓存（同文本 + 同音色才算命中，缓存条数 `AUDIO_TTS_CACHE_SIZE`）。
+
+失败：`502 speech_failed`（上游报错/超时）、`503 speech_unavailable`。
+
+### POST /api/speech/recognize — 语音转文本
+
+```json
+{ "audio": "data:audio/wav;base64,UklGRiQAAABXQVZFZm10…" }
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `audio` | string | 是 | `data:audio/wav;base64,…` 或裸 base64。**只收 WAV（16bit PCM）**：MiMo 只认 wav/mp3，而前端自己采 PCM 拼的就是 wav，放别的格式进来只会让「录到的格式与接口要的格式不一致」晚到运行时才暴露 |
+
+成功：
+
+```json
+{ "text": "叶片检测要停机吗", "seconds": 3.2, "elapsedMs": 1070 }
+```
+
+`seconds` 是音频时长，用来区分「说了话」与「录到一片静音」。
+
+失败：`400 validation_error`（缺 `audio`／不是合法 base64／不是 WAV／超过 `AUDIO_MAX_UPLOAD_BYTES`）、`413 payload_too_large`（请求体超过 2MB 硬上限）、`502`/`503` 同上。
+
+体积口径：16kHz/单声道/16bit ≈ 32KB/s，base64 后膨胀 4/3。前端录音上限 20 秒（约 640KB 原始、853KB base64），离 2MB 硬上限有一倍余量。
+
 ## 会话与反馈
+
+### 会话访问令牌（`X-Session-Token`）
+
+会话归属由**问答时下发的令牌**证明，不再「知道 `sessionId` 就能读/删」：
+
+- 下发：`POST /api/chat` 响应字段 `sessionToken`；`POST /api/chat/stream` 挂在 `done` 帧上（`meta` 帧不带）。
+- 带回：`GET`/`DELETE /api/sessions/{id}` 用 `X-Session-Token` 头（或 `?sessionToken=` 查询串，便于手测）。
+- 判据：**不匹配一律 404 `not_found`**——不回 403，403 等于承认这个 `sessionId` 有效。
+- 兼容：从未下发过令牌的老会话（例如上一版本前端起的会话）仍可不带令牌访问，重启后自然消失。
+- 前端：令牌只放内存与 `sessionStorage`，不进 URL、不进日志；换人时带令牌 `DELETE` 即可清上下文。
 
 ### GET /api/sessions/{sessionId}
 
+请求头带 `X-Session-Token`（或 `?sessionToken=`）。响应：
+
 `{ "sessionId": "demo-1", "messages": [ {"role":"user","content":"…"}, {"role":"assistant","content":"…"} ], "lastActive": 1757000000000 }`
 
-只读、不刷新 TTL；不存在或已过期 → 404 `not_found`。
+只读、不刷新 TTL；**不存在、已过期或令牌不匹配** → 404 `not_found`。
 
 ### DELETE /api/sessions/{sessionId}
 
-`{ "ok": true, "sessionId": "demo-1" }`（`ok=false` 表示本来没有这个会话，不算错误）。大屏前换人时清上下文；前端另有「闲置 3 分钟自动回到欢迎态」。
+同样要求令牌匹配。`{ "ok": true, "sessionId": "demo-1" }`（`ok=false` 表示本来没有这个会话，不算错误）。大屏前换人时清上下文；前端另有「闲置 3 分钟自动回到欢迎态」。
 
 ### POST /api/feedback
 
@@ -179,17 +247,19 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 
 | 字段 | 说明 |
 | --- | --- |
-| `ok` / `version` | 存活 / 后端版本（当前 `1.3.0`） |
+| `ok` / `ready` | 两者当前都表示知识快照已加载且索引就绪；启动加载完成前均为 `false`。接口本身仍回 HTTP 200，探活脚本应读取 JSON 字段 |
+| `version` | 后端版本（当前 `1.3.0`） |
 | `knowledgeChunks` | 已加载知识块数 |
-| `llmProvider` / `embedding` | LLM 提供方 / 向量提供方（`bag`\|`openai_compat`） |
+| `llmProvider` | LLM 提供方 |
+| `speech` / `speechReady` | 语音 provider（`none`\|`mimo`）/ **服务端语音是否已启用**。`mimo` 且有 base URL 时为 true，但不代表上游此刻一定可达；`false` 时前端播报走浏览器内置合成 |
 | `retrieval` | 检索统计对象，见下 |
 | `knowledgeDir` / `dataDir` | 实际生效目录（排查「路径错位」先看这里） |
 | `activeSessions` / `answerCacheSize` | 活跃会话数 / 答案缓存条目数 |
 | `watchKnowledge` | 是否开知识目录热监听 |
-| `adminTokenRequired` | 生产是否强制管理口令 |
+| `adminTokenRequired` | 未配置口令时本次请求是否仍要求提供口令；按 `REQUIRE_ADMIN_TOKEN` 与连接对端 `remoteAddr` 判断，默认配置恒为 `true` |
 | `corsOrigins` | 生效的 CORS 白名单 |
 | `minRelevanceScore` / `noHitLlm` | 当前闸门阈值 / 拒答是否走模型 |
-| `embedding` / `embeddingReady` | embedding provider 名 / **语义路当下是否可用**。`openai_compat` 但 `embeddingReady=false` = 语义路挂了（原因在 `retrieval.degradedReason` 或 `retrieval.vector.lastQueryError`），检索已退回仅关键词 |
+| `embedding` / `embeddingReady` | embedding provider 名（`bag`\|`openai_compat`）/ **语义路当下是否可用**。`openai_compat` 但 `embeddingReady=false` = 语义路挂了（原因在 `retrieval.degradedReason` 或 `retrieval.vector.lastQueryError`），检索已退回仅关键词 |
 | `storage` | 固定 `mysql` |
 | `storageAvailable` | **库是否可用**；`false` 时服务照常讲解、只是不落库（前端不在页面上提示，只在运营视图的「本机设置」里显示） |
 | `host` / `uptimeSec` | 监听地址 / 运行秒数 |
@@ -198,9 +268,9 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 
 ```json
 {
-  "mode": "keyword", "keywordChunks": 215, "indexReady": true, "generation": 1, "semantic": true,
+  "mode": "keyword", "keywordChunks": 219, "indexReady": true, "generation": 1, "semantic": true,
   "vector": {
-    "provider": "openai_compat", "semantic": true, "dims": 1024, "vectors": 215,
+    "provider": "openai_compat", "semantic": true, "dims": 1024, "vectors": 219,
     "fingerprint": "…", "indexFile": "…",
     "degradedReason": null, "queryFailures": 0, "lastQueryError": null
   },
@@ -210,7 +280,8 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 ```
 
 - `semantic` 是**当下是否可用**（provider 支持语义 + 索引就绪 + 没在降级 + 查询期没在失败），不是「provider 是否具备语义能力」；
-- `mode` 只有在语义向量**真的参与了这次排序**（关键词没过闸门、靠余弦救回）时才是 `hybrid`；关键词路自己过了闸门就是 `keyword`——这是如实上报，不是降级；
+- `mode` 只有在语义向量**真的参与了这次排序**（关键词没过闸门、靠余弦救回）时才是 `hybrid`；关键词路自己过了闸门就是 `keyword`——这是如实上报，不是降级；兜底路径上语义命中可以是**新增候选**（已决策：文档对齐代码，见 `docs/architecture.md` §3），但带闸门的调用要余弦 ≥ `minVectorScore` 才放行，当前 `0.75` 等效关闭，所以线上正常都是 `keyword`；
+- `minVectorScore` 默认 `0.75`；当前域外最高余弦 0.6252 高于待救在域用例（0 条、余弦 0.0000），因此这个默认值等价于关闭语义兜底，误拦应通过补语料/同义词解决；
 - `vector.degradedReason` 是构建/加载层面的不可用原因；`queryFailures` / `lastQueryError` 记查询期失败（外部服务中途不通），失败会让 `semantic=false`，下一次成功自动自愈。
 
 ### GET /api/health/summary（无鉴权）
@@ -258,7 +329,7 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 | `verdict` | 一句人话结论 |
 | `hits[]` | `title`、`sourcePath`、`zone`、`zoneTitle`、`fuseScore`、`keywordScore`、`vectorScore`、`matchedTokens`、`matched[]`、`snippet`。**`vectorScore` 只在语义向量参与了本次排序（兜底路径）时才有值**，其余情况是 0——它不是「这块没有余弦」，而是「这次排序没用到向量路」 |
 
-实测样例（当前 215 块语料、阈值 6.3 / 0.75，语义路已接上）：
+实测样例（当前 219 块语料、阈值 6.3 / 0.75，语义路已接上）：
 
 ```json
 // GET /api/admin/diagnostics?q=有客户了吗   （被闸门误拦的真实问句，余弦 0.6389 不够兜底阈值）
@@ -323,12 +394,14 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 
 ## 知识库
 
-### GET /api/knowledge/list（无鉴权）
+### GET /api/knowledge/list（需鉴权）
+
+带 `authorization: Bearer <ADMIN_TOKEN>`；不带（或口令不对）返回 401。它会吐出 `knowledgeDir` 与索引文件的绝对路径、全部文档清单，历史上漏过守卫，现已过 `AdminGuard`（见 `docs/security.md`）。
 
 ```json
 {
   "knowledgeDir": "E:\\znwd\\knowledge",
-  "fileCount": 17, "chunkCount": 215,
+  "fileCount": 17, "chunkCount": 219,
   "retrieval": { "…同 /api/health 的 retrieval…": "" },
   "zones": ["…"],
   "synonyms": { "count": 23, "source": "builtin", "file": "…synonyms.tsv" },
@@ -340,7 +413,7 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 
 重载知识、重建关键词与向量索引，并清空答案缓存。
 
-`{ "ok": true, "knowledgeChunks": 215, "generation": 2, "retrieval": {…}, "synonyms": {…}, "files": [ {"sourcePath":"…","chunks":5} ] }`
+`{ "ok": true, "knowledgeChunks": 219, "generation": 2, "retrieval": {…}, "synonyms": {…}, "files": [ {"sourcePath":"…","chunks":5} ] }`
 
 ### GET /api/openapi.json（无鉴权）
 
@@ -350,14 +423,23 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 
 - 路径、响应字段名、SSE 事件序列（`meta`→`delta`→`done`）与 `noHit`/`sources` 语义**必须与重构前的 Node 版一致**：前端、评测脚本、一体机部署脚本都按这套写，悄悄改字段比服务起不来更难查。
 - 唯一已知差异（刻意的修正）：`/api/suggestions` 的 `items` 是**字符串数组**；前端曾按对象取 `question`，那会让大屏出现空白推荐按钮，现已在 `web/src/api.ts` 按字符串对齐。
-- 新增能力（`/api/admin/diagnostics`、`/api/admin/synonyms`、`/api/health/summary`、`/api/knowledge/list` 的 `synonyms` 字段）均为纯增量，不动老字段。
-- 改完接口跑 `python tools/smoke.py`（56 项契约检查，含上述字段的存在性与类型）。
+- 新增能力（`/api/admin/diagnostics`、`/api/admin/synonyms`、`/api/health/summary`、`/api/knowledge/list` 的 `synonyms` 字段、`/api/speech/*` 两个语音接口与 `health.speech`/`health.speechReady`）均为纯增量，不动老字段。
+- 改完接口跑 `python tools/smoke.py`（契约检查：语音未启用 60 项，启用时 63 项，均需带 `ADMIN_TOKEN` 才跑满管理块——`/api/knowledge/list` 与 `/api/admin/*` 一样要口令。语音段按 `speechReady` 分别校验「真出 WAV」与「503 可判定」两条路径）。
+- 改检索后跑 `exec:java@eval --no-write --baseline=docs/eval/baseline-java.json`；CI 用同一基线逐例守住 top1 路径、top1/top3、闸门指标与漏答数，另以 `calibrate --gate-check` 守域外不越线。
 
 ## curl 示例
 
 ```bash
+# 语音：合成一段 WAV（未启用时是 503 speech_unavailable；-D - 看 x-znwd-speech 判断 live/cache）
+curl -s -X POST http://127.0.0.1:8787/api/speech/synthesize \
+  -H "content-type: application/json" \
+  -d '{"text":"欢迎参观光伏清洁机器人展区。"}' -o tts.wav -D -
+
+# 把刚合成的音频喂回识别（Python 发更省事：二进制 base64 在 GBK 控制台里容易编坏）
+python -c "import base64,json,urllib.request as u; w=open('tts.wav','rb').read(); r=u.Request('http://127.0.0.1:8787/api/speech/recognize',data=json.dumps({'audio':'data:audio/wav;base64,'+base64.b64encode(w).decode()}).encode(),headers={'content-type':'application/json'}); print(json.load(u.urlopen(r)))"
+
 curl -s http://127.0.0.1:8787/api/health
-curl -s http://127.0.0.1:8787/api/knowledge/list
+curl -s -H "authorization: Bearer $ADMIN_TOKEN" http://127.0.0.1:8787/api/knowledge/list
 
 curl -s -X POST http://127.0.0.1:8787/api/chat \
   -H "content-type: application/json" \

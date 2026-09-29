@@ -52,8 +52,8 @@ public class CorsAndIdFilter extends OncePerRequestFilter {
             // 若同时声明允许携带凭据就是经典的错配。
         }
         if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
-            response.setHeader("access-control-allow-methods", "GET,POST,DELETE,OPTIONS");
-            response.setHeader("access-control-allow-headers", "content-type,authorization");
+            response.setHeader("access-control-allow-methods", "GET,POST,PUT,DELETE,OPTIONS");
+            response.setHeader("access-control-allow-headers", "content-type,authorization,x-session-token");
             response.setHeader("access-control-max-age", "600");
             response.setStatus(HttpServletResponse.SC_NO_CONTENT);
             return;

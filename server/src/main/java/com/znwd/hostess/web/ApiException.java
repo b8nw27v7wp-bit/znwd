@@ -50,4 +50,16 @@ public class ApiException extends RuntimeException {
         return new ApiException(HttpStatus.TOO_MANY_REQUESTS, com.znwd.hostess.http.ApiError.RATE_LIMITED,
                 "too many requests", Map.of("retryAfterSec", retryAfterSec));
     }
+
+    /** 语音未启用：503 让前端明确降级（退回浏览器内置播报），而不是把它当网络抖动重试 */
+    public static ApiException speechUnavailable(String message) {
+        return new ApiException(HttpStatus.SERVICE_UNAVAILABLE,
+                com.znwd.hostess.http.ApiError.SPEECH_UNAVAILABLE, message);
+    }
+
+    /** 语音上游失败：502 是「我们的上游坏了」，与 503「本功能没开」区分开 */
+    public static ApiException speechFailed(String message) {
+        return new ApiException(HttpStatus.BAD_GATEWAY,
+                com.znwd.hostess.http.ApiError.SPEECH_FAILED, message);
+    }
 }

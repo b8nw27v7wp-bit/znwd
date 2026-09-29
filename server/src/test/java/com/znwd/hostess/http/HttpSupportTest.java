@@ -45,6 +45,13 @@ class HttpSupportTest {
         assertEquals(LruCache.answerCacheKey("HELLO", "mimo", 1), LruCache.answerCacheKey("hello", "mimo", 1),
                 "key 归一化：忽略大小写");
         assertFalse(g1.equals(LruCache.answerCacheKey("光伏板怎么清洗", "other-model", 1)), "换模型不得命中旧缓存");
+
+        String sharedPrefix = "问".repeat(300);
+        String longA = LruCache.answerCacheKey(sharedPrefix + "甲", "mimo", 1);
+        String longB = LruCache.answerCacheKey(sharedPrefix + "乙", "mimo", 1);
+        assertFalse(longA.equals(longB), "完整问题不同，hash 不得碰撞");
+        assertTrue(longA.matches("mimo::g1::[0-9a-f]{64}"));
+        assertFalse(longA.contains(sharedPrefix));
     }
 
     @Test
@@ -184,10 +191,14 @@ class HttpSupportTest {
     /** 构造只改口令相关字段的配置对象（其余保持默认） */
     private record AdminGuardFixture(String token, boolean requireToken, String nodeEnv) {
         AppProperties props() {
-            return new AppProperties("./knowledge", "./server/indexes", "./server/data", false, 3.8, 0.35, 30, 200,
-                    50, token, requireToken, false, 5_000_000, "hash", "", false, nodeEnv,
+            return new AppProperties("./knowledge", "./server/indexes", "./server/data", false, 3.8, 0.35, 30, 10,
+                    200, 50, token, requireToken, false, 5_000_000, "hash", "", false, nodeEnv,
                     new AppProperties.Llm("mock", "", "", "", 90_000, 180_000, 2, 1000, 0, ""),
-                    new AppProperties.Embed("bag", "", "", "", 0, 512, 60_000, 32));
+                    new AppProperties.Embed("bag", "", "", "", 0, 512, 60_000, 32),
+                    // 语音：本测试只关心口令判据，这里留 null 走 AppProperties 的默认分支（= 语音未启用）
+                    null,
+                    // Prompt 外置：留 null = 只用 classpath 默认文本
+                    null);
         }
     }
 }

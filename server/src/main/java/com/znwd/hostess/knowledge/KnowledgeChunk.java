@@ -21,4 +21,8 @@ public record KnowledgeChunk(
         String zone,
         String zoneTitle,
         List<String> tags) {
+
+    public KnowledgeChunk {
+        tags = tags == null ? List.of() : List.copyOf(tags);
+    }
 }

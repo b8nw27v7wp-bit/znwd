@@ -1,49 +1,64 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
+import {
+  fetchAdminStats,
+  fetchFeedbackStats,
+  fetchUncovered,
+  type AdminStats,
+  type FeedbackStats,
+  type UncoveredItem,
+} from '../api';
+import { readStorage, removeStorage, writeStorage } from '../storage';
+import KnowledgePanel from './KnowledgePanel.vue';
+import DiagnosticsPanel from './DiagnosticsPanel.vue';
 
 /**
- * 运营视图：统计、未覆盖问题（要补的资料）、负反馈。
+ * 运营视图：统计、未覆盖问题（要补的资料）、负反馈，以及知识库管理与检索诊断（子面板）。
  * 口令只存 sessionStorage，不进 URL、不进日志；管理接口没配 ADMIN_TOKEN 时后端直接放行（开发态）。
+ * 所有管理请求都经 api.ts 的 adminRequest 统一带 authorization 头。
  */
 const TOKEN_KEY = 'znwd.adminToken';
 
-const token = ref(sessionStorage.getItem(TOKEN_KEY) ?? '');
-const stats = ref<Record<string, unknown> | null>(null);
-const uncovered = ref<Array<{ question: string; at: number }>>([]);
-const feedback = ref<{ up?: number; down?: number; topDown?: Array<{ question: string; down: number }> } | null>(null);
+const token = ref(readStorage('session', TOKEN_KEY) ?? '');
+/** 提交后的口令：子面板拿它发请求，避免输入框每敲一个字就打一轮接口 */
+const committedToken = ref(token.value);
+const stats = ref<AdminStats | null>(null);
+const uncovered = ref<UncoveredItem[]>([]);
+const feedback = ref<FeedbackStats | null>(null);
 const error = ref('');
-
-function headers(): Record<string, string> {
-  return token.value ? { authorization: `Bearer ${token.value}` } : {};
-}
+let loadGeneration = 0;
 
 async function load(): Promise<void> {
+  const generation = ++loadGeneration;
+  const requestToken = token.value;
   error.value = '';
-  if (token.value) sessionStorage.setItem(TOKEN_KEY, token.value);
-  else sessionStorage.removeItem(TOKEN_KEY);
+  if (requestToken) writeStorage('session', TOKEN_KEY, requestToken);
+  else removeStorage('session', TOKEN_KEY);
+  committedToken.value = requestToken;
   try {
     const [s, u, f] = await Promise.all([
-      fetch('/api/stats', { headers: headers() }),
-      fetch('/api/admin/uncovered', { headers: headers() }),
-      fetch('/api/admin/feedback-stats', { headers: headers() }),
+      fetchAdminStats(requestToken),
+      fetchUncovered(requestToken),
+      fetchFeedbackStats(requestToken),
     ]);
-    if (s.status === 401 || u.status === 401 || f.status === 401) {
-      error.value = '口令不正确（401）';
-      return;
-    }
-    stats.value = (await s.json()) as Record<string, unknown>;
-    const uncoveredBody = (await u.json()) as { items?: Array<{ question: string; at: number }> };
-    uncovered.value = uncoveredBody.items ?? [];
-    feedback.value = (await f.json()) as { up?: number; down?: number };
+    if (generation !== loadGeneration) return;
+    stats.value = s;
+    uncovered.value = u.items;
+    feedback.value = f;
   } catch (e) {
-    error.value = e instanceof Error ? e.message : '加载失败';
+    if (generation === loadGeneration) {
+      stats.value = null;
+      uncovered.value = [];
+      feedback.value = null;
+      error.value = e instanceof Error ? e.message : '加载失败';
+    }
   }
 }
 
 function tokens(): string {
-  const t = stats.value?.tokens as Record<string, number> | undefined;
+  const t = stats.value?.tokens;
   if (!t) return '-';
-  return `入 ${t.prompt} / 出 ${t.completion} / 计费 ${t.total}`;
+  return `入 ${t.prompt ?? 0} / 出 ${t.completion ?? 0} / 计费 ${t.total ?? 0}`;
 }
 
 function when(ts: number): string {
@@ -88,5 +103,8 @@ onMounted(load);
         {{ item.question }} · {{ when(item.at) }}
       </div>
     </template>
+
+    <KnowledgePanel :token="committedToken" />
+    <DiagnosticsPanel :token="committedToken" />
   </section>
 </template>

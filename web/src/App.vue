@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useChat } from './composables/useChat';
 import { useSpeech } from './composables/useSpeech';
+import { useDictation } from './composables/useDictation';
 import { formatAnswer, type Block } from './format';
 import SourcePanel from './components/SourcePanel.vue';
 import AdminPanel from './components/AdminPanel.vue';
@@ -18,6 +19,17 @@ const speech = useSpeech({
     chat.logError('（语音播报）', `浏览器拦下了自动播报（${reason}）：页面需要一次真实点击/触摸`),
 });
 const draft = ref('');
+/**
+ * 语音提问：识别到文字就直接提问——展厅里没人愿意再说一遍还去点发送。
+ * 识别失败不往大屏上抛（技术信息一律只进运营视图），但会被记下来。
+ */
+const dictation = useDictation({
+  onText: (text) => {
+    draft.value = text;
+    submit();
+  },
+  onError: (reason) => chat.logError('（语音提问）', reason),
+});
 /** 展厅大屏上不放运营入口：加 ?admin=1 打开（运营视图里的统计接口本来就要口令） */
 const showAdmin = ref(typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('admin'));
 const showSources = ref(false);
@@ -28,7 +40,7 @@ let idleTimer: number | undefined;
 function bumpActivity(): void {
   if (idleTimer) window.clearTimeout(idleTimer);
   idleTimer = window.setTimeout(() => {
-    if (chat.messages.value.length && !chat.streaming.value) void chat.startOver();
+    if (chat.messages.value.length && !chat.streaming.value && !chat.resetting.value) void chat.startOver();
   }, IDLE_RESET_MS);
 }
 
@@ -36,11 +48,16 @@ function bumpActivity(): void {
 function unlockSpeechOnce(): void {
   speech.unlock();
   window.removeEventListener('pointerdown', unlockSpeechOnce);
+  window.removeEventListener('touchstart', unlockSpeechOnce);
   window.removeEventListener('keydown', unlockSpeechOnce);
 }
 
 onMounted(() => {
-  void chat.bootstrap();
+  // 服务端语音是否可用由 /api/health 说了算：可用则播报走服务端 TTS，否则当场用浏览器内置
+  void chat.bootstrap().then(() => {
+    const health = chat.health.value;
+    if (health) speech.setServerReady(Boolean(health.speechReady));
+  });
   composer.value?.focus();
   for (const type of ['pointerdown', 'keydown', 'wheel', 'touchstart']) {
     window.addEventListener(type, bumpActivity, { passive: true });
@@ -48,17 +65,23 @@ onMounted(() => {
   // 第一次真实手势顺手解锁语音（空 utterance 暖机 + 预热中文音色）：之后即使播报由脚本触发，
   // 也不会被浏览器的自动播放策略拒掉。展厅的常态本来就有手势，这一步只是把配额提前备好。
   window.addEventListener('pointerdown', unlockSpeechOnce, { passive: true });
+  window.addEventListener('touchstart', unlockSpeechOnce, { passive: true });
   window.addEventListener('keydown', unlockSpeechOnce);
   bumpActivity();
 });
 
 onUnmounted(() => {
   if (idleTimer) window.clearTimeout(idleTimer);
+  chat.cancel();
   speech.stop();
+  // 录音中途被卸载（切页面/热更新）也要把麦克风与 AudioContext 放掉：
+  // track 不停的话浏览器会一直显示「正在使用麦克风」
+  dictation.cancel();
   for (const type of ['pointerdown', 'keydown', 'wheel', 'touchstart']) {
     window.removeEventListener(type, bumpActivity);
   }
   window.removeEventListener('pointerdown', unlockSpeechOnce);
+  window.removeEventListener('touchstart', unlockSpeechOnce);
   window.removeEventListener('keydown', unlockSpeechOnce);
 });
 
@@ -130,7 +153,7 @@ async function pickZone(id: string | null): Promise<void> {
 }
 
 const placeholder = computed(() =>
-  chat.streaming.value ? '正在回答…' : '输入问题，例如“叶片检测要停机吗？”',
+  chat.streaming.value || chat.resetting.value ? '正在回答…' : '输入问题，例如“叶片检测要停机吗？”',
 );
 
 /** 等第一个字时是"思考"（侧头），出字后是"说话"（动口型），语音播报中也算说话，其余空闲 */
@@ -144,10 +167,38 @@ const avatarState = computed<'idle' | 'speaking' | 'thinking'>(() => {
 
 function submit(): void {
   const text = draft.value;
-  if (!text.trim()) return;
+  if (!text.trim() || chat.streaming.value || chat.resetting.value) return;
   draft.value = '';
   void chat.ask(text);
 }
+
+/**
+ * 麦克风按钮：按一下开始录，再按一下结束并识别。
+ *
+ * <p>开始前先停掉播报——展厅里喇叭和麦克风在同一台机器上，讲解声会被录进去变成提问的一部分。
+ */
+function toggleDictation(): void {
+  if (dictation.pending.value) {
+    dictation.cancel();
+  } else if (dictation.recording.value) {
+    void dictation.stop();
+  } else {
+    speech.stop();
+    void dictation.start();
+  }
+}
+
+/** 运营视图里的播报来源：排查「声音不对/没声音」时第一眼要看它 */
+const speechEngineLabel = computed(() => {
+  switch (speech.engineKind.value) {
+    case 'server':
+      return '服务端 TTS（MiMo）';
+    case 'browser':
+      return '浏览器内置合成';
+    default:
+      return '不可用';
+  }
+});
 
 function onKeydown(event: KeyboardEvent): void {
   if (event.key === 'Enter' && !event.shiftKey) {
@@ -328,11 +379,43 @@ function assistantSourceLabel(mode?: string, provider?: string): string {
               :placeholder="placeholder"
               aria-label="输入你的问题"
               rows="1"
-              :disabled="chat.streaming.value"
+              :disabled="chat.streaming.value || chat.resetting.value"
               @keydown="onKeydown"
             ></textarea>
             <button v-if="chat.streaming.value" class="send ghost" @click="chat.cancel()">停</button>
-            <button v-else class="send" :disabled="!draft.trim()" @click="submit()">↑</button>
+            <button v-else class="send" :disabled="chat.resetting.value || !draft.trim()" @click="submit()">↑</button>
+            <!-- 语音提问：按一下开始、再按一下结束并识别；不支持的机器上整颗按钮不出现 -->
+            <button
+              v-if="dictation.supported"
+              type="button"
+              class="mic"
+              :class="{ on: dictation.recording.value }"
+              :disabled="dictation.busy.value || dictation.pending.value || chat.streaming.value"
+              :aria-pressed="dictation.recording.value"
+              :aria-label="dictation.recording.value ? '结束录音并识别' : '语音提问'"
+              :title="dictation.recording.value ? '点一下结束' : '点一下开始说话'"
+              @click="toggleDictation()"
+            >
+              <span v-if="dictation.recording.value" class="mic-time">
+                {{ (dictation.elapsedMs.value / 1000).toFixed(1) }}s
+              </span>
+              <span v-else-if="dictation.busy.value" class="mic-time">…</span>
+              <svg v-else width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  d="M8 1.6a2.1 2.1 0 0 1 2.1 2.1v4.2a2.1 2.1 0 0 1-4.2 0V3.7A2.1 2.1 0 0 1 8 1.6Z"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.3"
+                />
+                <path
+                  d="M3.7 7.7a4.3 4.3 0 0 0 8.6 0M8 12v2.3"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.3"
+                  stroke-linecap="round"
+                />
+              </svg>
+            </button>
           </div>
         </footer>
       </div>
@@ -354,14 +437,14 @@ function assistantSourceLabel(mode?: string, provider?: string): string {
         <div class="row">
           <span>回答朗读</span>
           <button
-            v-if="speech.supported"
+            v-if="speech.available.value"
             class="linkish"
             :aria-pressed="speech.enabled.value"
             @click="speech.toggle()"
           >
             {{ speech.enabled.value ? '开' : '关' }}
           </button>
-          <span v-else class="muted">浏览器不支持</span>
+          <span v-else class="muted">本机与后端都没有可用的语音</span>
         </div>
         <!-- 开关藏在 ?admin=1 抽屉里，大屏上看不出状态；被浏览器拦下时在这行标出来 -->
         <p class="muted" :style="speech.lastError.value ? { color: 'var(--warn)' } : undefined">
@@ -371,6 +454,10 @@ function assistantSourceLabel(mode?: string, provider?: string): string {
               : '本机设置；浏览器可能拦截自动播报'
           }}
         </p>
+        <div class="row">
+          <span>播报来源</span>
+          <span class="muted">{{ speechEngineLabel }}</span>
+        </div>
         <div class="row">
           <span>数据留存</span>
           <span class="muted">{{ storageLabel }}</span>

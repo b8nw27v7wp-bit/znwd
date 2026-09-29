@@ -37,7 +37,7 @@ public class AdminController {
     public Map<String, Object> stats(
             @RequestHeader(value = "authorization", required = false) String authorization,
             HttpServletRequest request) {
-        AdminGuard.require(authorization, props, request.getLocalAddr());
+        AdminGuard.require(authorization, props, request.getRemoteAddr());
         return analytics.stats(sessions.count());
     }
 
@@ -45,7 +45,7 @@ public class AdminController {
     public Map<String, Object> uncovered(
             @RequestHeader(value = "authorization", required = false) String authorization,
             HttpServletRequest request) {
-        AdminGuard.require(authorization, props, request.getLocalAddr());
+        AdminGuard.require(authorization, props, request.getRemoteAddr());
         List<UncoveredEntry> items = analytics.uncoveredList(props.uncoveredLogSize());
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("count", items.size());
@@ -58,7 +58,7 @@ public class AdminController {
             @RequestHeader(value = "authorization", required = false) String authorization,
             @RequestParam(value = "format", required = false) String format,
             HttpServletRequest request) {
-        AdminGuard.require(authorization, props, request.getLocalAddr());
+        AdminGuard.require(authorization, props, request.getRemoteAddr());
         if ("csv".equalsIgnoreCase(format == null ? "" : format)) {
             String csv = analytics.feedbackCsv();
             return ResponseEntity.ok()

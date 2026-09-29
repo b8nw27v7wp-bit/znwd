@@ -72,4 +72,44 @@ class RequestSizeLimitFilterTest {
             assertNotNull(chain.getRequest());
         }
     }
+
+    @Test
+    void 语音接口放到录音上限否则两秒都录不了() throws Exception {
+        // 16kHz WAV 约 32KB/s，base64 再膨胀 4/3：按 64KB 卡的话半秒就超
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/speech/recognize");
+        request.setContent(new byte[(int) RequestSizeLimitFilter.MAX_BODY_BYTES + 32 * 1024]);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilter(request, response, chain);
+
+        assertEquals(200, response.getStatus(), "语音路径应当放行");
+        assertNotNull(chain.getRequest(), "放行的请求要继续进业务链路");
+    }
+
+    @Test
+    void 语音接口自己也有硬上限() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/speech/recognize");
+        request.setContent(new byte[(int) RequestSizeLimitFilter.MAX_AUDIO_BODY_BYTES + 1]);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilter(request, response, chain);
+
+        assertEquals(413, response.getStatus(), "放宽不等于不设限");
+        assertTrue(response.getContentAsString().contains("payload_too_large"));
+        assertNull(chain.getRequest());
+    }
+
+    @Test
+    void 语音路径的前缀匹配不会误伤同名开头的其它路径() throws Exception {
+        // /api/speechy 不是语音接口：前缀匹配必须带斜杠，否则是个绕过 64KB 的口子
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/speechy");
+        request.setContent(new byte[(int) RequestSizeLimitFilter.MAX_BODY_BYTES + 1]);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        assertEquals(413, response.getStatus());
+    }
 }

@@ -2,9 +2,176 @@
 
 本项目版本与变更记录。日期：YYYY-MM-DD。
 
-## [未发布] — 2026-09-23 · 补语料
+## [未发布] — 2026-09-29 · 会话归属令牌 / 话术外置 / 运营面板 / 反馈独立限流 + 交付前全量复跑
 
-误拦清零、漏放改成答得对、补齐 6 段未覆盖原文（语料 209 → 215 块，内置同义词 23 → 30 条）。
+### Added — 会话归属令牌（`X-Session-Token`）
+
+- **问答响应下发会话令牌**：非流式是响应字段 `sessionToken`，SSE 挂在 `done` 帧上（`meta` 帧不带）。
+- **`GET`/`DELETE /api/sessions/{id}` 必须带回**：`X-Session-Token` 头或 `?sessionToken=` 查询串；不匹配一律 **404**，
+  不回 403——403 等于承认这个 `sessionId` 有效，反而成了枚举器。
+- **换人清上下文仍然可用**（带正确令牌 `DELETE` 返回 200）；从未下发过令牌的老会话可不带（重启后自然消失）。
+- 前端：令牌只放内存与 `sessionStorage`（`storage.ts` 封装，隐私模式下取不到 storage 也不抛异常）；不进 URL、不进日志。
+
+### Added — 话术外置（`PromptStore`）
+
+- system prompt / 无命中指令 / 固定拒答三份文本移到 `resources/prompts/*.txt`，**现场改措辞不必重编译发版**：
+  用 `PROMPT_SYSTEM_PATH`、`PROMPT_NO_HIT_HINT_PATH`、`PROMPT_NO_HIT_REPLY_PATH` 指向外部文件即可覆盖内置文本，
+  随 `POST /api/knowledge/reload` 一起生效。文件缺失/空白/读失败一律记日志回退内置文本，**问答不会断**。
+
+### Added — 运营视图拆成两块面板
+
+- `KnowledgePanel`：知识清单（块数/展区/同义词摘要）、一键 reload、同义词表热更新。
+- `DiagnosticsPanel`：输入一个真实问题，看这次会被闸门怎么判（拦不拦、两路分数、距阈值还差多少、一句人话结论），
+  最近 5 次按新→旧留在面板上，方便对照着补语料/同义词。
+
+### Changed — `/api/feedback` 走独立限流桶
+
+- 无鉴权的公开写口不再与 chat 共用一个桶：新增 `FEEDBACK_RATE_PER_MIN`（默认 10，chat 是 30）。
+  实测反馈被刷时紧接着的提问照常放行——原来一条长回答或一波刷反馈就能把访客的提问一起限掉。
+
+### Fixed — `tools/security.py` 的 S19 还按旧契约断言
+
+- S19 原来断言「知道 `sessionId` 就能删（200）」，会话令牌落地后必然变红。改写成一组 5 条：
+  令牌下发 → 无令牌删 404 → 错令牌删 404 → 持令牌读 200 → 持令牌删 200。
+  同步 `docs/security-testing.md`、`docs/security.md`、`docs/api.md`、`docs/test-cases.md`、`docs/CODE_REVIEW_HANDOFF.md`。
+
+### 测试
+
+- 新增 `ChatWebContractTest`（13 条），替换掉零断言的探针 `ProbeWebTest`：它只 `System.out.println`、不断言，
+  而且漏 mock 新加的 `feedbackRateLimiter`，整个类因上下文加载失败而全红（本地单测因此长期是 5 条 ERROR）。
+  新类覆盖错误信封（404/415/405）、坏 JSON 与缺字段两类 400 的文案差异、SSE 帧序 `meta→delta*→done` 且 `done` 带令牌、
+  会话归属 404/200、反馈独立限流桶。
+- 其余新增项数：`PromptStoreTest` 12、`OpenAiCompatChatModelTest` 8、`RagBackendSnapshotTest` 5、`SpeechParserTest`/`MimoSpeechModelTest` 各 10。
+- 后端单测 **123 → 157 项**；前端 **134 项（11 个文件）**。
+
+### 交付前全量复跑（2026-09-29，本机 Windows + 真 MiMo + 云端 bge-m3）
+
+| 环节 | 命令 | 结果 |
+| --- | --- | --- |
+| 后端单测 | `cd server && ../tools/mvn -B test` | **157 项，0 失败 0 错误** |
+| 前端单测 | `cd web && npm test` | **134 项（11 文件）全绿** |
+| 检索评测 | `exec:java@eval -Dexec.args="--no-write --baseline=docs/eval/baseline-java.json"` | 145 条 top1/top3 **1.0**，与基线**逐例不一致 0** |
+| 闸门标定 | `exec:java@calibrate -Dexec.args="--gate-check --no-write"` | 退出码 **0**（域外最高排序分 6.170 < 6.3，余量 **0.130**） |
+| 打包 + 起真实实例 | `../tools/mvn -B -DskipTests package` + `java -jar target/hostess-server.jar` | `health`：`ok/ready/storageAvailable=true`、**219 块**、`speech=mimo`、`embeddingReady=true` |
+| 接口冒烟 | `ADMIN_TOKEN=… python tools/smoke.py` | **63 / 63**，0 跳过 |
+| 边界与安全 | `SECOND_BASE/MISCONFIG_BASE/DEV_RELAXED_BASE/DEV_HOST_IP` 四实例 `python tools/security.py` | **98 通过 / 0 失败 / 1 跳过**（唯一 SKIP 是 S21：第 36 次请求恰落在限流窗口重置之后，S20 已确认限流生效） |
+| 库层 | `python tools/db-check.py` | **8 / 8** |
+| 运行期不变量 | `python tools/offline-check.py --runtime` | **7 / 7**（O07 只在 `LLM_PROVIDER=mock` 下有判据，真 provider 下按设计跳过） |
+| 内容验收 | `python tools/acceptance.py` | **40 / 40**（真模型，1 条延迟提醒） |
+
+两条环境记录，供下次复跑省时间：
+
+- **git-bash 下不要直接敲 `mvn`**：MSYS 会发现官方 `bin/mvn` 走 mingw 分支、不把 `/d/Maven/...` 转成 Windows 路径，
+  java 报 `找不到或无法加载主类 org.codehaus.plexus.classworlds.launcher.Launcher`。仓库自带 `tools/mvn` 绕开了它，用它。
+- **`tools/security.py` 的证据类用例（S10/S11、B08/B10）读 `DATA_DIR/events.jsonl`**：实例若用自定义 `DATA_DIR` 起，
+  跑安全用例时要把同一个 `DATA_DIR` 传给它，否则会表现成「日志脱敏取证失败」（是取不到证据，不是脱敏坏了）。
+
+### 文档口径统一
+
+- 单测/前端/冒烟项数、语料块数（**219 块 / 17 篇**）、域外最高余弦（0.6826 → **0.6252**）、闸门余量（→ **0.130**）、
+  P1「会话无所有权校验」状态，全部按本次实际输出更新：`README.md`、`docs/{api,architecture,deployment,development,eval,knowledge,security,security-testing,test-cases,CODE_REVIEW_HANDOFF}.md`、`server/.env.example`。
+- `docs/eval.md` 新增「第七版标定结论（2026-09-29）」，第六版整段标为历史快照。
+
+## [未发布] — 2026-09-23 · 补语料 / 语音播报与语音提问
+
+误拦清零、漏放改成答得对、补齐 6 段未覆盖原文（语料 209 → 215 块，内置同义词 23 → 30 条）；
+同一轮里补上服务端语音——回答用 MiMo TTS 播报，也能对着麦克风提问。
+
+### Added — 语音（服务端 TTS 播报 + 语音提问）
+
+- **播报优先走服务端 TTS**（`AUDIO_PROVIDER=mimo` 启用，小米 `mimo-v2.5-tts`，与对话同网关同 key）：
+  前端把回答按句切片（切点在句末）、每片一次 `POST /api/speech/synthesize`，**播第 N 句时已经在取第 N+1 句**，
+  首句延迟就是一次合成的时间。实测 5 字 1.37s、37 字 2.55s；同一句命中服务端缓存时 0.02s。
+  音色用预置音色（默认「冰糖」），语速与语气由 `AUDIO_STYLE` 的指令控制，**key 只留在服务端**。
+- **服务端不可用时当场降级，而不是哑掉**：未启用（`speechReady=false`）或任意一次调用失败
+  （503/502/自动播放被拒），立刻退回浏览器内置合成，原因写进运营视图；运营视图新增「播报来源」一行，
+  直接写明这一轮到底是谁发的声。
+- **语音提问**：输入框旁新增麦克风按钮（按一下开始、再按一下结束并识别，录音时按钮上走秒）。
+  录音在前端用 `AudioContext` 采 PCM、重采样到 16kHz、自拼 WAV 头——**不能用 MediaRecorder**：
+  MiMo 的 ASR 只收 wav/mp3，而 Chrome 的 MediaRecorder 默认吐 webm/opus，直接 400。上限 20 秒（约 640KB），
+  识别成文字后直接提问（展厅里没人愿意再说一遍还去点发送）。
+- **新增两个接口**（纯增量；未启用时一律 `503 speech_unavailable`）：
+  `POST /api/speech/synthesize`（进 `{"text":…}`，出 `audio/wav` 字节 + `x-znwd-speech: live|cache`）、
+  `POST /api/speech/recognize`（进 `data:audio/wav;base64,…`，出 `{text, seconds, elapsedMs}`，
+  `seconds` 用来区分「说了话」与「录到一片静音」）。`/api/health` 增加 `speech` / `speechReady`。
+- **请求体闸门按路径分流**：录音天然超过 64KB（16kHz/单声道/16bit ≈ 32KB/s，base64 再膨胀 4/3），
+  `RequestSizeLimitFilter` 对 `/api/speech/*` 放宽到 2MB，其余路径仍是 64KB。前缀匹配带斜杠
+  （`/api/speechy` 不认），否则就是个绕过 64KB 的口子——这条有专门用例钉着。
+- **合成缓存 + 独立限流**：同文本同音色命中缓存即省一次外部调用（`AUDIO_TTS_CACHE_SIZE` 默认 64 条，
+  展厅高频重复问题收益最大）；合成单独限流 60 次/分钟（一次回答要合成多段，与 chat 共用配额会被一条长回答吃光），
+  识别则与问答共用 `CHAT_RATE_PER_MIN`。
+
+### 测试（语音部分）
+
+- 后端 106 项（语音新增 23 项）：`SpeechParserTest` 10 项覆盖入参的每条拒绝路径（缺参/超长/非 base64/
+  非 WAV/mp3/空采样/超体积）；`MimoSpeechModelTest` 10 项对着本地假网关钉死协议
+  （**正文必须在 assistant 消息里**、音频必须走 data URL、音频在 `message.audio.data` 而不是 `content`、
+  5xx 重试、4xx 不重试）；`RequestSizeLimitFilterTest` 增加语音路径三条（放宽、硬上限、前缀不误伤）。
+- 前端 81 项（语音新增 20 项）：`useDictation.spec.ts` 8 项覆盖 WAV 头字段、int16 量化（负满量程不削顶）、
+  重采样长度与常数保持；`useSpeech.spec.ts` 新增 11 项走服务端播报路径（预取时序、503 降级、
+  自动播放被拒降级、停读同时停住「在播的」与「没播的」、没有浏览器合成器的机器照样出声）；
+  `App.spec.ts` 新增 1 项接线（health 报可用 → 播报真的打到 `/api/speech/synthesize`，运营视图写明来源）。
+- `tools/smoke.py` 增加语音段（未启用时 61 项、启用时 64 项）：按 `speechReady` 分别校验「真出 WAV」
+  与「503 可判定」两条路径，另加一条与开关无关的 413 体积校验。
+  （历史快照：后续 `/api/knowledge/list` 收进管理块后为 60 / 63，最新口径见 `docs/development.md` §7。）
+- 端到端实测（本地服务 + 真实 MiMo）：合成 37 字 → 499KB / 10.4s 音频 → 喂回识别 → **文本与原文逐字一致**，
+  识别耗时 1.30s；二次合成命中缓存 0.02s。
+
+### 审核与边界筛查（语音接口，同一轮）
+
+对着跑起来的服务做了一轮对抗性探测（34 项一次性脚本）+ 通读新写的代码，**发现并修掉 9 条**——其中两条是
+项目既有缺陷，只是语音把它们暴露出来：
+
+- **合成接口声明 `produces = "audio/wav"` → 参数错误时 500 且响应体为空**：异常路径要回 JSON，与 produces
+  协商冲突（`Accept: audio/wav` + 缺 text 实测）。去掉 mapping 上的 produces，媒体类型改由成功路径给出。
+- **错误响应一律没设 `Content-Type`**：只要客户端的 `Accept` 与 JSON 不兼容，**任何接口**的错误路径都会退化成
+  500 空体。这是上一条的根因，`GlobalExceptionHandler` 的 8 个 handler 全部显式 `.contentType(application/json)`；
+  另给 `HttpMediaTypeNotAcceptableException` 补 406 映射。
+- **空采样 WAV（44 字节、只有头）被放行到上游** → 上游 500，客户端白等一轮重试才拿到 502；`SpeechParser`
+  现在本地判空 → 400。
+- **上游失败的响应体被原样回给前端**（含上游错误码与结构）→ 对外只回固定文案，细节只进服务端日志。
+- **合成缓存只按条数封顶**（64 条 × 最长可到数 MB）→ 新增单条字节上限 `AUDIO_TTS_CACHE_MAX_BYTES`（默认 512KB）；
+  顺手把缓存键补上音色/风格/模型（原来改了 `AUDIO_STYLE` 重启后仍会命中旧音频）。
+- 前端三条：预取 promise 无人消费时的 unhandled rejection（挂兜底 catch）、合成请求缺超时（20 秒后降级，
+  否则播报会永久卡在 await）、录音组件卸载不释放麦克风（`onUnmounted` 调 `cancel()`）。
+- **前端接线缺陷（本轮自己写的代码，补测试时才发现）**：朗读开关 `enabled` 的初值绑了「浏览器有没有
+  `speechSynthesis`」——某些一体机内核/隐私模式下没有它，而服务端 TTS 明明可用，`speak()` 却在第一行就返回：
+  **一声不响、日志里也没有任何错误**（诊断实测：`/api/speech/synthesize` 根本没被请求过）。改成开关初值只看
+  用户上次的选择，另加 `available`（任一引擎可用）供运营视图判断是否显示开关。
+
+前端音频链路还做了一次真实闭环（CI 跑不了，属一次性验证）：取后端合成语音 → 解码成 16kHz PCM →
+用**前端自己的 `encodeWav`** 包成 WAV → 喂回 `/api/speech/recognize` → **文本与原文逐字一致**（317484 字节 / 11.0s）。
+它证明「前端产出的容器格式与上游要求一致」；剩下「浏览器真的采到音、真的出声」只能在展板机器上人工确认。
+
+验收（同一套命令，改前改后各一次）：
+
+| 门禁 | 改前 | 改后 |
+| --- | --- | --- |
+| `mvn test` | 105 全绿 | **106 全绿** |
+| `npm run test` / `npm run build` | 69 全绿 / 通过 | **81 全绿** / 通过 |
+| `python tools/security.py`（三实例全跑） | 57 通过 0 失败 0 跳过（无语音用例） | **90 通过 0 失败 0 跳过**（语音组 33 项） |
+| `python tools/smoke.py` | 64 通过 | 64 通过 |
+| 前后端映射核对（路径 + 字段，一次性脚本） | — | **24 项全过**（并核出 1 条真错配，见下） |
+
+边界用例已并入项目自己的套件（`tools/security.py` 的 V 组：V01–V10 / W11–W19 / X20–X26 / Y01–Y06b），
+编号与判据写在 `docs/security-testing.md`。
+
+### 前后端映射核对（同一轮）
+
+把前端 11 处调用（`api.ts` 8 处 + `AdminPanel.vue` 3 处）与后端 18 条路由、以及**前端实际读取的每个字段**，
+对着实测响应逐条核了一遍（24 项，一次性脚本）：
+
+- **路径与方法**：11 处调用全部有对应路由，没有调不存在的接口。
+- **字段**：health（13 个）、zones、suggestions、SSE 的 meta/done、sources、stats+tokens、uncovered、
+  feedback-stats、speech 两个接口——前端读的字段在实测响应里全在。
+- **连通性**：dev/preview 的 `/api` 代理、`VITE_API_TARGET` 可覆盖、health 上报生效的 CORS 白名单。
+- 后端有、前端不调的 8 条（`/api/chat`、`/api/health/summary`、`/api/openapi.json`、`/api/admin/*` 等）
+  是给运维/脚本/评测用的，不是死代码。
+
+**核出一条真错配（已修）**：SSE 的 `done` 帧不带 `rewrite`，而前端收到 done 会用它覆盖 meta——于是
+「已按上下文补全提问」的标记在流式结束那一刻被覆盖成 `undefined` 而消失（非流式响应一直带着 `rewrite`，
+属流式漏发）。修法：`done` 补上 `rewrite`（纯增量，符合契约冻结）；前端类型把 `ChatMeta.cached` 改成可选
+并注明「meta 是 done 的子集」；`docs/api.md` 写清这条对齐规则——**要么两帧都给，要么前端别在 done 之后读它**。
 
 ### Changed
 
@@ -81,6 +248,7 @@
   「项目背景与需求」顶掉）。收窄为「只重排、不新增候选」仍然掉（RRF 给双路命中的块加权，关键词第一名被压）。
   最终规则：**关键词路过了闸门就按关键词排序；语义向量只在关键词没过闸门、余弦达标时接管排序，
   且只对关键词候选重排**。评测回到 137/137 top1 1.0。
+  （历史快照：后续产品决策改为**允许语义新增候选**，现行契约见 `docs/architecture.md` §3。）
 - **语义兜底阈值 `MIN_VECTOR_SCORE` 0.35 → 0.75（= 关闭兜底）**：标定新增「近域域外样本」
   （`EvalSupport.OUT_OF_DOMAIN_NEAR`，词面与语料高度重叠、余弦天然偏高的问题），输出域外最高余弦与
   「待救在域最低余弦」。实测域外最高 **0.6826**（「扫地机器人多少钱？」）高于待救用例

@@ -18,6 +18,12 @@ public final class ApiError {
     public static final String UNAUTHORIZED = "unauthorized";
     public static final String RATE_LIMITED = "rate_limited";
     public static final String PAYLOAD_TOO_LARGE = "payload_too_large";
+    /** 客户端只接受某种媒体类型，而这次只能给出别的（协商失败，不是服务故障） */
+    public static final String NOT_ACCEPTABLE = "not_acceptable";
+    /** 语音能力未启用（AUDIO_PROVIDER=none）：前端据此降级到浏览器内置播报，不要当成故障重试 */
+    public static final String SPEECH_UNAVAILABLE = "speech_unavailable";
+    /** 语音上游失败（网关报错/超时）：可重试，前端同样降级 */
+    public static final String SPEECH_FAILED = "speech_failed";
     public static final String INTERNAL_ERROR = "internal_error";
 
     private ApiError() {

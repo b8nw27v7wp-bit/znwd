@@ -9,6 +9,7 @@ import {
   sendFeedback,
   streamChat,
 } from '../api';
+import { readStorage, removeStorage, writeStorage } from '../storage';
 
 const SESSION_KEY = 'znwd.sessionId';
 const ZONE_KEY = 'znwd.zone';
@@ -27,8 +28,9 @@ export type TechError = { at: number; question: string; message: string };
 export function useChat() {
   const messages = ref<Message[]>([]);
   const streaming = ref(false);
+  const resetting = ref(false);
   const sessionId = ref<string>(readSessionId());
-  const zone = ref<string | null>(localStorage.getItem(ZONE_KEY));
+  const zone = ref<string | null>(readStorage('local', ZONE_KEY));
   const suggestions = ref<Suggestion[]>([]);
   const zones = ref<ZoneInfo[]>([]);
   const health = ref<HealthInfo | null>(null);
@@ -40,52 +42,72 @@ export function useChat() {
   const feedback = ref<Record<string, 'up' | 'down'>>({});
 
   let controller: AbortController | null = null;
+  let suggestionsGeneration = 0;
+  let streamGeneration = 0;
+  let resetGeneration = 0;
+  let activeAssistant: Message | null = null;
+  const feedbackOperations = new Map<string, number>();
 
   function readSessionId(): string {
-    const saved = localStorage.getItem(SESSION_KEY);
+    const saved = readStorage('local', SESSION_KEY);
     if (saved) return saved;
     const fresh = newSessionId();
-    localStorage.setItem(SESSION_KEY, fresh);
+    writeStorage('local', SESSION_KEY, fresh);
     return fresh;
   }
 
+  function invalidateStream(): void {
+    streamGeneration += 1;
+    const current = controller;
+    controller = null;
+    current?.abort();
+    streaming.value = false;
+    const assistant = activeAssistant;
+    activeAssistant = null;
+    if (assistant) {
+      assistant.pending = false;
+      assistant.error = '已取消';
+      if (!assistant.content) assistant.content = '（回答已取消）';
+    }
+  }
+
   async function bootstrap(): Promise<void> {
-    try {
-      health.value = await fetchHealth();
-    } catch {
-      health.value = null;
-    }
-    try {
-      const data = await fetchZones();
-      zones.value = data.zones ?? [];
-    } catch {
-      zones.value = [];
-    }
+    const [healthResult, zonesResult] = await Promise.allSettled([fetchHealth(), fetchZones()]);
+    health.value = healthResult.status === 'fulfilled' ? healthResult.value : null;
+    zones.value = zonesResult.status === 'fulfilled' ? zonesResult.value.zones ?? [] : [];
     await loadSuggestions();
   }
 
   async function loadSuggestions(): Promise<void> {
+    const generation = ++suggestionsGeneration;
+    const requestedZone = zone.value;
     try {
-      suggestions.value = await fetchSuggestions(zone.value);
+      const next = await fetchSuggestions(requestedZone);
+      if (generation === suggestionsGeneration && zone.value === requestedZone) {
+        suggestions.value = next;
+      }
     } catch {
-      suggestions.value = [];
+      if (generation === suggestionsGeneration && zone.value === requestedZone) {
+        suggestions.value = [];
+      }
     }
   }
 
   async function setZone(next: string | null): Promise<void> {
     zone.value = next;
-    if (next) localStorage.setItem(ZONE_KEY, next);
-    else localStorage.removeItem(ZONE_KEY);
+    if (next) writeStorage('local', ZONE_KEY, next);
+    else removeStorage('local', ZONE_KEY);
     await loadSuggestions();
   }
 
   async function ask(question: string): Promise<void> {
     const text = question.trim();
-    if (!text || streaming.value) return;
+    if (!text || streaming.value || resetting.value) return;
     error.value = '';
     sources.value = [];
     lastMeta.value = null;
 
+    const generation = ++streamGeneration;
     messages.value.push({ id: `u-${Date.now()}`, role: 'user', content: text });
     // 必须是 reactive：push 进响应式数组的普通对象在数组里被代理，但流式回调改的是原始对象，
     // 字段变更不会被追踪（以前靠 streaming 变化顺带重渲染才读到新值，一旦模板里有基于消息内容的
@@ -99,32 +121,40 @@ export function useChat() {
     });
     messages.value.push(assistant);
     streaming.value = true;
+    activeAssistant = assistant;
     const started = performance.now();
+    const requestController = new AbortController();
+    const requestSessionId = sessionId.value;
+    controller = requestController;
 
-    controller = new AbortController();
     try {
-      await streamChat(text, sessionId.value, {
+      await streamChat(text, requestSessionId, {
         onMeta: (meta) => {
+          if (generation !== streamGeneration) return;
           assistant.meta = meta;
           lastMeta.value = meta;
           sources.value = meta.sources ?? [];
         },
         onDelta: (chunk) => {
+          if (generation !== streamGeneration) return;
           assistant.content += chunk;
         },
         onDone: (done) => {
+          if (generation !== streamGeneration) return;
           assistant.pending = false;
+          assistant.content = done.answer;
           assistant.meta = done;
           assistant.latencyMs = done.latencyMs;
           sources.value = done.sources ?? [];
           lastMeta.value = done;
-          if (done.sessionId && done.sessionId !== sessionId.value) {
+          if (typeof done.sessionId === 'string' && done.sessionId && done.sessionId !== sessionId.value) {
             sessionId.value = done.sessionId;
-            localStorage.setItem(SESSION_KEY, done.sessionId);
+            writeStorage('local', SESSION_KEY, done.sessionId);
           }
         },
-      }, controller.signal);
+      }, requestController.signal);
     } catch (e) {
+      if (generation !== streamGeneration) return;
       assistant.pending = false;
       const message = e instanceof Error ? e.message : '请求失败';
       if (!assistant.content) assistant.content = '这条问题暂时没能回答，请再试一次。';
@@ -132,16 +162,19 @@ export function useChat() {
       error.value = message;
       logError(text, message);
     } finally {
-      assistant.pending = false;
-      if (!assistant.content) assistant.content = '（没有返回内容）';
-      if (!assistant.latencyMs) assistant.latencyMs = Math.round(performance.now() - started);
-      streaming.value = false;
-      controller = null;
+      if (generation === streamGeneration) {
+        assistant.pending = false;
+        if (!assistant.content) assistant.content = '（没有返回内容）';
+        if (!assistant.latencyMs) assistant.latencyMs = Math.round(performance.now() - started);
+        streaming.value = false;
+        if (controller === requestController) controller = null;
+        activeAssistant = null;
+      }
     }
   }
 
   function cancel(): void {
-    controller?.abort();
+    invalidateStream();
   }
 
   /**
@@ -161,28 +194,60 @@ export function useChat() {
   }
 
   async function rate(message: Message, rating: 'up' | 'down'): Promise<void> {
+    const previous = feedback.value[message.id];
+    const operation = (feedbackOperations.get(message.id) ?? 0) + 1;
+    feedbackOperations.set(message.id, operation);
     feedback.value[message.id] = rating;
     const index = messages.value.findIndex((m) => m.id === message.id);
     const question = index > 0 ? messages.value[index - 1]?.content : undefined;
-    await sendFeedback({ sessionId: sessionId.value, rating, question });
+    const requestSessionId = sessionId.value;
+    try {
+      await sendFeedback({ sessionId: requestSessionId, rating, question });
+    } catch (e) {
+      if (feedbackOperations.get(message.id) === operation) {
+        if (previous) feedback.value[message.id] = previous;
+        else delete feedback.value[message.id];
+      }
+      const messageText = e instanceof Error ? e.message : '反馈失败';
+      error.value = messageText;
+      logError(question ?? '（反馈）', messageText);
+    }
   }
 
   async function startOver(): Promise<void> {
-    await resetSession(sessionId.value);
-    const fresh = newSessionId();
-    sessionId.value = fresh;
-    localStorage.setItem(SESSION_KEY, fresh);
-    messages.value = [];
-    sources.value = [];
-    lastMeta.value = null;
-    feedback.value = {};
-    error.value = '';
-    await loadSuggestions();
+    const operation = ++resetGeneration;
+    resetting.value = true;
+    suggestionsGeneration += 1;
+    invalidateStream();
+    try {
+      const previousSessionId = sessionId.value;
+      let resetError = '';
+      try {
+        await resetSession(previousSessionId);
+      } catch (e) {
+        resetError = e instanceof Error ? e.message : '重置会话失败';
+        logError('（重置会话）', resetError);
+      }
+      if (operation !== resetGeneration) return;
+      const fresh = newSessionId();
+      sessionId.value = fresh;
+      writeStorage('local', SESSION_KEY, fresh);
+      messages.value = [];
+      sources.value = [];
+      lastMeta.value = null;
+      feedback.value = {};
+      feedbackOperations.clear();
+      error.value = resetError;
+      await loadSuggestions();
+    } finally {
+      if (operation === resetGeneration) resetting.value = false;
+    }
   }
 
   return {
     messages,
     streaming,
+    resetting,
     sessionId,
     zone,
     zones,

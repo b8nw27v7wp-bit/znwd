@@ -31,17 +31,19 @@ public class ChatRunService {
     private final Analytics analytics;
     private final LruCache<CachedAnswer> cache;
     private final JsonlStore logStore;
+    private final PromptStore prompts;
     private final RagPipeline pipeline;
 
     public ChatRunService(KnowledgeService knowledge, ChatModel model, SessionStore sessions, Analytics analytics,
-                          LruCache<CachedAnswer> cache, JsonlStore logStore, boolean noHitLlm) {
+                          LruCache<CachedAnswer> cache, JsonlStore logStore, PromptStore prompts, boolean noHitLlm) {
         this.knowledge = knowledge;
         this.model = model;
         this.sessions = sessions;
         this.analytics = analytics;
         this.cache = cache;
         this.logStore = logStore;
-        this.pipeline = new RagPipeline(knowledge.retriever(), model, noHitLlm);
+        this.prompts = prompts == null ? PromptStore.defaults() : prompts;
+        this.pipeline = new RagPipeline(knowledge.retriever(), model, noHitLlm, this.prompts);
     }
 
     public RagPipeline pipeline() {
@@ -50,12 +52,13 @@ public class ChatRunService {
 
     /** 非流式问答 */
     public Map<String, Object> run(String message, String sessionId) {
+        ensureKnowledgeReady();
         long started = System.currentTimeMillis();
         String key = cacheKey(message);
         List<ChatMessage> history = sessions.history(sessionId);
         CachedAnswer hit = cache.get(key);
 
-        if (hit != null && history.isEmpty()) {
+        if (hit != null && history.isEmpty() && hasText(hit.answer())) {
             String retrieval = normalizeRetrieval(hit.retrieval());
             sessions.append(sessionId, message, hit.answer());
             logChat(started, sessionId, message, hit.answer(), hit.mode(), hit.provider(), retrieval,
@@ -65,37 +68,44 @@ public class ChatRunService {
         }
 
         RagAnswer result = pipeline.answer(message, history);
-        sessions.append(sessionId, message, result.answer());
-        if (history.isEmpty()) {
-            cache.put(key, new CachedAnswer(result.answer(), result.sources(), result.mode(), result.provider(),
+        String answer = result.answer();
+        if (!hasText(answer)) {
+            throw new IllegalStateException("LLM returned empty answer");
+        }
+        sessions.append(sessionId, message, answer);
+        if (history.isEmpty() && hasText(answer)) {
+            cache.put(key, new CachedAnswer(answer, result.sources(), result.mode(), result.provider(),
                     result.retrieval(), result.noHit()));
         }
         long latency = System.currentTimeMillis() - started;
-        logChat(started, sessionId, message, result.answer(), result.mode(), result.provider(), result.retrieval(),
+        logChat(started, sessionId, message, answer, result.mode(), result.provider(), result.retrieval(),
                 result.noHit(), result.rewrite() != null && result.rewrite().rewritten(), latency,
                 result.noHit() ? message : null, result.usage());
 
-        return response(result.answer(), result.sources(), result.mode(), result.provider(), result.retrieval(),
+        return response(answer, result.sources(), result.mode(), result.provider(), result.retrieval(),
                 sessionId, latency, false, result.noHit(), result.rewrite(), result.usage());
     }
 
     /** 流式问答：meta → delta* → done */
     public void stream(String message, String sessionId, StreamSink sink) {
+        ensureKnowledgeReady();
         long started = System.currentTimeMillis();
         String key = cacheKey(message);
         List<ChatMessage> history = sessions.history(sessionId);
         CachedAnswer hit = cache.get(key);
 
-        if (hit != null && history.isEmpty()) {
+        if (hit != null && history.isEmpty() && hasText(hit.answer())) {
             String retrieval = normalizeRetrieval(hit.retrieval());
             List<RagSource> sources = asSources(hit.sources());
+            // 命中缓存的前提是没有历史（单轮才进缓存），所以这里必然没有改写
+            RewriteResult rewrite = RewriteResult.unchanged(message, RewriteResult.RewriteReason.NONE);
             sessions.append(sessionId, message, hit.answer());
             logChat(started, sessionId, message, hit.answer(), hit.mode(), hit.provider(), retrieval,
                     hit.noHit(), false, 0, null, null);
-            sink.meta(meta(hit.mode(), sources, hit.provider(), hit.noHit(), retrieval,
-                    RewriteResult.unchanged(message, RewriteResult.RewriteReason.NONE), sessionId));
+            sink.meta(meta(hit.mode(), sources, hit.provider(), hit.noHit(), retrieval, rewrite, sessionId));
             sink.delta(hit.answer());
-            sink.done(done(hit.answer(), sources, hit.mode(), retrieval, hit.noHit(), 0, true, hit.provider(), null));
+            sink.done(done(hit.answer(), sources, hit.mode(), retrieval, hit.noHit(), 0, true, hit.provider(),
+                    rewrite, null));
             return;
         }
 
@@ -114,8 +124,9 @@ public class ChatRunService {
 
         StringBuilder full = new StringBuilder();
         if (gated) {
-            full.append(RagPipeline.NO_HIT_REPLY);
-            sink.delta(RagPipeline.NO_HIT_REPLY);
+            String reply = prompts.noHitReply();
+            full.append(reply);
+            sink.delta(reply);
         } else {
             model.stream(pipeline.buildPrompt(hits, message, trimmed), delta -> {
                 full.append(delta);
@@ -124,15 +135,19 @@ public class ChatRunService {
         }
 
         String answer = full.toString();
+        if (!hasText(answer)) {
+            throw new IllegalStateException("LLM stream returned empty answer");
+        }
         long latency = System.currentTimeMillis() - started;
         LlmUsage usage = gated ? null : model.lastUsage();
         sessions.append(sessionId, message, answer);
-        if (history.isEmpty()) {
+        if (history.isEmpty() && hasText(answer)) {
             cache.put(key, new CachedAnswer(answer, sources, mode, provider, retrieval, hits.isEmpty()));
         }
         logChat(started, sessionId, message, answer, mode, provider, retrieval, hits.isEmpty(),
                 retrieved.rewrite().rewritten(), latency, hits.isEmpty() ? message : null, usage);
-        sink.done(done(answer, sources, mode, retrieval, hits.isEmpty(), latency, false, provider, usage));
+        sink.done(done(answer, sources, mode, retrieval, hits.isEmpty(), latency, false, provider,
+                retrieved.rewrite(), usage));
     }
 
     /** 请求失败也要留痕（含 messagePreview，便于事后对账） */
@@ -173,7 +188,8 @@ public class ChatRunService {
     }
 
     private Map<String, Object> done(String answer, List<RagSource> sources, String mode, String retrieval,
-                                     boolean noHit, long latencyMs, boolean cached, String provider, LlmUsage usage) {
+                                     boolean noHit, long latencyMs, boolean cached, String provider,
+                                     RewriteResult rewrite, LlmUsage usage) {
         Map<String, Object> done = new LinkedHashMap<>();
         done.put("latencyMs", latencyMs);
         done.put("answer", answer);
@@ -183,6 +199,15 @@ public class ChatRunService {
         done.put("noHit", noHit);
         done.put("retrieval", retrieval);
         done.put("cached", cached);
+        // rewrite 必须跟着 done 一起发：前端收到 done 会用它覆盖 meta，这里漏掉就等于把
+        // 「已按上下文补全提问」的标记擦掉（非流式响应一直带着它，这里补上对齐）。
+        if (rewrite != null) {
+            Map<String, Object> rw = new LinkedHashMap<>();
+            rw.put("rewritten", rewrite.rewritten());
+            rw.put("reason", rewrite.reason().value());
+            rw.put("carriedTokens", rewrite.carriedTokens());
+            done.put("rewrite", rw);
+        }
         if (usage != null) {
             done.put("usage", usageMap(usage));
         }
@@ -265,6 +290,16 @@ public class ChatRunService {
 
     private static String normalizeRetrieval(String retrieval) {
         return "hybrid".equals(retrieval) ? "hybrid" : "keyword";
+    }
+
+    private void ensureKnowledgeReady() {
+        if (!knowledge.retriever().stats().indexReady()) {
+            throw new IllegalStateException("知识库尚未就绪");
+        }
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     private static String cut(String s, int max) {

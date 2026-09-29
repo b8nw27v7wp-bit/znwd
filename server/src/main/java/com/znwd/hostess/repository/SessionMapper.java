@@ -31,7 +31,7 @@ public interface SessionMapper {
     List<SessionRow> recentSessions(@Param("since") long since, @Param("limit") int limit);
 
     @Select("""
-            SELECT role, content FROM session_message WHERE session_id = #{sessionId} ORDER BY seq
+            SELECT seq, role, content FROM session_message WHERE session_id = #{sessionId} ORDER BY seq, id
             """)
     List<MessageRow> messages(@Param("sessionId") String sessionId);
 
@@ -50,6 +50,6 @@ public interface SessionMapper {
     record SessionRow(String id, long createdAt, long lastActive) {
     }
 
-    record MessageRow(String role, String content) {
+    record MessageRow(int seq, String role, String content) {
     }
 }

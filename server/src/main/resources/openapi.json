@@ -8,13 +8,16 @@
         "type": "object",
         "properties": {
           "title": { "type": "string" },
-          "snippet": { "type": "string" },
+          "snippet": { "type": "string", "description": "分块前 200 字的列表摘要" },
           "score": { "type": "number" },
           "sourcePath": { "type": "string" },
           "zone": { "type": "string", "nullable": true },
           "zoneTitle": { "type": "string", "nullable": true },
           "vectorScore": { "type": "number", "nullable": true },
-          "keywordScore": { "type": "number", "nullable": true }
+          "keywordScore": { "type": "number", "nullable": true },
+          "chunkText": { "type": "string", "description": "命中分块的完整原文（超长截断到 800 字）" },
+          "matchTerm": { "type": "string", "nullable": true, "description": "本次命中的关键词，在 chunkText 中原样出现（定位不到时缺省）" },
+          "matchOffset": { "type": "integer", "description": "matchTerm 在 chunkText 中的字符偏移；-1 = 未定位到" }
         },
         "required": ["title", "snippet", "score", "sourcePath"]
       },
@@ -36,6 +39,7 @@
           "retrieval": { "type": "string", "enum": ["hybrid", "keyword"] },
           "noHit": { "type": "boolean", "description": "相关性闸门未通过（知识库未覆盖）" },
           "sessionId": { "type": "string", "nullable": true },
+          "sessionToken": { "type": "string", "description": "会话访问令牌：GET/DELETE /api/sessions/{id} 需带（X-Session-Token 头或 ?sessionToken= 查询串），不匹配回 404" },
           "latencyMs": { "type": "number" },
           "cached": { "type": "boolean" },
           "usage": {
@@ -81,6 +85,7 @@
           "semantic": { "type": "boolean", "description": "向量路是否可用（false = 降级为关键词路）" },
           "degraded": { "type": "boolean" },
           "keywordBestScore": { "type": "number" },
+          "keywordGateScore": { "type": "number" },
           "vectorBestCosine": { "type": "number" },
           "candidates": { "type": "integer" },
           "thresholds": {
@@ -132,6 +137,38 @@
           "tsv": { "type": "string" }
         },
         "required": ["count", "source"]
+      },
+      "SpeechRequest": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string", "description": "单句文本（前端按句切片后再请求）" }
+        },
+        "required": ["text"]
+      },
+      "RecognizeRequest": {
+        "type": "object",
+        "properties": {
+          "audio": { "type": "string", "description": "data:audio/wav;base64,… 或裸 base64（只收 WAV/16bit PCM）" }
+        },
+        "required": ["audio"]
+      },
+      "Recognition": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string" },
+          "seconds": { "type": "number", "description": "音频时长，用来区分「说了话」与「录到一片静音」" },
+          "elapsedMs": { "type": "integer" }
+        },
+        "required": ["text"]
+      }
+    },
+    "parameters": {
+      "SessionToken": {
+        "name": "X-Session-Token",
+        "in": "header",
+        "required": false,
+        "schema": { "type": "string" },
+        "description": "会话访问令牌：/api/chat（与 SSE 的 done 帧）响应里的 sessionToken 字段；带 Header 的场景之外也接受查询参数 ?sessionToken=。下发过令牌的会话必须携带且匹配，否则按不存在回 404；从未下发过令牌的老会话可不带。"
       }
     },
     "securitySchemes": {
@@ -140,6 +177,7 @@
   },
   "paths": {
     "/api/health": { "get": { "summary": "运行状态", "responses": { "200": { "description": "健康信息（含检索模式、embeddingReady、阈值、CORS 白名单）" } } } },
+    "/api/health/summary": { "get": { "summary": "运行摘要", "responses": { "200": { "description": "问答统计摘要" } } } },
     "/api/chat": {
       "post": {
         "summary": "问答（非流式）",
@@ -155,7 +193,7 @@
       "post": {
         "summary": "问答（SSE：meta → delta* → done）",
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChatRequest" } } } },
-        "responses": { "200": { "description": "text/event-stream" } }
+        "responses": { "200": { "description": "text/event-stream：meta → delta* → done（done 帧带 sessionToken）" } }
       }
     },
     "/api/suggestions": {
@@ -166,7 +204,13 @@
       }
     },
     "/api/zones": { "get": { "summary": "展区分区与媒体映射", "responses": { "200": { "description": "zones" } } } },
-    "/api/knowledge/list": { "get": { "summary": "知识文件清单", "responses": { "200": { "description": "docs + retrieval stats" } } } },
+    "/api/knowledge/list": {
+      "get": {
+        "summary": "知识文件清单",
+        "security": [{ "adminToken": [] }],
+        "responses": { "200": { "description": "docs + retrieval stats" }, "401": { "description": "unauthorized" } }
+      }
+    },
     "/api/knowledge/reload": {
       "post": {
         "summary": "重载知识并重建向量索引",
@@ -229,12 +273,53 @@
         "responses": { "200": { "description": "统计" }, "401": { "description": "unauthorized" } }
       }
     },
+    "/api/speech/synthesize": {
+      "post": {
+        "summary": "文本转语音（回 WAV 字节；未启用时 503 speech_unavailable）",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SpeechRequest" } } }
+        },
+        "responses": {
+          "200": { "description": "audio/wav 字节（响应头 x-znwd-speech: live|cache）" },
+          "400": { "description": "text 缺失/空白/超长", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "429": { "description": "超出限流 AUDIO_SYNTH_RATE_PER_MIN" },
+          "502": { "description": "语音上游失败（前端降级到浏览器内置播报）" },
+          "503": { "description": "语音未启用（AUDIO_PROVIDER=none）" }
+        }
+      }
+    },
+    "/api/speech/recognize": {
+      "post": {
+        "summary": "语音转文本（只收 WAV；未启用时 503）",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecognizeRequest" } } }
+        },
+        "responses": {
+          "200": { "description": "识别结果", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Recognition" } } } },
+          "400": { "description": "缺 audio／非 base64／非 WAV／超体积", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "413": { "description": "请求体超过 2MB 硬上限" },
+          "429": { "description": "超出限流 CHAT_RATE_PER_MIN" },
+          "502": { "description": "语音上游失败" },
+          "503": { "description": "语音未启用（AUDIO_PROVIDER=none）" }
+        }
+      }
+    },
     "/api/sessions/{sessionId}": {
-      "get": { "summary": "查看会话", "responses": { "200": { "description": "messages" }, "404": { "description": "无会话" } } },
-      "delete": { "summary": "重置会话", "responses": { "200": { "description": "ok" } } }
+      "get": {
+        "summary": "查看会话",
+        "parameters": [{ "$ref": "#/components/parameters/SessionToken" }],
+        "responses": { "200": { "description": "messages" }, "404": { "description": "无会话，或 sessionToken 不匹配（不回 403，避免暴露会话是否存在）" } }
+      },
+      "delete": {
+        "summary": "重置会话",
+        "parameters": [{ "$ref": "#/components/parameters/SessionToken" }],
+        "responses": { "200": { "description": "ok（token 不匹配时回 404）" } }
+      }
     },
     "/api/feedback": {
-      "post": { "summary": "回答点赞/点踩", "responses": { "200": { "description": "{ ok: true }" }, "400": { "description": "rating 非法" } } }
+      "post": { "summary": "回答点赞/点踩", "responses": { "200": { "description": "{ ok: true }" }, "400": { "description": "rating 非法" }, "429": { "description": "超出限流 FEEDBACK_RATE_PER_MIN" } } }
     }
   }
 }

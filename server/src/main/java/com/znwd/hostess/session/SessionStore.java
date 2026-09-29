@@ -1,10 +1,13 @@
 package com.znwd.hostess.session;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,10 +32,24 @@ public class SessionStore {
     public static final long TTL_MS = 10 * 60 * 1000L;
     public static final int MAX_SESSIONS = 200;
 
+    private static Object[] createSessionLocks(int count) {
+        Object[] locks = new Object[count];
+        for (int i = 0; i < count; i++) {
+            locks[i] = new Object();
+        }
+        return locks;
+    }
+
+    private Object lockFor(String sessionId) {
+        return sessionLocks[Math.floorMod(sessionId.hashCode(), sessionLocks.length)];
+    }
+
     @Nullable
     private final SessionMapper mapper;
     private final DatabaseStatus databaseStatus;
+    private volatile boolean lastRestoreFailed;
     private final Map<String, Entry> map = new LinkedHashMap<>();
+    private final Object[] sessionLocks = createSessionLocks(64);
 
     public SessionStore(@Nullable SessionMapper mapper, @Nullable DatabaseStatus databaseStatus) {
         this.mapper = mapper;
@@ -71,38 +88,106 @@ public class SessionStore {
         if (sessionId == null) {
             return;
         }
-        int seq;
-        synchronized (this) {
-            long now = System.currentTimeMillis();
-            Entry entry = map.get(sessionId);
-            if (entry == null || !alive(entry, now)) {
-                entry = new Entry(new ArrayList<>(), now, now);
-                map.put(sessionId, entry);
+        synchronized (lockFor(sessionId)) {
+            Entry entry;
+            long seq;
+            boolean newIncarnation = false;
+            synchronized (this) {
+                long now = System.currentTimeMillis();
+                entry = map.get(sessionId);
+                if (entry == null || !alive(entry, now)) {
+                    newIncarnation = true;
+                    entry = new Entry(new ArrayList<>(), now, now);
+                    map.put(sessionId, entry);
+                }
+                entry.messages.add(ChatMessage.user(user));
+                entry.messages.add(ChatMessage.assistant(assistant));
+                entry.lastActive = now;
+                seq = entry.nextSequence;
+                entry.nextSequence += 2;
+                trim(entry);
+                evictOldest();
             }
-            entry.messages.add(ChatMessage.user(user));
-            entry.messages.add(ChatMessage.assistant(assistant));
-            entry.lastActive = now;
-            trim(entry);
-            evictOldest();
-            seq = entry.messages.size() - 2;
+            synchronized (this) {
+                if (map.get(sessionId) != entry) {
+                    return;
+                }
+            }
+            if (newIncarnation) {
+                clearPersisted(sessionId);
+            }
+            persist(sessionId, seq, user, assistant);
         }
-        persist(sessionId, seq, user, assistant);
     }
 
-    public synchronized boolean reset(String sessionId) {
+    public boolean reset(String sessionId) {
         if (sessionId == null) {
             return false;
         }
-        boolean removed = map.remove(sessionId) != null;
-        if (mapper != null) {
-            try {
-                mapper.deleteMessages(sessionId);
-                mapper.deleteSession(sessionId);
-            } catch (RuntimeException e) {
-                log.warn("[session] 删除会话 {} 落库失败：{}", sessionId, e.getMessage());
+        synchronized (lockFor(sessionId)) {
+            boolean removed;
+            synchronized (this) {
+                removed = map.remove(sessionId) != null;
             }
+            if (mapper != null && (databaseStatus == null || databaseStatus.shouldAttempt())) {
+                try {
+                    mapper.deleteMessages(sessionId);
+                    mapper.deleteSession(sessionId);
+                } catch (RuntimeException e) {
+                    if (databaseStatus != null) {
+                        databaseStatus.markUnavailable(e);
+                    }
+                    log.warn("[session] 删除会话 {} 落库失败：{}", sessionId, e.getMessage());
+                }
+            }
+            return removed;
         }
-        return removed;
+    }
+
+    /**
+     * 会话访问令牌：随 /api/chat 响应的 sessionToken 字段下发，用来证明「这个会话是自己的」。
+     *
+     * <p>令牌跟着会话走（存在 Entry 里）：会话被重置/淘汰/过期，令牌一并消失，不会留下
+     * 「令牌还在、会话已经换了主人」的窗口。返回 null 表示**从未下发过令牌**——重启恢复的老会话
+     * 以及本字段上线之前建的会话，对所有调用方继续开放（向后兼容）。
+     */
+    public synchronized String tokenFor(String sessionId) {
+        if (sessionId == null) {
+            return null;
+        }
+        Entry entry = map.get(sessionId);
+        if (entry == null) {
+            return null;
+        }
+        if (entry.token == null) {
+            entry.token = UUID.randomUUID().toString().replace("-", "");
+        }
+        return entry.token;
+    }
+
+    /**
+     * 归属判定：GET/DELETE /api/sessions/{id} 调它。
+     *
+     * <p>返回 true 的三种情况（都不泄露会话是否存在）：会话不存在（交给上层按原语义回 404 /
+     * {ok:false}）、从未下发过令牌的老会话、令牌匹配。下发过令牌却不匹配 → false，上层回 404
+     * 而不是 403——403 等于告诉对方「这个 sessionId 是有效的」，把枚举面又开回来了。
+     * 比对用常量时间，理由与 AdminGuard 一致：逐字节试探能省掉大量猜测成本。
+     */
+    public synchronized boolean mayAccess(String sessionId, String token) {
+        if (sessionId == null) {
+            return false;
+        }
+        Entry entry = map.get(sessionId);
+        if (entry == null || entry.token == null) {
+            return true;
+        }
+        String supplied = token == null ? "" : token.strip();
+        return MessageDigest.isEqual(entry.token.getBytes(StandardCharsets.UTF_8),
+                supplied.getBytes(StandardCharsets.UTF_8));
+    }
+
+    public boolean lastRestoreFailed() {
+        return lastRestoreFailed;
     }
 
     public synchronized int count() {
@@ -125,6 +210,7 @@ public class SessionStore {
         if (mapper == null) {
             return 0;
         }
+        lastRestoreFailed = false;
         long now = System.currentTimeMillis();
         int loaded = 0;
         try {
@@ -136,7 +222,9 @@ public class SessionStore {
                     continue;
                 }
                 List<ChatMessage> messages = new ArrayList<>();
+                long nextSequence = 0;
                 for (SessionMapper.MessageRow m : mapper.messages(row.id())) {
+                    nextSequence = Math.max(nextSequence, m.seq() + 2L);
                     ChatRole role = switch (m.role() == null ? "" : m.role()) {
                         case "user" -> ChatRole.USER;
                         case "assistant" -> ChatRole.ASSISTANT;
@@ -147,17 +235,53 @@ public class SessionStore {
                     }
                 }
                 Entry entry = new Entry(messages, row.lastActive(), row.createdAt());
+                entry.nextSequence = nextSequence;
                 trim(entry);
                 map.put(row.id(), entry);
                 loaded++;
             }
         } catch (RuntimeException e) {
+            lastRestoreFailed = true;
+            if (databaseStatus != null) {
+                databaseStatus.markUnavailable(e);
+            }
             log.warn("[session] 从 MySQL 恢复会话失败（按空会话启动）：{}", e.getMessage());
         }
         return loaded;
     }
 
-    private void persist(String sessionId, int seq, String user, String assistant) {
+    private void clearPersisted(String sessionId) {
+        if (mapper == null || (databaseStatus != null && !databaseStatus.shouldAttempt())) {
+            return;
+        }
+        try {
+            mapper.deleteMessages(sessionId);
+            mapper.deleteSession(sessionId);
+        } catch (RuntimeException e) {
+            if (databaseStatus != null) {
+                databaseStatus.markUnavailable(e);
+            }
+            log.warn("[session] 清理旧会话 {} 落库失败：{}", sessionId, e.getMessage());
+        }
+    }
+
+    public void cleanupExpired() {
+        if (mapper == null || (databaseStatus != null && !databaseStatus.shouldAttempt())) {
+            return;
+        }
+        try {
+            long before = System.currentTimeMillis() - TTL_MS;
+            mapper.deleteExpiredMessages(before);
+            mapper.deleteExpiredSessions(before);
+        } catch (RuntimeException e) {
+            if (databaseStatus != null) {
+                databaseStatus.markUnavailable(e);
+            }
+            log.warn("[session] 清理过期会话失败：{}", e.getMessage());
+        }
+    }
+
+    private void persist(String sessionId, long seq, String user, String assistant) {
         // 库不可用就别写：否则每次问答都要白等一次 Hikari connection-timeout（实测 3 秒）
         if (mapper == null || (databaseStatus != null && !databaseStatus.shouldAttempt())) {
             return;
@@ -165,10 +289,12 @@ public class SessionStore {
         try {
             long now = System.currentTimeMillis();
             mapper.upsertSession(sessionId, now, now);
-            mapper.insertMessage(sessionId, seq, "user", user);
-            mapper.insertMessage(sessionId, seq + 1, "assistant", assistant);
+            mapper.insertMessage(sessionId, Math.toIntExact(seq), "user", user);
+            mapper.insertMessage(sessionId, Math.toIntExact(seq + 1), "assistant", assistant);
         } catch (RuntimeException e) {
-            // 落库失败不阻断问答：展厅现场宁可丢一条历史，也不能让讲解中断
+            if (databaseStatus != null) {
+                databaseStatus.markUnavailable(e);
+            }
             log.warn("[session] 会话 {} 落库失败：{}", sessionId, e.getMessage());
         }
     }
@@ -202,7 +328,10 @@ public class SessionStore {
     private static final class Entry {
         private List<ChatMessage> messages;
         private long lastActive;
+        private long nextSequence;
         private final long createdAt;
+        /** 访问令牌；null = 从未下发过（见 tokenFor） */
+        private String token;
 
         private Entry(List<ChatMessage> messages, long lastActive, long createdAt) {
             this.messages = messages;

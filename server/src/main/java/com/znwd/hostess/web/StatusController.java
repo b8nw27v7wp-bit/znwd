@@ -20,8 +20,8 @@ import com.znwd.hostess.analytics.Analytics;
 import com.znwd.hostess.config.AppProperties;
 import com.znwd.hostess.config.KnowledgeService;
 import com.znwd.hostess.http.LruCache;
+import com.znwd.hostess.knowledge.HybridStats;
 import com.znwd.hostess.knowledge.Suggestions;
-import com.znwd.hostess.knowledge.VectorStore;
 import com.znwd.hostess.repository.DatabaseStatus;
 import com.znwd.hostess.session.SessionStore;
 
@@ -32,7 +32,6 @@ public class StatusController {
     public static final String VERSION = "1.3.0";
 
     private final KnowledgeService knowledge;
-    private final VectorStore vectorStore;
     private final SessionStore sessions;
     private final Analytics analytics;
     private final LruCache<LruCache.CachedAnswer> cache;
@@ -41,11 +40,10 @@ public class StatusController {
     private final DatabaseStatus databaseStatus;
     private final long startedAt = ManagementFactory.getRuntimeMXBean().getStartTime();
 
-    public StatusController(KnowledgeService knowledge, VectorStore vectorStore, SessionStore sessions,
+    public StatusController(KnowledgeService knowledge, SessionStore sessions,
                             Analytics analytics, LruCache<LruCache.CachedAnswer> cache, AppProperties props,
                             ObjectMapper mapper, DatabaseStatus databaseStatus) {
         this.knowledge = knowledge;
-        this.vectorStore = vectorStore;
         this.sessions = sessions;
         this.analytics = analytics;
         this.cache = cache;
@@ -57,22 +55,28 @@ public class StatusController {
     @GetMapping("/api/health")
     public Map<String, Object> health(HttpServletRequest request) {
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("ok", true);
+        HybridStats retrieval = knowledge.stats();
+        boolean knowledgeReady = retrieval.indexReady() && retrieval.keywordChunks() > 0;
+        out.put("ok", knowledgeReady);
+        out.put("ready", knowledgeReady);
         out.put("version", VERSION);
-        out.put("knowledgeChunks", knowledge.chunks().size());
+        out.put("knowledgeChunks", retrieval.keywordChunks());
         out.put("llmProvider", props.llmProvider());
-        out.put("embedding", vectorStore.stats().provider());
+        // 语音：provider=none 时前端自动退回浏览器内置播报，运营从这两项就能判断声音是谁发的
+        out.put("speech", props.audioProvider());
+        out.put("speechReady", props.audioEnabled());
+        out.put("embedding", retrieval.vector().provider());
         // 语义向量走的是外部服务（云端 embedding）：它不通时服务照常跑，但检索只走关键词。
         // 单看 embedding=openai_compat 看不出这件事，所以这里给一个一眼可见的布尔量。
-        out.put("embeddingReady", vectorStore.semantic());
-        out.put("retrieval", knowledge.stats());
+        out.put("embeddingReady", retrieval.semantic());
+        out.put("retrieval", retrieval);
         out.put("knowledgeDir", knowledge.knowledgeDir().toString());
         out.put("activeSessions", sessions.count());
         out.put("answerCacheSize", cache.size());
         out.put("dataDir", props.dataDirPath().toString());
         out.put("watchKnowledge", knowledge.watchEnabled());
         // 与 AdminGuard 同一判据：非本机回环访问时即使没设 NODE_ENV 也要口令
-        out.put("adminTokenRequired", com.znwd.hostess.web.AdminGuard.tokenRequiredNow(props, request.getLocalAddr()));
+        out.put("adminTokenRequired", com.znwd.hostess.web.AdminGuard.tokenRequiredNow(props, request.getRemoteAddr()));
         out.put("corsOrigins", props.corsOriginList());
         out.put("minRelevanceScore", props.minRelevanceScore());
         out.put("noHitLlm", props.noHitLlm());

@@ -13,6 +13,9 @@ import org.springframework.context.annotation.Primary;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import com.znwd.hostess.audio.DisabledSpeechModel;
+import com.znwd.hostess.audio.MimoSpeechModel;
+import com.znwd.hostess.audio.SpeechModel;
 import com.znwd.hostess.embedding.BagEmbeddingProvider;
 import com.znwd.hostess.embedding.EmbeddingProvider;
 import com.znwd.hostess.embedding.OpenAiCompatEmbeddingProvider;
@@ -22,6 +25,7 @@ import com.znwd.hostess.knowledge.VectorStore;
 import com.znwd.hostess.llm.ChatModel;
 import com.znwd.hostess.llm.MockChatModel;
 import com.znwd.hostess.llm.OpenAiCompatChatModel;
+import com.znwd.hostess.rag.PromptStore;
 
 /**
  * 核心组件装配：向量化 provider、向量索引、混合检索器、对话模型。
@@ -70,11 +74,22 @@ public class CoreConfig {
         return new HybridRetriever(vectorStore, props.minRelevanceScore(), props.minVectorScore());
     }
 
+    /**
+     * Prompt 文本仓库：classpath 默认 + 外部文件覆盖。问答与知识热更新共用同一个实例，
+     * 知识 reload 时顺带重读（见 KnowledgeService.reload）。
+     */
+    @Bean
+    public PromptStore promptStore(AppProperties props) {
+        return new PromptStore(props.prompt());
+    }
+
     /** 启动时把知识灌进检索器（gen=1），与原版 index.ts 的启动序列一致 */
     @Bean
     public KnowledgeService knowledgeService(
-            KnowledgeLoader loader, HybridRetriever retriever, VectorStore vectorStore, AppProperties props) {
-        return new KnowledgeService(loader, retriever, vectorStore, props.knowledgeDirPath(), props.watchKnowledge());
+            KnowledgeLoader loader, HybridRetriever retriever, VectorStore vectorStore, AppProperties props,
+            PromptStore prompts) {
+        return new KnowledgeService(loader, retriever, vectorStore, props.knowledgeDirPath(), props.watchKnowledge(),
+                prompts);
     }
 
     @Bean
@@ -93,6 +108,35 @@ public class CoreConfig {
         }
         log.info("[llm] provider=mock （离线演示模型）");
         return new MockChatModel();
+    }
+
+    /**
+     * 语音（TTS 播报 + ASR 识音）。
+     *
+     * <p>未启用时给一个「明确不可用」的占位实现而不是 null：路由层据此回 503，前端据此降级到
+     * 浏览器内置播报；留 null 会让每处调用都多一个判空分支，漏一处就是 500。
+     */
+    @Bean
+    public SpeechModel speechModel(AppProperties props, ObjectMapper mapper) {
+        String provider = props.audioProvider();
+        if (provider.equals("none")) {
+            log.info("[audio] 语音未启用（AUDIO_PROVIDER=none）→ /api/speech/* 返回 503，前端走浏览器内置播报");
+            return new DisabledSpeechModel("语音未启用（AUDIO_PROVIDER=none）");
+        }
+        if (!provider.equals("mimo")) {
+            throw new IllegalStateException("Unknown AUDIO_PROVIDER: " + provider + " (none | mimo)");
+        }
+        if (props.audioBaseUrl().isBlank()) {
+            log.warn("[audio] AUDIO_PROVIDER=mimo 但拿不到 base-url（AUDIO_BASE_URL 与 LLM_BASE_URL 都为空），"
+                    + "语音不可用，前端走浏览器内置播报");
+            return new DisabledSpeechModel("语音缺少 base-url");
+        }
+        AppProperties.Audio audio = props.audio();
+        log.info("[audio] provider=mimo tts={} asr={} voice={} lang={} baseUrl={}",
+                audio.ttsModel(), audio.asrModel(), props.audioVoice(), audio.asrLanguage(), props.audioBaseUrl());
+        return new MimoSpeechModel(props.audioBaseUrl(), props.audioApiKey(), audio.ttsModel(), props.audioVoice(),
+                audio.style(), audio.asrModel(), audio.asrLanguage(), audio.timeoutMs(),
+                audio.maxRetries(), audio.retryBaseMs(), mapper);
     }
 
     /** LLM_EXTRA_BODY：JSON 合并进请求体（MiMo 必须靠它关 thinking 模式） */

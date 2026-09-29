@@ -6,6 +6,7 @@ import javax.sql.DataSource;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.stereotype.Component;
@@ -31,6 +32,7 @@ public class DatabaseStatus {
     private volatile boolean available;
     private volatile String error;
     private volatile long lastCheckAt;
+    private final AtomicBoolean checkInFlight = new AtomicBoolean();
 
     public DatabaseStatus(HealthMapper healthMapper, DataSource dataSource) {
         this.healthMapper = healthMapper;
@@ -39,18 +41,25 @@ public class DatabaseStatus {
 
     /** 探活 → 可达则建表（幂等）。返回库是否可用。 */
     public boolean check() {
+        if (!checkInFlight.compareAndSet(false, true)) {
+            return available;
+        }
         lastCheckAt = System.currentTimeMillis();
         try {
-            healthMapper.ping();
-        } catch (RuntimeException e) {
-            available = false;
-            error = rootMessage(e);
-            return false;
+            try {
+                healthMapper.ping();
+            } catch (RuntimeException e) {
+                available = false;
+                error = rootMessage(e);
+                return false;
+            }
+            available = true;
+            error = null;
+            migrateSchema();
+            return available;
+        } finally {
+            checkInFlight.set(false);
         }
-        available = true;
-        error = null;
-        migrateSchema();
-        return true;
     }
 
     /** schema.sql 全是 CREATE TABLE IF NOT EXISTS，重复执行无副作用 */
@@ -65,6 +74,12 @@ public class DatabaseStatus {
             error = rootMessage(e);
             log.warn("[db] 建表失败（表可能已存在或权限不足）：{}", error);
         }
+    }
+
+    public void markUnavailable(Throwable cause) {
+        available = false;
+        lastCheckAt = System.currentTimeMillis();
+        error = cause == null ? "未知数据库错误" : rootMessage(cause);
     }
 
     public boolean available() {

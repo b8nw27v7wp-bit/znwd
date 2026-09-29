@@ -37,6 +37,8 @@ CANDIDATE_CLIENTS = [
 passed = 0
 failed = []
 skipped = []
+STRICT = os.environ.get("CI", "").strip().lower() in {"1", "true", "yes"} or \
+    os.environ.get("DB_CHECK_STRICT", "").strip().lower() in {"1", "true", "yes"}
 
 
 def check(name, ok, detail=""):
@@ -50,8 +52,12 @@ def check(name, ok, detail=""):
 
 
 def skip(name, why):
-    skipped.append(f"{name}（{why}）")
-    print(f"  SKIP  {name}  {why}")
+    if STRICT:
+        failed.append(name)
+        print(f"  FAIL  {name}  {why}")
+    else:
+        skipped.append(f"{name}（{why}）")
+        print(f"  SKIP  {name}  {why}")
 
 
 def env_value(key, default=""):
@@ -126,7 +132,7 @@ print(f"库目标：{env_value('DB_USER', 'znwd')}@{env_value('DB_HOST', '127.0.
 client = find_client()
 if not client:
     print("  找不到 mysql 客户端：设 MYSQL_BIN 指向它，或跳过本套（HTTP 层用例见 tools/security.py）")
-    sys.exit(0)
+    sys.exit(1 if STRICT else 0)
 
 db = Db(client,
         env_value("DB_HOST", "127.0.0.1"),
@@ -141,7 +147,7 @@ try:
         tables = sorted(r[0] for r in db.rows("SHOW TABLES"))
     except RuntimeError as e:
         print(f"  连不上库或不满足权限（{e}）——本套跳过")
-        sys.exit(0)
+        sys.exit(1 if STRICT else 0)
 
     expected = {"session", "session_message", "chat_log", "feedback", "uncovered_question"}
     check("D01 五张表齐全", expected <= set(tables), f"实有={tables}")

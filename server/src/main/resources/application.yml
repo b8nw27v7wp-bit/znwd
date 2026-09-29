@@ -27,7 +27,7 @@ spring:
       # 改由 DatabaseStatus.check() 在库可达时用 ResourceDatabasePopulator 执行 schema.sql（幂等）。
       mode: never
   datasource:
-    url: jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:3306}/${DB_NAME:znwd}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
+    url: jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:3306}/${DB_NAME:znwd}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&sslMode=${DB_SSL_MODE:DISABLED}&allowPublicKeyRetrieval=${DB_ALLOW_PUBLIC_KEY_RETRIEVAL:true}&rewriteBatchedStatements=true
     username: ${DB_USER:znwd}
     password: ${DB_PASSWORD:}
     hikari:
@@ -86,10 +86,13 @@ znwd:
   # 误拦改用补语料/补同义词解决；补完重跑 calibrate，看 vectorHatchSeparated 再决定要不要开口子。
   min-vector-score: ${MIN_VECTOR_SCORE:0.75}
   chat-rate-per-min: ${CHAT_RATE_PER_MIN:30}
+  # /api/feedback 的独立限流（次/分钟/IP）：公开写口，比问答严，防止刷统计
+  feedback-rate-per-min: ${FEEDBACK_RATE_PER_MIN:10}
   answer-cache-size: ${ANSWER_CACHE_SIZE:200}
   uncovered-log-size: ${UNCOVERED_LOG_SIZE:50}
   admin-token: ${ADMIN_TOKEN:}
-  require-admin-token: ${REQUIRE_ADMIN_TOKEN:false}
+  # 未配置 ADMIN_TOKEN 时默认 fail-closed；仅显式关闭此项的开发环境才允许回环免口令
+  require-admin-token: ${REQUIRE_ADMIN_TOKEN:true}
   # 生产/预发标记：production|prod|staging 且未配 ADMIN_TOKEN 时，管理接口一律 401（与旧实现一致）。
   # 必须显式绑到 NODE_ENV：record 字段名是 nodeEnv，relaxed binding 只会去找 znwd.node-env，
   # 而 .env / 系统环境里的 NODE_ENV 是另一条独立键，绑不上就静默失效（编译、启动、单测都不报错）。
@@ -101,6 +104,13 @@ znwd:
   # 是否信任 X-Forwarded-For 作为限流键：默认 false（那个头客户端可写，采信它=限流可被绕过）。
   # 只有确认前面挂着自家反代且反代会剥离同名头时才设为 true。
   trust-forwarded-for: ${TRUST_FORWARDED_FOR:false}
+  # Prompt 外置（rag/PromptStore）：留空 = 打包内置文本（classpath resources/prompts/*.txt）；
+  # 填外部文件路径（UTF-8）则覆盖对应文本，现场改措辞不必重编译发版，POST /api/knowledge/reload 重读。
+  # 文件缺失/空白/读失败会记日志并回退内置文本，不会中断问答。
+  prompt:
+    system-path: ${PROMPT_SYSTEM_PATH:}
+    no-hit-hint-path: ${PROMPT_NO_HIT_HINT_PATH:}
+    no-hit-reply-path: ${PROMPT_NO_HIT_REPLY_PATH:}
   llm:
     provider: ${LLM_PROVIDER:mock}
     base-url: ${LLM_BASE_URL:}
@@ -124,3 +134,31 @@ znwd:
     # 单请求向量化条数上限。云 embedding 服务各有上限（阿里云百炼 10、硅基流动 32），
     # 超一条整个请求 400（不是截断），所以必须可配。换 provider 时先看它的批次上限。
     batch-size: ${EMBED_BATCH_SIZE:32}
+  # 语音（TTS 播报 + ASR 识音）。默认关闭：不配就完全不碰外部语音接口，
+  # 前端自动退回浏览器内置播报。启用只需 AUDIO_PROVIDER=mimo——AUDIO_BASE_URL/AUDIO_API_KEY
+  # 留空即回落 LLM_BASE_URL/LLM_API_KEY（小米 MiMo 的语音与对话同网关同 key）。
+  audio:
+    provider: ${AUDIO_PROVIDER:none}
+    base-url: ${AUDIO_BASE_URL:}
+    api-key: ${AUDIO_API_KEY:}
+    # 播报音色：预置音色 冰糖/茉莉/苏打/白桦/Mia/Chloe/Milo/Dean，或 mimo_default
+    voice: ${AUDIO_VOICE:冰糖}
+    # 风格指令（走 user 消息，不会被念出来）
+    style: ${AUDIO_STYLE:用中文，语气亲切自然，语速稍慢，像展厅讲解员。}
+    tts-model: ${AUDIO_TTS_MODEL:mimo-v2.5-tts}
+    asr-model: ${AUDIO_ASR_MODEL:mimo-v2.5-asr}
+    # auto / zh / en：展厅以中文为主，默认 zh 更稳
+    asr-language: ${AUDIO_ASR_LANGUAGE:zh}
+    timeout-ms: ${AUDIO_TIMEOUT_MS:60000}
+    max-retries: ${AUDIO_MAX_RETRIES:2}
+    retry-base-ms: ${AUDIO_RETRY_BASE_MS:1000}
+    # 单次合成的文本上限（前端按句切片，每片通常 60 字上下）
+    max-chars: ${AUDIO_MAX_CHARS:300}
+    # 录音上传上限（解码后的 WAV 字节数）：16kHz/单声道/16bit 约 32KB/s，2MB 相当于 60 秒录音
+    max-upload-bytes: ${AUDIO_MAX_UPLOAD_BYTES:2097152}
+    # 合成结果缓存条数：展厅同一个问题反复被问，命中缓存即省一次外部调用
+    tts-cache-size: ${AUDIO_TTS_CACHE_SIZE:64}
+    # 单条缓存的字节上限：超过就不入缓存（长文合成能出几 MB，按条数封顶挡不住堆被吃满）
+    tts-cache-max-bytes: ${AUDIO_TTS_CACHE_MAX_BYTES:524288}
+    # 合成接口独立限流（次/分钟）：一次提问要合成多句，配额比 /api/chat 宽
+    synth-rate-per-min: ${AUDIO_SYNTH_RATE_PER_MIN:60}

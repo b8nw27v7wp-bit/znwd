@@ -124,6 +124,95 @@ beforeEach(() => {
   stubFetch();
 });
 
+type FakeAudioEl = {
+  src: string;
+  onended: (() => void) | null;
+  onerror: (() => void) | null;
+  play: () => Promise<void>;
+  pause: () => void;
+};
+
+/**
+ * health 报「服务端语音可用」+ 合成接口回 WAV 的环境。
+ *
+ * 与 stubFetch 的差别只在于 health 带 speechReady、并多一个 /api/speech/synthesize：
+ * 用来验接线——探到的可用性有没有真的改变播报路径，运营视图有没有如实写出来源。
+ */
+function stubServerSpeech(audios: FakeAudioEl[], calls: string[]): void {
+  class FakeURL extends (globalThis.URL as unknown as typeof URL) {
+    static createObjectURL(): string {
+      return 'blob:fake/1';
+    }
+    static revokeObjectURL(): void {}
+  }
+  vi.stubGlobal('URL', FakeURL);
+  vi.stubGlobal(
+    'Audio',
+    class {
+      src: string;
+      onended: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      constructor(src: string) {
+        this.src = src;
+        audios.push(this as unknown as FakeAudioEl);
+      }
+      play(): Promise<void> {
+        return Promise.resolve();
+      }
+      pause(): void {}
+    },
+  );
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      calls.push(url);
+      if (url.includes('/api/health')) {
+        return new Response(
+          JSON.stringify({ ok: true, knowledgeChunks: 134, llmProvider: 'openai_compat', speech: 'mimo', speechReady: true, embedding: 'bag', retrieval: 'keyword', storage: 'mysql', storageAvailable: true, activeSessions: 0, minRelevanceScore: 6.3, uptimeSec: 1 }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/zones')) return new Response(JSON.stringify({ zones: [] }), { status: 200 });
+      if (url.includes('/api/suggestions')) return new Response(JSON.stringify({ items: [] }), { status: 200 });
+      if (url.includes('/api/chat/stream')) {
+        return sse(
+          'event:meta\ndata:{"mode":"rag","provider":"mock","retrieval":"keyword","noHit":false,"cached":false,"sources":[]}\n\n',
+          `event:delta\ndata:{"text":${JSON.stringify(ANSWER)}}\n\n`,
+          `event:done\ndata:{"mode":"rag","provider":"mock","retrieval":"keyword","noHit":false,"cached":false,"sources":[],"answer":${JSON.stringify(ANSWER)},"latencyMs":42}\n\n`,
+        );
+      }
+      if (url.includes('/api/speech/synthesize')) {
+        return new Response(new Blob([new Uint8Array([82, 73, 70, 70])], { type: 'audio/wav' }), {
+          status: 200,
+          headers: { 'content-type': 'audio/wav' },
+        });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }),
+  );
+}
+
+describe('展厅页面：服务端语音接线', () => {
+  it('health 报语音可用时播报走服务端，运营视图如实写出来源', async () => {
+    const audios: FakeAudioEl[] = [];
+    const calls: string[] = [];
+    stubServerSpeech(audios, calls);
+
+    const wrapper = mountWithAdmin();
+    await flushPromises();
+    await askAndWait(wrapper);
+
+    await vi.waitFor(() => {
+      expect(calls.some((url) => url.includes('/api/speech/synthesize'))).toBe(true);
+    });
+    expect(audios.length, '服务端播报要用 Audio 播').toBeGreaterThan(0);
+    expect(wrapper.find('.local-set').text(), '运营视图要写明这一轮是谁发的声').toContain('服务端 TTS');
+
+    wrapper.unmount();
+  });
+});
+
 describe('展厅页面：界面入口与语音播报接线', () => {
   it('页面上不显示四个入口与底部小字，运营视图用 ?admin=1 打开', async () => {
     installSpeech();

@@ -17,7 +17,8 @@ import com.znwd.hostess.llm.LlmUsage;
  * <p>两个产品决策写在这里，别在别处重做：
  * <ol>
  *   <li>闸门未通过时**不调用大模型**，直接返回固定拒答（省一次调用、响应即时、措辞稳定）。
- *       需要模型措辞时把 NO_HIT_LLM 打开。</li>
+ *       需要模型措辞时把 NO_HIT_LLM 打开。拒答文案与 system prompt 的正文在
+ *       {@link PromptStore}（classpath 默认 + 外部文件覆盖），不在本类里写死。</li>
  *   <li>知识不足时 system 里换成「直说没有」的指令，而不是喂几段无关片段让它硬答。</li>
  * </ol>
  */
@@ -27,45 +28,23 @@ public class RagPipeline {
     public static final int MAX_HISTORY_MESSAGES = 12;
     /** 来源面板的入选门槛：关键词分低于「本次最高分 × 该比例」的块不展示（0 = 不过滤） */
     public static final double SOURCE_KEEP_RATIO = 0.5;
-
-    private static final String SYSTEM_BASE =
-            "你是本项目的 AI 虚拟讲解员，主题为两栖光伏清洁机器人、“光伏医生”智慧运维系统与项目的研发团队。用简体中文、礼貌、简洁地回答项目、产品、技术方案、作业流程与合作相关问题。"
-                    + "优先依据提供的企业知识；知识不足时明确说明并给出可操作建议。避免编造不确定的参数与承诺。回答时可分点列出资料中的关键信息。"
-                    // 展厅里被追问最多、也最容易被编出来的就是「在哪 / 怎么联系 / 多少钱」这三类，
-                    // 知识里没有就直说没有：编出来的地址和邮箱参观者会当真，比答不上来更糟。
-                    // 但反过来过度保守同样错——实测「清洁机器人有多重？」资料里有 23kg，
-                    // 却因为「型号参数一律说未提供」这句被答成「资料中未提供」。
-                    + "资料里给了的数字与参数（重量、尺寸、效率、成本、价格、时间、规模等）必须照实回答，不要因为属于「参数」就保守地答「资料中未提供」；"
-                    + "只有资料里确实查不到的（地址、电话、邮箱、联系人、未列明的报价或业绩）才回答「资料中未提供」，不要推测、不要举例、不要编造联系方式或承诺。"
-                    // 效益指标在申报书与项目概述里是两套口径，合成一个数就是编造
-                    + "同一指标若资料给了两套口径（如申报书口径与项目概述口径），分别说明各自来源与前提，不要合成一个数。"
-                    // 展厅大屏会把回答念出来、也会原样显示：Markdown 记号既上屏也进朗读，直接要纯文本
-                    + "直接输出纯文本：不要使用 Markdown 记号（如 **、#、* 等），需要分点时用「1. 2. 3.」或「·」开头，句子尽量短、便于朗读。";
-
-    /** 闸门未通过时给模型的明确指令：宁可说没有，也不要拿无关片段拼答案 */
-    private static final String NO_HIT_HINT =
-            "（本次未检索到相关资料。请直接说明资料中没有这部分内容，并建议提问者改问项目介绍、产品与作业流程、技术方案、落地成效或服务合作相关的问题；不要凭常识编造产品参数、价格或承诺。）";
-
-    /**
-     * 闸门未通过时的固定回复。拒答文案是固定的，让模型再生成一遍纯属花钱（实测一次约 780 tokens），
-     * 且展厅场景要的是稳定、即时，不是文采。
-     */
-    public static final String NO_HIT_REPLY =
-            "抱歉，这个问题不在我的讲解范围内，资料中也没有相关内容。\n\n"
-                    + "我是本项目的虚拟讲解员，可以为您解答：\n"
-                    + "1. 光伏清洁机器人：两栖作业形式、结构材料与清洁流程\n"
-                    + "2. 光伏医生智慧运维：无人机巡检、缺陷诊断、数据与平台功能\n"
-                    + "3. 项目与团队：项目背景、落地案例、商业模式与团队资质\n\n"
-                    + "欢迎换个角度提问。";
+    /** 来源里「完整分块原文」的字数上限：分块约 500 字，超长块截断，防止响应体被单条撑爆 */
+    public static final int CHUNK_TEXT_MAX = 800;
 
     private final HybridRetriever retriever;
     private final ChatModel model;
     private final boolean noHitLlm;
+    private final PromptStore prompts;
 
     public RagPipeline(HybridRetriever retriever, ChatModel model, boolean noHitLlm) {
+        this(retriever, model, noHitLlm, PromptStore.defaults());
+    }
+
+    public RagPipeline(HybridRetriever retriever, ChatModel model, boolean noHitLlm, PromptStore prompts) {
         this.retriever = retriever;
         this.model = model;
         this.noHitLlm = noHitLlm;
+        this.prompts = prompts == null ? PromptStore.defaults() : prompts;
     }
 
     /**
@@ -79,6 +58,9 @@ public class RagPipeline {
      * 关键词 3.89 的无关资料，而 top1 是 8.44），挂上去只会让人怀疑回答的依据。
      * 门槛用**关键词分**而不是融合分——RRF 融合分在相邻名次间几乎没有差别（0.0164 / 0.0161 / 0.0159），
      * 拿它做判据等于没有判据。
+     *
+     * <p>入选与去重规则之外的字段（chunkText/matchTerm/matchOffset）只是把命中的分块原文与
+     * 命中位置带给前端，不改变任何入选、过滤与排序行为。
      */
     public static List<RagSource> toSources(List<HybridHit> hits) {
         double bestKeyword = hits.stream().mapToDouble(HybridHit::keywordScore).max().orElse(0);
@@ -93,6 +75,8 @@ public class RagPipeline {
             if (!seen.add(key)) {
                 continue;
             }
+            String chunk = chunkText(h.text());
+            Match match = locateMatch(chunk, h.matched());
             out.add(new RagSource(
                     h.title(),
                     h.text().length() > 200 ? h.text().substring(0, 200) : h.text(),
@@ -101,9 +85,62 @@ public class RagPipeline {
                     h.zone(),
                     h.zoneTitle(),
                     h.vectorScore(),
-                    h.keywordScore()));
+                    h.keywordScore(),
+                    chunk,
+                    match.term(),
+                    match.offset()));
         }
         return out;
+    }
+
+    /** 分块原文：按 {@link #CHUNK_TEXT_MAX} 截断，防单条超长块把响应体撑爆 */
+    static String chunkText(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text.length() > CHUNK_TEXT_MAX ? text.substring(0, CHUNK_TEXT_MAX) : text;
+    }
+
+    /**
+     * 在分块原文里定位本次命中词：取能原样出现在正文里的 matched 词条中**位置最靠前**的那个
+     * （matched 里可能只有标题/展区命中、正文里没有的词，那种词定位不到，跳过）。
+     *
+     * <p>matched 的词条是小写化的分词（如拉丁词 pv），原文可能是 PV，所以按忽略大小写查找——
+     * 逐字符 regionMatches 不改变偏移语义，中文与原文偏移严格对齐。
+     */
+    static Match locateMatch(String text, List<String> matched) {
+        if (text == null || text.isEmpty() || matched == null || matched.isEmpty()) {
+            return new Match(null, -1);
+        }
+        String bestTerm = null;
+        int bestOffset = -1;
+        for (String term : matched) {
+            if (term == null || term.isEmpty()) {
+                continue;
+            }
+            int offset = indexOfIgnoreCase(text, term);
+            if (offset < 0) {
+                continue;
+            }
+            if (bestOffset < 0 || offset < bestOffset) {
+                bestOffset = offset;
+                bestTerm = term;
+            }
+        }
+        return new Match(bestTerm, bestOffset);
+    }
+
+    private static int indexOfIgnoreCase(String text, String term) {
+        int max = text.length() - term.length();
+        for (int i = 0; i <= max; i++) {
+            if (text.regionMatches(true, i, term, 0, term.length())) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    record Match(String term, int offset) {
     }
 
     /** 检索 + 指代改写（回答仍按原问题，只有检索用改写后的查询） */
@@ -121,7 +158,7 @@ public class RagPipeline {
         List<HybridHit> hits = retrieved.hits();
 
         if (hits.isEmpty() && !noHitLlm) {
-            return new RagAnswer(NO_HIT_REPLY, List.of(), RagAnswer.MODE_LLM_ONLY, RagAnswer.PROVIDER_GATE,
+            return new RagAnswer(prompts.noHitReply(), List.of(), RagAnswer.MODE_LLM_ONLY, RagAnswer.PROVIDER_GATE,
                     retrieved.diagnostics().mode().value(), true, retrieved.diagnostics(), retrieved.rewrite(), null);
         }
 
@@ -153,8 +190,9 @@ public class RagPipeline {
         String provider = gated ? RagAnswer.PROVIDER_GATE : model.name();
 
         if (gated) {
-            onDelta.accept(NO_HIT_REPLY);
-            return new StreamOutcome(NO_HIT_REPLY, toSources(hits), RagAnswer.MODE_LLM_ONLY, provider,
+            String reply = prompts.noHitReply();
+            onDelta.accept(reply);
+            return new StreamOutcome(reply, toSources(hits), RagAnswer.MODE_LLM_ONLY, provider,
                     retrieved.diagnostics().mode().value(), true, retrieved.diagnostics(), retrieved.rewrite(), null);
         }
 
@@ -177,12 +215,24 @@ public class RagPipeline {
     }
 
     /** 命中片段装进 system；闸门未通过时换成「直说没有」指令 */
+    private static List<HybridHit> filterForPrompt(List<HybridHit> hits) {
+        if (hits == null || hits.isEmpty()) {
+            return List.of();
+        }
+        double best = hits.stream().mapToDouble(HybridHit::keywordScore).max().orElse(0);
+        if (best <= 0) {
+            return List.copyOf(hits);
+        }
+        return hits.stream().filter(hit -> hit.keywordScore() >= best * SOURCE_KEEP_RATIO).toList();
+    }
+
     public List<ChatMessage> buildPrompt(List<HybridHit> hits, String message, List<ChatMessage> history) {
         List<ChatMessage> messages = new ArrayList<>();
         if (!hits.isEmpty()) {
             StringBuilder block = new StringBuilder();
-            for (int i = 0; i < hits.size(); i++) {
-                HybridHit h = hits.get(i);
+            List<HybridHit> promptHits = filterForPrompt(hits);
+            for (int i = 0; i < promptHits.size(); i++) {
+                HybridHit h = promptHits.get(i);
                 if (block.length() > 0) {
                     block.append("\n\n");
                 }
@@ -190,9 +240,9 @@ public class RagPipeline {
                         .append(h.zoneTitle() == null || h.zoneTitle().isBlank() ? (h.zone() == null ? "" : h.zone()) : h.zoneTitle())
                         .append("｜").append(h.sourcePath()).append("】\n").append(h.text());
             }
-            messages.add(ChatMessage.system(SYSTEM_BASE + "\n\n【企业知识】\n" + block));
+            messages.add(ChatMessage.system(prompts.systemBase() + "\n\n【企业知识】\n" + block));
         } else {
-            messages.add(ChatMessage.system(SYSTEM_BASE + "\n\n【企业知识】\n" + NO_HIT_HINT));
+            messages.add(ChatMessage.system(prompts.systemBase() + "\n\n【企业知识】\n" + prompts.noHitHint()));
         }
         for (ChatMessage turn : history) {
             if (turn.role() == com.znwd.hostess.llm.ChatRole.USER
@@ -202,6 +252,11 @@ public class RagPipeline {
         }
         messages.add(ChatMessage.user(message));
         return messages;
+    }
+
+    /** 当前生效的拒答话术（ChatRunService 流式闸门用同一份文本） */
+    public String noHitReply() {
+        return prompts.noHitReply();
     }
 
     static double round(double value, int digits) {

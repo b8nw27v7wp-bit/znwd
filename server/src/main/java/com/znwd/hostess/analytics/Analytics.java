@@ -53,6 +53,7 @@ public class Analytics {
     private final List<ChatLogEntry> logs = new ArrayList<>();
     private final List<FeedbackEntry> feedback = new ArrayList<>();
     private final List<UncoveredEntry> uncovered = new ArrayList<>();
+    private volatile boolean lastRestoreFailed;
 
     private long startedAt = System.currentTimeMillis();
     private long chatTotal;
@@ -65,6 +66,12 @@ public class Analytics {
     /** 库不可用时跳过写库（不白等 connection-timeout）；测试里传 null 表示"照常尝试" */
     private boolean dbWritable() {
         return databaseStatus == null || databaseStatus.shouldAttempt();
+    }
+
+    private void databaseFailed(RuntimeException error) {
+        if (databaseStatus != null) {
+            databaseStatus.markUnavailable(error);
+        }
     }
 
     /** 按列宽截断：超长写库会 DataTruncation，而这条失败路径只会留一条 WARN（数据悄悄丢） */
@@ -126,6 +133,7 @@ public class Analytics {
             try {
                 chatLogMapper.insert(item);
             } catch (RuntimeException e) {
+                databaseFailed(e);
                 log.warn("[analytics] 问答日志落库失败：{}", e.getMessage());
             }
         }
@@ -135,6 +143,7 @@ public class Analytics {
             try {
                 uncoveredMapper.insert(new UncoveredEntry(item.at(), item.sessionId(), uncoveredQuestion));
             } catch (RuntimeException e) {
+                databaseFailed(e);
                 log.warn("[analytics] 未覆盖问题落库失败：{}", e.getMessage());
             }
         }
@@ -151,6 +160,7 @@ public class Analytics {
             try {
                 feedbackMapper.insert(item);
             } catch (RuntimeException e) {
+                databaseFailed(e);
                 log.warn("[analytics] 反馈落库失败：{}", e.getMessage());
             }
         }
@@ -252,6 +262,20 @@ public class Analytics {
      * @return 恢复的反馈条数
      */
     public synchronized int restore() {
+        lastRestoreFailed = false;
+        logs.clear();
+        feedback.clear();
+        uncovered.clear();
+        chatTotal = 0;
+        ragHits = 0;
+        errors = 0;
+        noHits = 0;
+        rewritten = 0;
+        tokens.prompt = 0;
+        tokens.completion = 0;
+        tokens.reasoning = 0;
+        tokens.total = 0;
+        tokens.calls = 0;
         if (chatLogMapper != null) {
             try {
                 ChatLogMapper.Counters c = chatLogMapper.counters();
@@ -272,6 +296,8 @@ public class Analytics {
                             null, "", row.latencyMs(), row.noHit(), null, false, null, null, row.error()));
                 }
             } catch (RuntimeException e) {
+                lastRestoreFailed = true;
+                databaseFailed(e);
                 log.warn("[analytics] 从 MySQL 恢复统计失败（按零启动）：{}", e.getMessage());
             }
         }
@@ -279,6 +305,8 @@ public class Analytics {
             try {
                 feedback.addAll(feedbackMapper.recent(MAX_FEEDBACK));
             } catch (RuntimeException e) {
+                lastRestoreFailed = true;
+                databaseFailed(e);
                 log.warn("[analytics] 恢复反馈失败：{}", e.getMessage());
             }
         }
@@ -286,10 +314,16 @@ public class Analytics {
             try {
                 uncovered.addAll(uncoveredMapper.latest(maxUncovered));
             } catch (RuntimeException e) {
+                lastRestoreFailed = true;
+                databaseFailed(e);
                 log.warn("[analytics] 恢复未覆盖清单失败：{}", e.getMessage());
             }
         }
         return feedback.size();
+    }
+
+    public boolean lastRestoreFailed() {
+        return lastRestoreFailed;
     }
 
     /** 定时裁剪：反馈/未覆盖清单只保留最近部分，展厅跑半年也不会把表撑爆 */
@@ -306,6 +340,7 @@ public class Analytics {
                 uncoveredMapper.trim(keepUncovered);
             }
         } catch (RuntimeException e) {
+            databaseFailed(e);
             log.warn("[analytics] 裁剪历史数据失败：{}", e.getMessage());
         }
     }
@@ -321,7 +356,10 @@ public class Analytics {
     }
 
     private static String esc(String s) {
-        String v = s == null ? "" : s;
+        String v = s == null ? "" : s.stripLeading();
+        if (!v.isEmpty() && "=+-@".indexOf(v.charAt(0)) >= 0) {
+            v = "'" + v;
+        }
         return "\"" + v.replace("\"", "\"\"") + "\"";
     }
 

@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 
 import com.znwd.hostess.config.AppProperties;
+import com.znwd.hostess.http.RateLimiter;
 
 /**
  * 管理接口鉴权。
@@ -19,19 +20,25 @@ import com.znwd.hostess.config.AppProperties;
  */
 public final class AdminGuard {
 
+    private static final RateLimiter FAILURE_LIMITER = new RateLimiter(20, 60_000L);
+
     private AdminGuard() {
     }
 
-    public static void require(String authorizationHeader, AppProperties props, String localAddr) {
+    public static void require(String authorizationHeader, AppProperties props, String remoteAddr) {
         String token = props.adminTokenOrNull();
         if (token == null) {
-            if (tokenRequiredNow(props, localAddr)) {
+            if (tokenRequiredNow(props, remoteAddr)) {
                 throw ApiException.unauthorized();
             }
             return;
         }
         String raw = authorizationHeader == null ? "" : authorizationHeader.replaceAll("(?i)^Bearer\\s+", "");
         if (!constantTimeEquals(token, raw.strip())) {
+            Long wait = FAILURE_LIMITER.allow(remoteAddr == null || remoteAddr.isBlank() ? "unknown" : remoteAddr);
+            if (wait != null) {
+                throw ApiException.rateLimited(wait);
+            }
             throw ApiException.unauthorized();
         }
     }
@@ -39,9 +46,13 @@ public final class AdminGuard {
     /**
      * 本次请求下管理口令是否必需（未配置口令时的判据）。健康接口上报同一个值，
      * 免得「接口 401 而 /api/health 说不需要口令」这种自相矛盾。
+     *
+     * <p>这里必须使用 remoteAddr（连接对端），不能使用 localAddr（服务接收连接的本地接口）。
+     * 同机反向代理时两者可能都是回环地址，localAddr 无法证明请求来自本机访客。
+     * 生产/预发默认强制配置口令；开发环境只有显式关闭 requireAdminToken 才允许回环免口令。
      */
-    public static boolean tokenRequiredNow(AppProperties props, String localAddr) {
-        return props.adminTokenRequired() || !isLoopback(localAddr);
+    public static boolean tokenRequiredNow(AppProperties props, String remoteAddr) {
+        return props.adminTokenRequired() || !isLoopback(remoteAddr);
     }
 
     /** 回环地址判定：拿不到地址时按非本机处理（宁可多要一次口令） */

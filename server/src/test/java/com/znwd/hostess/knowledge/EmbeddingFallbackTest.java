@@ -56,28 +56,28 @@ class EmbeddingFallbackTest {
     @Test
     void 查询期失败时如实上报并在下次成功后自愈() throws Exception {
         QueryFailingEmbedder embedder = new QueryFailingEmbedder();
-        VectorStore store = newStore(embedder, "query-fail");
-        HybridRetriever retriever = new HybridRetriever(store, 3.8, 0.35);
+        VectorStore store = newStore(embedder, "query-fail", 32, 0L);
+        HybridRetriever retriever = new HybridRetriever(store, 999, 0.35);
         retriever.replace(fixtureChunks());
 
         assertEquals(RetrievalMode.HYBRID, retriever.stats().mode(), "索引建好了就该上报 hybrid");
         assertEquals(0, store.queryFailures());
 
         embedder.failQueries = true;
-        RetrievalOutcome outcome = retriever.retrieveWithDiagnostics("光伏清洁无人机", 4);
+        RetrievalOutcome outcome = retriever.retrieveWithDiagnostics("光伏清洁无人机", 4, false);
 
         assertFalse(outcome.hits().isEmpty(), "查询期向量化失败不得让整次检索失败");
         assertEquals(1, store.queryFailures(), "失败次数必须被计数（否则语义路静悄悄失效没人知道）");
         assertTrue(store.lastQueryError() != null && store.lastQueryError().contains("查询期"),
                 "最近一次错误=" + store.lastQueryError());
-        assertFalse(retriever.stats().semantic(),
-                "索引在、但每次查询都在失败时，语义路实际没在做事，health 不能还报可用");
+        assertFalse(store.queryHealthy(),
+                "查询失败后直到探针成功前都应保持不健康");
         assertTrue(retriever.stats().degradedReason().contains("查询期"),
                 "降级原因=" + retriever.stats().degradedReason());
 
         // 外部服务恢复后不该一直挂着降级标记：下一次成功就自愈
         embedder.failQueries = false;
-        retriever.retrieveWithDiagnostics("光伏清洁无人机", 4);
+        retriever.retrieveWithDiagnostics("光伏清洁无人机", 4, false);
         assertTrue(retriever.stats().semantic(), "查询成功一次就该自愈，不然降级标记会永远挂着");
         assertNull(retriever.stats().degradedReason());
     }
@@ -102,9 +102,14 @@ class EmbeddingFallbackTest {
     }
 
     private static VectorStore newStore(EmbeddingProvider embedder, String tag, int batchSize) throws Exception {
+        return newStore(embedder, tag, batchSize, 60_000L);
+    }
+
+    private static VectorStore newStore(EmbeddingProvider embedder, String tag, int batchSize,
+                                        long queryRetryCooldownMs) throws Exception {
         // 每个用例一个临时索引文件：残留文件会让 tryLoad 命中上一轮数据，测试就成了看运气
         Path indexFile = Files.createTempDirectory("znwd-embed-" + tag).resolve("vectors." + embedder.name() + ".json");
-        return new VectorStore(embedder, indexFile, MAPPER, batchSize);
+        return new VectorStore(embedder, indexFile, MAPPER, batchSize, queryRetryCooldownMs);
     }
 
     private static List<KnowledgeChunk> fixtureChunks() {

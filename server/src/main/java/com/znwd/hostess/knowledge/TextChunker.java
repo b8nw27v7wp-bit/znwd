@@ -26,6 +26,8 @@ public final class TextChunker {
     }
 
     public static List<String> chunkText(String text, int maxChars, int overlap) {
+        int safeMax = Math.max(1, maxChars);
+        int safeOverlap = Math.max(0, Math.min(overlap, safeMax - 1));
         List<Section> sections = new ArrayList<>();
         Section current = new Section("", new ArrayList<>());
         List<String> buf = new ArrayList<>();
@@ -52,7 +54,7 @@ public final class TextChunker {
 
         List<String> chunks = new ArrayList<>();
         for (Section section : sections) {
-            List<String> packed = packParagraphs(section.paragraphs(), maxChars, overlap);
+            List<String> packed = packParagraphs(section.paragraphs(), safeMax, safeOverlap);
             for (int i = 0; i < packed.size(); i++) {
                 String body = packed.get(i);
                 String withHeading;
@@ -66,7 +68,11 @@ public final class TextChunker {
                 }
                 String trimmed = withHeading.strip();
                 if (!trimmed.isEmpty()) {
-                    chunks.add(trimmed);
+                    if (trimmed.length() > safeMax) {
+                        chunks.addAll(splitLong(trimmed, safeMax, safeOverlap));
+                    } else {
+                        chunks.add(trimmed);
+                    }
                 }
             }
         }
@@ -96,7 +102,7 @@ public final class TextChunker {
                 buf = p;
             }
             // 单段超长：先落盘已累积内容，再滑窗切分该段
-            if (buf.length() > maxChars * 1.5) {
+            if (buf.length() > maxChars) {
                 chunks.addAll(splitLong(buf, maxChars, overlap));
                 buf = "";
             }

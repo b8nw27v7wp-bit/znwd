@@ -142,6 +142,22 @@ class DegradedWriteTest {
     }
 
     @Test
+    void 写路径异常会立即把数据库状态置为不可用() {
+        DatabaseStatus status = new DatabaseStatus((HealthMapper) Proxy.newProxyInstance(
+                HealthMapper.class.getClassLoader(), new Class<?>[] {HealthMapper.class},
+                (proxy, method, args) -> {
+                    if (method.getName().equals("toString")) return "healthStub";
+                    return null;
+                }), null);
+
+        status.markUnavailable(new IllegalStateException("connection reset"));
+
+        assertFalse(status.available());
+        assertFalse(status.shouldAttempt());
+        assertTrue(status.error().contains("connection reset"));
+    }
+
+    @Test
     void 没有状态对象时按可写处理_兼容测试与旧装配() {
         AtomicInteger writes = new AtomicInteger();
         Analytics analytics = new Analytics(counting(ChatLogMapper.class, writes), null, null, null, 50);

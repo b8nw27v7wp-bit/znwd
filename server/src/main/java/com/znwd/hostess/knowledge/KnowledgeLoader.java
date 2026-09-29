@@ -41,6 +41,9 @@ public class KnowledgeLoader {
 
     /** 展区定义；文件缺失或损坏时退化为空展区（不阻塞启动） */
     public ZonesMeta loadZonesMeta(Path knowledgeDir) {
+        if (knowledgeDir == null || !Files.isDirectory(knowledgeDir)) {
+            throw new KnowledgeLoadException("知识库目录不存在或不是目录：" + knowledgeDir);
+        }
         Path file = knowledgeDir.resolve("_meta").resolve("zones.json");
         try {
             if (!Files.isRegularFile(file)) {
@@ -53,10 +56,18 @@ public class KnowledgeLoader {
     }
 
     public List<KnowledgeChunk> load(Path knowledgeDir) {
+        if (knowledgeDir == null || !Files.isDirectory(knowledgeDir)) {
+            throw new KnowledgeLoadException("知识库目录不存在或不是目录：" + knowledgeDir);
+        }
         ZonesMeta meta = loadZonesMeta(knowledgeDir);
         List<KnowledgeChunk> chunks = new ArrayList<>();
         for (Path file : walk(knowledgeDir)) {
-            String raw = readFile(file);
+            String raw;
+            try {
+                raw = readFile(file);
+            } catch (UncheckedIOException e) {
+                throw new KnowledgeLoadException("读取知识文件失败：" + file, e);
+            }
             Frontmatter fm = parseFrontmatter(raw);
             String rel = toRelativePath(knowledgeDir, file);
             ZonesMeta.ZoneDef zoneHit = zoneForPath(rel, meta.zones());
@@ -98,18 +109,37 @@ public class KnowledgeLoader {
                         List.copyOf(tags)));
             }
         }
-        return chunks;
+        if (chunks.isEmpty()) {
+            throw new KnowledgeLoadException("知识库为空：" + knowledgeDir);
+        }
+        return List.copyOf(chunks);
     }
 
-    /** 语料指纹：id + 标题 + 正文长度 + 正文哈希，排序后整体哈希（与旧实现同为向量索引复用判据） */
     public static String fingerprint(List<KnowledgeChunk> chunks) {
         List<String> parts = new ArrayList<>(chunks.size());
         for (KnowledgeChunk c : chunks) {
-            parts.add(c.id() + "\u0001" + c.title() + "\u0001" + c.text().length()
-                    + "\u0001" + com.znwd.hostess.util.Hashing.hashStr(c.text()));
+            parts.add(c.id() + "\u0001" + embeddingText(c));
         }
         parts.sort(Comparator.naturalOrder());
         return com.znwd.hostess.util.Hashing.hashStr(String.join("\n", parts));
+    }
+
+    public static String embeddingText(KnowledgeChunk chunk) {
+        String title = chunk.title() == null ? "" : chunk.title();
+        String zoneTitle = chunk.zoneTitle() == null ? "" : chunk.zoneTitle();
+        StringBuilder tags = new StringBuilder();
+        if (chunk.tags() != null) {
+            boolean first = true;
+            for (String tag : chunk.tags()) {
+                if (!first) {
+                    tags.append(' ');
+                }
+                tags.append(tag == null ? "" : tag);
+                first = false;
+            }
+        }
+        String text = chunk.text() == null ? "" : chunk.text();
+        return title + "\n" + zoneTitle + "\n" + tags + "\n" + text;
     }
 
     private static String firstH1(String body) {
@@ -157,17 +187,29 @@ public class KnowledgeLoader {
     }
 
     private static List<Path> walk(Path dir) {
-        List<Path> out = new ArrayList<>();
         try (Stream<Path> stream = Files.walk(dir)) {
-            stream.filter(Files::isRegularFile)
+            return stream.filter(Files::isRegularFile)
                     .filter(p -> !isUnderMeta(dir, p))
                     .filter(p -> TEXT_EXT.contains(extension(p.getFileName().toString())))
                     .sorted(Comparator.comparing(p -> toRelativePath(dir, p)))
-                    .forEach(out::add);
-        } catch (IOException e) {
-            return out;
+                    .toList();
+        } catch (IOException | UncheckedIOException e) {
+            throw new KnowledgeLoadException("遍历知识库失败：" + dir, e);
+        } catch (KnowledgeLoadException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            throw new KnowledgeLoadException("遍历知识库失败：" + dir, e);
         }
-        return out;
+    }
+
+    public static final class KnowledgeLoadException extends IllegalStateException {
+        public KnowledgeLoadException(String message) {
+            super(message);
+        }
+
+        public KnowledgeLoadException(String message, Throwable cause) {
+            super(message, cause);
+        }
     }
 
     private static boolean isUnderMeta(Path root, Path file) {

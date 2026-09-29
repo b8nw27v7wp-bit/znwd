@@ -21,6 +21,7 @@ import com.znwd.hostess.http.LruCache;
 import com.znwd.hostess.http.RateLimiter;
 import com.znwd.hostess.llm.ChatModel;
 import com.znwd.hostess.rag.ChatRunService;
+import com.znwd.hostess.rag.PromptStore;
 import com.znwd.hostess.repository.ChatLogMapper;
 import com.znwd.hostess.repository.DatabaseStatus;
 import com.znwd.hostess.repository.FeedbackMapper;
@@ -61,6 +62,27 @@ public class AppConfig {
         return new RateLimiter(props.chatRatePerMin(), 60_000L);
     }
 
+    /**
+     * 反馈接口的独立限流桶：/api/feedback 无鉴权、写的是运营统计，刷起来比问答更隐蔽，
+     * 所以配额单独一档（默认 10/分钟）且比 /api/chat 严；问答配额不动，互不占用。
+     */
+    @Bean
+    public RateLimiter feedbackRateLimiter(AppProperties props) {
+        return new RateLimiter(props.feedbackRatePerMin(), 60_000L);
+    }
+
+    /** 语音合成的独立配额：一次问答要合成多句，与 /api/chat 的配额各算各的 */
+    @Bean
+    public RateLimiter speechSynthRateLimiter(AppProperties props) {
+        return new RateLimiter(props.audioSynthRatePerMin(), 60_000L);
+    }
+
+    /** 合成结果缓存：展厅高频重复的讲解句命中即省一次外部调用（键含音色，换音色不会串音） */
+    @Bean
+    public LruCache<byte[]> speechSynthCache(AppProperties props) {
+        return new LruCache<>(props.audioTtsCacheSize());
+    }
+
     @Bean
     public JsonlStore eventLog(AppProperties props, ObjectMapper mapper) {
         return new JsonlStore(props.dataDirPath(), "events", props.logMaxBytes(),
@@ -70,8 +92,8 @@ public class AppConfig {
     @Bean
     public ChatRunService chatRunService(KnowledgeService knowledge, ChatModel model, SessionStore sessions,
                                          Analytics analytics, LruCache<LruCache.CachedAnswer> cache,
-                                         JsonlStore logStore, AppProperties props) {
-        ChatRunService service = new ChatRunService(knowledge, model, sessions, analytics, cache, logStore,
+                                         JsonlStore logStore, PromptStore prompts, AppProperties props) {
+        ChatRunService service = new ChatRunService(knowledge, model, sessions, analytics, cache, logStore, prompts,
                 props.noHitLlm());
         return service;
     }
@@ -96,6 +118,7 @@ public class AppConfig {
         private final LruCache<LruCache.CachedAnswer> answerCache;
         private final DatabaseStatus databaseStatus;
         private final RateLimiter rateLimiter;
+        private volatile boolean restoredFromDatabase;
 
         public StartupRunner(KnowledgeService knowledge, SessionStore sessions, Analytics analytics,
                              AppProperties props, JsonlStore logStore, LruCache<LruCache.CachedAnswer> answerCache,
@@ -116,9 +139,7 @@ public class AppConfig {
             knowledge.loadInitial();
             // 2) 数据库探活：连不上就明确降级（继续服务但不落库），别让运营以为"一切正常"
             if (databaseStatus.check()) {
-                int restoredSessions = sessions.restore();
-                int restoredFeedback = analytics.restore();
-                log.info("[startup] MySQL 可用：恢复会话 {} 个、反馈 {} 条", restoredSessions, restoredFeedback);
+                restoreDatabaseOnce();
             } else {
                 log.warn("[startup] MySQL 不可用（{}）：本次运行不落库（会话/统计/反馈重启会丢），"
                         + "修复后重启即可恢复。检查 DB_USER/DB_PASSWORD 与 server/db/init.sql。",
@@ -148,14 +169,32 @@ public class AppConfig {
                 return;
             }
             if (databaseStatus.check()) {
+                if (!restoredFromDatabase) {
+                    restoreDatabaseOnce();
+                }
                 log.info("[db] MySQL 恢复可用：已续上落库（库不可用期间的数据仍只在内存里）");
             }
+        }
+
+        private synchronized void restoreDatabaseOnce() {
+            if (restoredFromDatabase) {
+                return;
+            }
+            int restoredSessions = sessions.restore();
+            int restoredFeedback = analytics.restore();
+            if (sessions.lastRestoreFailed() || analytics.lastRestoreFailed()) {
+                log.warn("[db] MySQL 恢复数据未完成，等待下一轮重探");
+                return;
+            }
+            restoredFromDatabase = true;
+            log.info("[db] MySQL 可用：恢复会话 {} 个、反馈 {} 条", restoredSessions, restoredFeedback);
         }
 
         /** 定时清理：反馈与未覆盖清单的历史尾巴，并回收限流器的过期窗口 */
         @Scheduled(fixedDelay = 10 * 60 * 1000L, initialDelay = 10 * 60 * 1000L)
         public void housekeeping() {
             analytics.trimStorage(Analytics.MAX_FEEDBACK, Math.max(50, props.uncoveredLogSize()));
+            sessions.cleanupExpired();
             rateLimiter.evictExpired();
         }
 

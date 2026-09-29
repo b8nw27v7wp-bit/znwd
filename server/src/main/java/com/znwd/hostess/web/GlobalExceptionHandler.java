@@ -6,8 +6,10 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.HttpMediaTypeNotAcceptableException;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -33,6 +35,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<Map<String, Object>> handleApi(ApiException e) {
         return ResponseEntity.status(e.status())
+                .contentType(MediaType.APPLICATION_JSON)
                 .body(com.znwd.hostess.http.ApiError.payload(e.code(), e.getMessage(), RequestId.current(), e.extra()));
     }
 
@@ -41,6 +44,7 @@ public class GlobalExceptionHandler {
         // 请求体不是合法 JSON。别复用 chat 的文案（"message is required"），
         // 否则 /api/feedback 收到坏 body 时会把排查方向指错。
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .contentType(MediaType.APPLICATION_JSON)
                 .body(com.znwd.hostess.http.ApiError.payload(
                         com.znwd.hostess.http.ApiError.VALIDATION_ERROR, "请求体不是合法 JSON 对象", RequestId.current()));
     }
@@ -49,6 +53,7 @@ public class GlobalExceptionHandler {
             MethodArgumentTypeMismatchException.class})
     public ResponseEntity<Map<String, Object>> handleBadRequest(Exception e) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .contentType(MediaType.APPLICATION_JSON)
                 .body(com.znwd.hostess.http.ApiError.payload(
                         com.znwd.hostess.http.ApiError.VALIDATION_ERROR, "请求参数不合法", RequestId.current()));
     }
@@ -63,6 +68,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
     public ResponseEntity<Map<String, Object>> handleMethodNotAllowed(HttpRequestMethodNotSupportedException e) {
         return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
+                .contentType(MediaType.APPLICATION_JSON)
                 .body(com.znwd.hostess.http.ApiError.payload(
                         com.znwd.hostess.http.ApiError.METHOD_NOT_ALLOWED, "请求方法不支持", RequestId.current(),
                         java.util.Map.of("allowed", e.getSupportedMethods() == null
@@ -73,13 +79,32 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
     public ResponseEntity<Map<String, Object>> handleMediaType(HttpMediaTypeNotSupportedException e) {
         return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
+                .contentType(MediaType.APPLICATION_JSON)
                 .body(com.znwd.hostess.http.ApiError.payload(
                         com.znwd.hostess.http.ApiError.UNSUPPORTED_MEDIA_TYPE, "请求内容类型不支持", RequestId.current()));
+    }
+
+    /**
+     * 响应侧协商失败（例如接口只能给 {@code audio/wav} 而这次要回 JSON 错误信封）→ 406。
+     *
+     * <p>不显式接住它会掉进兜底 500 **且响应体为空**：兜底 handler 想写 JSON，又因为同一个协商失败
+     * 再抛一次，客户端只拿到一个没有正文的 500。406 至少让调用方看出「换个 Accept 再来」。
+     * 语音接口已经不靠 mapping 上的 {@code produces} 协商（见 {@code SpeechController}），
+     * 这条是给其它接口与将来留的兜底。
+     */
+    @ExceptionHandler(HttpMediaTypeNotAcceptableException.class)
+    public ResponseEntity<Map<String, Object>> handleNotAcceptable(HttpMediaTypeNotAcceptableException e) {
+        return ResponseEntity.status(HttpStatus.NOT_ACCEPTABLE)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(com.znwd.hostess.http.ApiError.payload(
+                        com.znwd.hostess.http.ApiError.NOT_ACCEPTABLE,
+                        "无法按 Accept 指定的类型返回（错误响应一律是 application/json）", RequestId.current()));
     }
 
     @ExceptionHandler({NoHandlerFoundException.class, NoResourceFoundException.class})
     public ResponseEntity<Map<String, Object>> handleNotFound(Exception e) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .contentType(MediaType.APPLICATION_JSON)
                 .body(com.znwd.hostess.http.ApiError.payload(
                         com.znwd.hostess.http.ApiError.NOT_FOUND, "接口不存在", RequestId.current()));
     }
@@ -103,6 +128,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, Object>> handleInternal(Exception e) {
         log.error("[api] 未处理异常 requestId={}", RequestId.current(), e);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .contentType(MediaType.APPLICATION_JSON)
                 .body(com.znwd.hostess.http.ApiError.payload(
                         com.znwd.hostess.http.ApiError.INTERNAL_ERROR, "服务内部错误", RequestId.current()));
     }

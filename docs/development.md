@@ -26,22 +26,22 @@ cd server && ../tools/mvn -B test        # 等价于 mvn -B test
 
 | 目的 | 命令（工作目录） | 预期输出 |
 | --- | --- | --- |
-| 起后端 | `cd server && ../tools/mvn spring-boot:run` | `Tomcat started on port 8787` / `Started HostessApplication` |
-| 单测 | `cd server && ../tools/mvn -B test` | `Tests run: 83, Failures: 0, Errors: 0` |
-| 检索评测 | `cd server && ../tools/mvn -B test-compile exec:java@eval -Dexec.args="--no-write"` | `top1Rate = 1.0`、`top3Rate = 1.0`、`gateBlockedCount = 2`（两条已知弱问句）、`minKeywordScore = 6.3` |
+| 起后端 | `cd server && ../tools/mvn spring-boot:run` | `Tomcat started on port 8787` / `Started HostessApplication`；随后轮询 `/api/health`，等 `ok=true`、`ready=true` 再跑接口检查 |
+| 单测 | `cd server && ../tools/mvn -B test` | `Tests run: 123, Failures: 0, Errors: 0` |
+| 检索评测 | `cd server && ../tools/mvn -B test-compile exec:java@eval -Dexec.args="--no-write --baseline=docs/eval/baseline-java.json"` | 逐例对比已提交基线：top1/top3、闸门指标、漏答数与每条 `top1Path` 都不得退化；当前基线为 145 条计分用例、top1/top3 均 `1.0`、闸门漏答 `0` |
 | 阈值标定 | `cd server && ../tools/mvn -B test-compile exec:java@calibrate` | 在域最弱 8 条、域外降序、区间与建议、**语义兜底标定**（域外最高余弦 vs 待救用例）；**区间判据与闸门口径不一致，先读 `docs/eval.md` 的说明**；`--grid` 再加 36 组参数网格；`--gate-check` 判两条线（关键词域外越线退出码 3、语义余弦越线退出码 4，CI 用的就是这条）；报告落 `docs/eval/calibration-*.json` |
 | 资料入库 | `cd server && ../tools/mvn -B -q test-compile exec:java@ingest -Dexec.args="--src ./inbox --zone <展区id>"`（`--dry-run` 先看目标路径） | `完成：N/M 入库`；扫描件 PDF 与 `.doc` 明确报错；用法见 `docs/knowledge.md` §8 |
-| 接口冒烟 | `python tools/smoke.py`（需服务在跑，`BASE=http://…` 可改目标） | `通过 56 项，失败 0 项` |
+| 接口冒烟 | `python tools/smoke.py`（需服务在跑，`BASE=http://…` 可改目标；管理块要 `ADMIN_TOKEN`） | `通过 60 项，失败 0 项`（语音未启用；语音启用 63 项，分档口径见 §7） |
 | 问答内容验收 | `python tools/acceptance.py`（需服务 + 真模型在跑；`TAGS=fix,fact` 可只跑一组） | `通过 40 项，失败 0 项`（内容层：该答的答对、该拒的拒、资料里没有的不许编；CI 跑不了，要真模型） |
 | 边界与安全 | `python tools/security.py`（同上；非回环越权与误配置组见 `docs/security-testing.md`） | `通过 49 项，失败 0 项`（只跑主实例）／`57 项`（另起两个实例时） |
 | 库层核查 | `python tools/db-check.py`（需本机 mysql 客户端：`MYSQL_BIN` 或候选路径 `D:/mysql-cli/mysql-8.4.0-winx64/bin/mysql.exe`；缺客户端整组 SKIP） | `通过 8 项，失败 0 项` |
-| 本地化不变量 | `python tools/offline-check.py`（`--runtime` 追加运行期核查） | `通过 5 项，失败 0 项` |
+| 本地化不变量 | `python tools/offline-check.py`（`--runtime` 追加运行期核查） | O04 后端出网白名单只含 LLM、embedding、MiMo 语音三个适配器；其它网络调用即失败 |
 | 前端 dev | `cd web && npm install && npm run dev` | `VITE v6 ready`，`:5173`，`/api` 代理到 8787 |
 | 前端构建 | `cd web && npm run build` | `vue-tsc -b` 类型检查 + `vite build`，产物 `web/dist` |
-| 前端单测 | `cd web && npm test` | `31 passed`（含 jsdom 下的组件接线测试） |
+| 前端单测 | `cd web && npm test` | `134 passed`（11 个测试文件，含 jsdom 下的组件接线测试） |
 | 打包后端 | `cd server && ../tools/mvn -B -DskipTests package` | `server/target/hostess-server.jar` |
 
-评测/标定是**改语料、改同义词、改打分参数后的必跑项**，口径见 `docs/eval.md`。
+评测/标定是**改语料、改同义词、改打分参数后的必跑项**；检索评测还要通过 `docs/eval/baseline-java.json` 的逐例门禁，口径见 `docs/eval.md`。
 
 ## 3. 配置读取
 
@@ -51,7 +51,9 @@ cd server && ../tools/mvn -B test        # 等价于 mvn -B test
 查找顺序：`server/.env` → `.env`（在仓库根启动也能命中）。
 `.env` 里**空值视为未配置**（`LLM_BASE_URL=` 不会把默认值覆盖成空串）。
 
-键名以 `server/.env.example` 与 `application.yml` 为准，分六组：LLM、Embedding、MySQL（`DB_*`）、HTTP（`HOST`/`PORT`/`ADMIN_TOKEN`/`CORS_ORIGINS`）、检索（`MIN_RELEVANCE_SCORE`/`ANSWER_CACHE_SIZE`/`UNCOVERED_LOG_SIZE`）、日志（`LOG_MAX_BYTES`/`LOG_MESSAGE_MODE`）。
+键名以 `server/.env.example` 与 `application.yml` 为准，分七组：LLM、Embedding、语音（`AUDIO_*`）、MySQL（`DB_*`）、HTTP（`HOST`/`PORT`/`ADMIN_TOKEN`/`REQUIRE_ADMIN_TOKEN`/`CORS_ORIGINS`）、检索（`MIN_RELEVANCE_SCORE`/`MIN_VECTOR_SCORE`/`ANSWER_CACHE_SIZE`/`UNCOVERED_LOG_SIZE`）、日志（`LOG_MAX_BYTES`/`LOG_MESSAGE_MODE`）。
+
+管理鉴权默认 fail-closed：`REQUIRE_ADMIN_TOKEN=true`，未配 `ADMIN_TOKEN` 时管理请求一律 401；仅可信的回环开发环境可显式设为 `false`，且守卫按连接对端 `remoteAddr` 判回环。`CORS_ORIGINS` 仍是 Origin 白名单，预检允许 `GET,POST,PUT,DELETE,OPTIONS`，其中 `PUT` 服务于在线替换同义词表。
 
 MySQL 首次使用：把 `server/db/init.sql` 里两处 `CHANGE_ME_znwd` 改成自定口令执行一次，再把同一口令写进 `.env` 的 `DB_PASSWORD`；建表由应用在库可达时幂等执行 `schema.sql`。
 
@@ -62,6 +64,7 @@ MySQL 首次使用：把 `server/db/init.sql` 里两处 `CHANGE_ME_znwd` 改成�
 | 加/改 HTTP 接口 | `server/src/main/java/com/znwd/hostess/web/` 下对应 Controller | 错误一律抛 `ApiException`（统一信封）；同步更新 `resources/openapi.json` 与 `tools/smoke.py` |
 | 检索打分参数 | `knowledge/ScoringOptions` 默认值 | **改完必须跑 `exec:java@calibrate --grid`**，别凭手感调 |
 | 闸门阈值 | `.env` / `application.yml` / `HybridRetriever` 默认值 / CI 环境变量 | 四处同步；先标定再改 |
+| 语义兜底阈值 | `MIN_VECTOR_SCORE` / `application.yml` / `HybridRetriever.DEFAULT_MIN_VECTOR_SCORE` / CI 环境变量 | 当前四处均为 `0.75`；改动后跑 `calibrate --gate-check` |
 | 同义词 | `PUT /api/admin/synonyms`（在线，可落盘）或 `knowledge/_meta/synonyms.tsv` | 改完重跑标定与评测 |
 | 虚拟形象 | 只动 `web/src/components/AvatarPortrait.vue` 内部 | 外部只吃 `state` 属性，换 3D/Live2D 不改调用方 |
 | 加一张表 | `resources/schema.sql` + `domain/` 记录 + `repository/` mapper | 幂等 `CREATE TABLE IF NOT EXISTS`，由 `DatabaseStatus` 执行 |
@@ -90,17 +93,27 @@ MySQL 首次使用：把 `server/db/init.sql` 里两处 `CHANGE_ME_znwd` 改成�
 ## 7. 测试与 CI
 
 ```bash
-cd server && ../tools/mvn -B test                     # 77 项：检索/HTTP/统计会话/同义词/诊断文案/配置接线/管理口令/降级写路径与裁剪/资料入库/请求体上限/来源面板规则/落库截断/限流键取值
-cd web && npm test                                     # 55 项：SSE 解析、问答状态机、朗读切片、回答排版、展区下拉、界面入口与播报接线、运营视图、对话主流程、来源面板、讲解图（jsdom）
-python tools/smoke.py                                  # 56 项契约（需服务在跑）
+cd server && ../tools/mvn -B test                     # 157 项：检索/HTTP/统计会话/同义词/诊断文案/配置接线/管理口令/降级写路径与裁剪/资料入库/请求体上限/来源面板规则/落库截断/限流键取值/语音/问答接口契约
+cd web && npm test                                     # 134 项（11 个文件）：SSE 解析、问答状态机、朗读与听写、回答排版、展区下拉、界面入口与播报接线、运营视图、对话主流程、来源面板、讲解图、检索诊断与知识面板（jsdom）
+python tools/smoke.py                                  # 60 项契约（需服务在跑；语音启用 63 项，分档口径见下）
 ```
+
+冒烟项数按 `tools/smoke.py` 实际执行的 `check()` 分档（**带 `ADMIN_TOKEN` 才能跑满**，不带则管理块整组 SKIP）：
+
+| 分档 | 项数 | 条件 |
+| --- | --- | --- |
+| 默认 | **60** | 语音未启用（`AUDIO_PROVIDER=none` / `speechReady=false`）+ 带 `ADMIN_TOKEN` |
+| 语音启用 | **63** | `speechReady=true`，语音段换成「真出 WAV」的 6 条 |
+| 不带口令 | 37 | 管理块整组 SKIP；其中 `/api/knowledge/list` 已按管理面接口要求口令，会 401 |
+
+`CHANGELOG.md`、`docs/archive/` 等历史快照里的 56 / 61 / 64 是改动前的口径，保留原样。
 
 CI（`.github/workflows/ci.yml`，push/PR 都跑）：
 
-- **backend**：起一个 MySQL 8.4 service 容器 → 用 root 执行 `server/db/init.sql`（`sed` 注入口令、`@'localhost'` 换成 `@'%'`，因为容器里来源是 docker 网关 IP）→ `mvn test` → `exec:java@eval --no-write` → `package` → 起 jar 跑 `python3 tools/smoke.py`（先断言 `storageAvailable:true`，库没连上就直接失败）→ 再起两个实例跑 `python3 tools/security.py`（`SECOND_BASE`/`MISCONFIG_BASE`）→ `python3 tools/db-check.py`。`LLM_PROVIDER=mock`、`MIN_RELEVANCE_SCORE=6.3` 显式给出，失败时打印三个实例的日志。
-- **frontend**：`npm ci` → `npm run build` → `npm test`
+- **backend**：起一个 MySQL 8.4 service 容器 → 用 root 执行 `server/db/init.sql`（`sed` 注入口令、`@'localhost'` 换成 `@'%'`，因为容器里来源是 docker 网关 IP）→ `mvn test` → `exec:java@eval --no-write --baseline=docs/eval/baseline-java.json` → `calibrate --gate-check --no-write` → `package` → 起 jar 跑 `python3 tools/smoke.py`（先等 `/api/health` 的 `ready:true`、`storageAvailable:true` 且知识块非零）→ 再起两个实例跑 `python3 tools/security.py`（`SECOND_BASE`/`MISCONFIG_BASE`）→ `python3 tools/db-check.py`。`LLM_PROVIDER=mock`、`MIN_RELEVANCE_SCORE=6.3`、`MIN_VECTOR_SCORE=0.75` 显式给出，失败时打印三个实例的日志。
+- **frontend**：`npm ci` → `npm run build` → `npm test` → `python3 tools/offline-check.py`；O04 守后端出网白名单，只允许 LLM、embedding、MiMo 语音三个适配器。
 
-失败时的判断顺序：先在本地复现对应命令；契约类失败（smoke）先看 `docs/api.md` 的字段表，检索类失败（eval）先跑 `calibrate` 看阈值区间是否还成立，边界/安全类失败（security）先看 `docs/security-testing.md` 里该编号的期望与「已接受的风险」两节，别急着改代码。
+失败时的判断顺序：先在本地复现对应命令；契约类失败（smoke）先看 `docs/api.md` 的字段表，检索类失败（eval/基线门禁）先看 `REGRESSION`/`DIFF`，再跑 `calibrate` 查阈值与降级原因，边界/安全类失败（security）先看 `docs/security-testing.md` 里该编号的期望与「已接受的风险」两节，别急着改代码。
 
 ## 8. 提交约定
 

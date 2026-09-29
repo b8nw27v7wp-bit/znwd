@@ -1,6 +1,7 @@
 package com.znwd.hostess.config;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
@@ -20,12 +21,8 @@ import com.znwd.hostess.knowledge.KnowledgeLoader;
 import com.znwd.hostess.knowledge.Synonyms;
 import com.znwd.hostess.knowledge.VectorStore;
 import com.znwd.hostess.knowledge.ZonesMeta;
+import com.znwd.hostess.rag.PromptStore;
 
-/**
- * 知识库门面：启动加载、手动 reload、可选的目录监听热更新。
- *
- * <p>reload 后必须让答案缓存失效（调用方负责），否则会拿旧索引时代生成的答案继续回答。
- */
 public class KnowledgeService {
 
     private static final Logger log = LoggerFactory.getLogger(KnowledgeService.class);
@@ -35,60 +32,85 @@ public class KnowledgeService {
     private final VectorStore vectorStore;
     private final Path knowledgeDir;
     private final boolean watchEnabled;
-
+    /** Prompt 外置的重载钩子：null = 不挂（纯检索测试场景） */
+    private final PromptStore prompts;
     private volatile Runnable onReloaded = () -> {
     };
+    private volatile String lastFingerprint;
 
     public KnowledgeService(
             KnowledgeLoader loader, HybridRetriever retriever, VectorStore vectorStore, Path knowledgeDir, boolean watchEnabled) {
+        this(loader, retriever, vectorStore, knowledgeDir, watchEnabled, null);
+    }
+
+    public KnowledgeService(
+            KnowledgeLoader loader, HybridRetriever retriever, VectorStore vectorStore, Path knowledgeDir,
+            boolean watchEnabled, PromptStore prompts) {
         this.loader = loader;
         this.retriever = retriever;
         this.vectorStore = vectorStore;
         this.knowledgeDir = knowledgeDir;
         this.watchEnabled = watchEnabled;
+        this.prompts = prompts;
     }
 
-    /** 启动时加载（构造后由 Spring 调用，失败直接启动失败——宁可起不来也别拿空知识库对外服务） */
-    public void loadInitial() {
+    public synchronized void loadInitial() {
+        String before = fingerprintOrNull();
         int chunks = reloadInternal();
+        lastFingerprint = stableFingerprint(before, "初始化");
         log.info("[knowledge] 已加载 {} 个片段 dir={} embed={} mode={}",
                 chunks, knowledgeDir, vectorStore.stats().provider(), retriever.stats().mode());
     }
 
     public void setOnReloaded(Runnable callback) {
-        this.onReloaded = callback;
+        this.onReloaded = callback == null ? () -> {
+        } : callback;
     }
 
-    public int reload() {
+    public synchronized int reload() {
+        // 顺带重读 prompt 外置文件：与知识热更新同一条操作路径（POST /api/knowledge/reload）。
+        // 放在最前且自己兜底——prompt 读失败只回退默认文本，绝不能把知识重载一起带崩。
+        reloadPrompts();
+        String before = fingerprintOrNull();
         int chunks = reloadInternal();
+        lastFingerprint = stableFingerprint(before, "reload");
         onReloaded.run();
         return chunks;
     }
 
-    /** 只让答案缓存失效（同义词这类"查询时生效"的改动不需要重建索引，但缓存必须清） */
-    public void invalidateAnswerCache() {
+    private void reloadPrompts() {
+        if (prompts == null) {
+            return;
+        }
+        try {
+            prompts.reload();
+        } catch (RuntimeException e) {
+            log.error("[knowledge] prompt 重载失败，保留当前 prompt 文本", e);
+        }
+    }
+
+    public synchronized void invalidateAnswerCache() {
+        retriever.refreshSynonyms();
         onReloaded.run();
     }
 
-    /**
-     * 同义词覆盖表：{@code <knowledgeDir>/_meta/synonyms.tsv}。
-     * 存在就加载；文件被删掉且当前表正是它提供的，就退回内置表——否则"删了文件还生效"最难排查。
-     */
-    public int loadSynonyms() {
+    public synchronized int loadSynonyms() {
         Path file = synonymsFile();
         try {
-            int loaded = Synonyms.loadFromFile(file);
-            if (loaded > 0) {
-                log.info("[knowledge] 同义词覆盖表已加载：{} 条 <- {}", loaded, file);
-                return loaded;
+            Synonyms.Version prepared = Synonyms.prepareFromFile(file);
+            if (prepared != null) {
+                Synonyms.activate(prepared);
+                retriever.refreshSynonyms();
+                log.info("[knowledge] 同义词覆盖表已加载：{} 条 <- {}", prepared.table().size(), file);
+                return prepared.table().size();
             }
             if (file.toString().equals(Synonyms.source())) {
                 Synonyms.resetDefaults();
+                retriever.refreshSynonyms();
                 log.info("[knowledge] 同义词覆盖表已移除，退回内置表（{} 条）", Synonyms.size());
             }
             return 0;
         } catch (IOException | RuntimeException e) {
-            // 覆盖表坏了不能把服务带下去：保留当前生效的表，报出来让人来修
             log.error("[knowledge] 同义词覆盖表加载失败，保留当前表：{}", file, e);
             return 0;
         }
@@ -99,9 +121,37 @@ public class KnowledgeService {
     }
 
     private int reloadInternal() {
+        if (knowledgeDir == null || !Files.isDirectory(knowledgeDir)) {
+            throw new IllegalStateException("知识库目录不存在或不是目录：" + knowledgeDir);
+        }
         List<KnowledgeChunk> chunks = loader.load(knowledgeDir);
-        retriever.replace(chunks);
-        loadSynonyms();
+        if (chunks == null || chunks.isEmpty()) {
+            throw new IllegalStateException("知识库为空，拒绝发布快照");
+        }
+        Synonyms.Version current = Synonyms.snapshot();
+        Synonyms.Version next = current;
+        Path file = synonymsFile();
+        try {
+            Synonyms.Version prepared = Synonyms.prepareFromFile(file);
+            if (prepared != null) {
+                next = prepared;
+            } else if (file.toString().equals(Synonyms.source())) {
+                next = Synonyms.defaults();
+            }
+        } catch (IOException | RuntimeException e) {
+            log.error("[knowledge] 同义词覆盖表加载失败，保留当前表：{}", file, e);
+        }
+        retriever.replace(chunks, next);
+        Synonyms.Version active = Synonyms.snapshot();
+        if (next != current) {
+            active = Synonyms.activateIfUnchanged(current.generation(), next);
+        }
+        if (!active.table().equals(next.table()) || !active.source().equals(next.source())) {
+            retriever.refreshSynonyms(active);
+        }
+        if (!retriever.list().isEmpty() && !retriever.stats().indexReady()) {
+            throw new IllegalStateException("知识快照未就绪");
+        }
         return chunks.size();
     }
 
@@ -129,69 +179,85 @@ public class KnowledgeService {
         return retriever.stats();
     }
 
-    /** 按文件聚合的分块统计（/api/knowledge/list） */
     public Map<String, FileStat> byFile() {
         Map<String, FileStat> byFile = new LinkedHashMap<>();
-        for (KnowledgeChunk c : chunks()) {
-            FileStat prev = byFile.get(c.sourcePath());
-            if (prev == null) {
-                byFile.put(c.sourcePath(), new FileStat(c.title(), c.zone(), c.zoneTitle(), 1));
+        for (KnowledgeChunk chunk : chunks()) {
+            FileStat previous = byFile.get(chunk.sourcePath());
+            if (previous == null) {
+                byFile.put(chunk.sourcePath(), new FileStat(chunk.title(), chunk.zone(), chunk.zoneTitle(), 1));
             } else {
-                byFile.put(c.sourcePath(), new FileStat(prev.title(), prev.zone(), prev.zoneTitle(), prev.chunks() + 1));
+                byFile.put(chunk.sourcePath(), new FileStat(previous.title(), previous.zone(), previous.zoneTitle(),
+                        previous.chunks() + 1));
             }
         }
         return byFile;
     }
 
-    /**
-     * 目录监听（KNOWLEDGE_WATCH=true，默认关闭）。
-     * Windows 上文件监听不稳定，展厅现场请用手动 reload；这里用低频轮询（每 10s 比对指纹）代替 fs watch。
-     */
     @Scheduled(fixedDelay = 10_000L, initialDelay = 10_000L)
     public void watchTick() {
         if (!watchEnabled) {
             return;
         }
-        String current = fingerprint();
-        if (current == null || current.equals(lastFingerprint)) {
+        String current;
+        try {
+            current = fingerprint();
+        } catch (RuntimeException e) {
+            log.error("[knowledge] 知识目录指纹遍历失败，跳过本次热更新", e);
             return;
         }
-        lastFingerprint = current;
+        if (current.equals(lastFingerprint)) {
+            return;
+        }
         try {
             int chunks = reload();
             log.info("[knowledge] 热更新重载完成：{} 个片段", chunks);
         } catch (RuntimeException e) {
-            log.error("[knowledge] 热更新失败", e);
+            log.error("[knowledge] 热更新失败，保留上一代快照", e);
         }
     }
 
-    private volatile String lastFingerprint;
-
-    private String fingerprint() {
-        try (Stream<Path> stream = Files.walk(knowledgeDir)) {
-            return stream.filter(Files::isRegularFile)
-                    .filter(p -> !p.toString().contains("_meta"))
-                    .sorted(Comparator.comparing(Path::toString))
-                    .map(p -> p + ":" + size(p) + ":" + modified(p))
-                    .reduce("", (a, b) -> a + "|" + b);
-        } catch (IOException e) {
+    private String fingerprintOrNull() {
+        try {
+            return fingerprint();
+        } catch (RuntimeException e) {
+            log.warn("[knowledge] 知识目录指纹获取失败：{}", e.getMessage());
             return null;
         }
     }
 
-    private static long size(Path p) {
-        try {
-            return Files.size(p);
-        } catch (IOException e) {
-            return 0;
+    private String stableFingerprint(String before, String phase) {
+        String after = fingerprintOrNull();
+        if (before != null && before.equals(after)) {
+            return after;
+        }
+        log.warn("[knowledge] {}期间知识目录发生变化，将保留旧代并等待下一轮重载", phase);
+        return null;
+    }
+
+    private String fingerprint() {
+        try (Stream<Path> stream = Files.walk(knowledgeDir)) {
+            return stream.filter(Files::isRegularFile)
+                    .sorted(Comparator.comparing(Path::toString))
+                    .map(path -> path + ":" + size(path) + ":" + modified(path))
+                    .reduce("", (left, right) -> left + "|" + right);
+        } catch (IOException | UncheckedIOException e) {
+            throw new IllegalStateException("遍历知识目录失败：" + knowledgeDir, e);
         }
     }
 
-    private static long modified(Path p) {
+    private static long size(Path path) {
         try {
-            return Files.getLastModifiedTime(p).toMillis();
+            return Files.size(path);
         } catch (IOException e) {
-            return 0;
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    private static long modified(Path path) {
+        try {
+            return Files.getLastModifiedTime(path).toMillis();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
         }
     }
 
