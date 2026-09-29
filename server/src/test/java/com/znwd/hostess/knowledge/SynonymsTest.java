@@ -35,13 +35,13 @@ class SynonymsTest {
     @DisplayName("内置表：默认来源是 builtin，且扩展词与旧实现一致")
     void defaults() {
         assertEquals("builtin", Synonyms.source());
-        assertEquals(30, Synonyms.size());   // 2026-09-23 补「客户」「融资」两条后为 25
+        assertEquals(21, Synonyms.size());   // 2026-09-29 清掉已删展区（风场/展品/参观）遗留词后为 21
 
-        Synonyms.Expansion expansion = Synonyms.expandQueryParts("叶片检测要停机吗？");
-        // 「叶片」「检测」两组都会展开，原词不重复计入扩展词
-        assertTrue(expansion.extras().contains("叶轮"), "应展开出「叶轮」");
-        assertTrue(expansion.extras().contains("巡检"), "应展开出「巡检」");
-        assertFalse(expansion.extras().contains("叶片"), "原查询里已有的词不该当扩展词");
+        Synonyms.Expansion expansion = Synonyms.expandQueryParts("光伏清洁");
+        // 「光伏」「清洁」两组都会展开，原词不重复计入扩展词
+        assertTrue(expansion.extras().contains("太阳能"), "应展开出「太阳能」");
+        assertTrue(expansion.extras().contains("清洗"), "应展开出「清洗」");
+        assertFalse(expansion.extras().contains("光伏"), "原查询里已有的词不该当扩展词");
     }
 
     @Test
@@ -57,7 +57,7 @@ class SynonymsTest {
 
         Synonyms.resetDefaults();
         assertEquals("builtin", Synonyms.source());
-        assertEquals(30, Synonyms.size());
+        assertEquals(21, Synonyms.size());
     }
 
     @Test
@@ -65,7 +65,7 @@ class SynonymsTest {
     void emptyTableRejected() {
         assertThrows(IllegalArgumentException.class, () -> Synonyms.replace(Map.of(), "test"));
         assertThrows(IllegalArgumentException.class, () -> Synonyms.replace(null, "test"));
-        assertEquals(30, Synonyms.size(), "被拒后表必须保持原样");
+        assertEquals(21, Synonyms.size(), "被拒后表必须保持原样");
     }
 
     @Test
@@ -89,14 +89,14 @@ class SynonymsTest {
     @DisplayName("导出成 TSV 再读回来，表完全一致（管理接口落盘用的就是这条路）")
     void tsvRoundTrip(@TempDir Path dir) throws IOException {
         Map<String, List<String>> table = new LinkedHashMap<>();
-        table.put("塔筒", List.of("塔筒", "塔架", "风机塔"));
-        table.put("叶片", List.of("叶片", "风叶"));
+        table.put("巡检", List.of("巡检", "检查", "复检"));
+        table.put("清洗", List.of("清洗", "清洁"));
         Synonyms.replace(table, "test");
 
         Path file = dir.resolve("out.tsv");
         Files.writeString(file, Synonyms.toTsv(), StandardCharsets.UTF_8);
         Synonyms.resetDefaults();
-        assertEquals(30, Synonyms.size());
+        assertEquals(21, Synonyms.size());
 
         assertEquals(2, Synonyms.loadFromFile(file));
         assertEquals(table, Synonyms.asMap());

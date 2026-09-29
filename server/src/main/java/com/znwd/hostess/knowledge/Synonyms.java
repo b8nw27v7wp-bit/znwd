@@ -21,14 +21,11 @@ public final class Synonyms {
                     Map.entry("光伏", List.of("光伏", "太阳能", "光伏板", "太阳电池")),
                     Map.entry("清洁", List.of("清洁", "清洗", "清扫", "除尘", "积灰", "鸟粪")),
                     Map.entry("组件", List.of("组件", "光伏板", "太阳能板", "电池板")),
-                    Map.entry("风场", List.of("风场", "风电", "风机", "风力", "风电场")),
-                    Map.entry("叶片", List.of("叶片", "叶轮", "风叶", "桨叶")),
                     Map.entry("检测", List.of("检测", "巡检", "检查", "缺陷", "裂纹", "雷击")),
                     Map.entry("巡检", List.of("巡检", "检测", "复检", "检查")),
                     Map.entry("无人机", List.of("无人机", "飞行器", "UAV", "drone")),
                     Map.entry("培训", List.of("培训", "教学", "指导", "操作培训")),
                     Map.entry("合作", List.of("合作", "商务", "伙伴", "运维伙伴")),
-                    Map.entry("预约", List.of("预约", "预定", "预订", "参观")),
                     Map.entry("报告", List.of("报告", "检测报告", "巡检报告", "作业报告")),
                     Map.entry("售后", List.of("售后", "技术支持", "备件", "服务")),
                     Map.entry("客户", List.of("客户", "客户数量", "客户情况", "服务客户", "客户案例")),
@@ -38,16 +35,10 @@ public final class Synonyms {
                     Map.entry("好处", List.of("好处", "效益", "价值", "优势")),
                     Map.entry("意义", List.of("意义", "价值", "作用", "目的")),
                     Map.entry("环保", List.of("环保", "绿色", "低碳", "减排", "环境")),
-                    Map.entry("安全", List.of("安全", "须知", "参观须知", "注意事项")),
-                    Map.entry("闪光灯", List.of("闪光灯", "拍照", "摄影", "拍摄")),
                     Map.entry("裂纹", List.of("裂纹", "缺陷", "损伤", "涂层")),
                     Map.entry("清洗", List.of("清洗", "清洁", "除尘")),
-                    Map.entry("塔筒", List.of("塔筒", "塔架", "风机塔")),
                     Map.entry("作业", List.of("作业", "流程", "模板", "报告")),
-                    Map.entry("模板", List.of("模板", "报告", "作业")),
-                    Map.entry("触摸", List.of("触摸", "展品", "飞行器", "安全")),
-                    Map.entry("摸", List.of("摸", "触摸", "展品", "安全")),
-                    Map.entry("展品", List.of("展品", "触摸", "安全")))
+                    Map.entry("模板", List.of("模板", "报告", "作业")))
             .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue,
                     (a, b) -> a, LinkedHashMap::new));
 

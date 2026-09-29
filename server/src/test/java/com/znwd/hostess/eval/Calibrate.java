@@ -91,32 +91,35 @@ public final class Calibrate {
             System.out.println("\n== 域外问题：关键词分降序（越高越可能被闸门放过去乱答）==");
             ood.forEach(s -> System.out.println("  " + s.line()));
 
-            double minIn = inDomain.isEmpty() ? 0 : inDomain.get(0).keywordBest();
-            double maxOod = ood.isEmpty() ? 0 : ood.get(0).keywordBest();
+            double minInOriginal = inDomain.isEmpty() ? 0 : inDomain.get(0).keywordBest();
+            double maxOodOriginal = ood.isEmpty() ? 0 : ood.get(0).keywordBest();
             int minCovIn = inDomain.isEmpty() ? 0 : inDomain.stream().mapToInt(Sample::matchedTokens).min().orElse(0);
             int maxCovOod = ood.isEmpty() ? 0 : ood.stream().mapToInt(Sample::matchedTokens).max().orElse(0);
-            double minInRanking = inDomain.isEmpty() ? 0
+            // 区间与建议必须和闸门同一口径：HybridRetriever.keywordPass 比的是排序分
+            // （keywordBestScore，含同义词扩展），不是只算原话的 keywordGateScore。用原话口径会
+            // 报出「区间不成立」的假象（补同义词把短问句抬过阈值后尤其明显），而线上其实零误拦。
+            double minIn = inDomain.isEmpty() ? 0
                     : inDomain.stream().mapToDouble(Sample::rankingBest).min().orElse(0);
-            double maxOodRanking = ood.isEmpty() ? 0
+            double maxOod = ood.isEmpty() ? 0
                     : ood.stream().mapToDouble(Sample::rankingBest).max().orElse(0);
 
-            System.out.printf("%n闸门分（只算用户原话词条）：在域最低=%.3f  域外最高=%.3f  比阈值%s%n",
+            System.out.printf("%n闸门分（排序分，与 HybridRetriever 判闸门同一口径）：在域最低=%.3f  域外最高=%.3f  比阈值%s%n",
                     minIn, maxOod, marginNote(minIn, maxOod, effective));
-            System.out.printf("参考·排序分（含同义词扩展，不参与闸门）：在域最低=%.3f 域外最高=%.3f%n",
-                    minInRanking, maxOodRanking);
+            System.out.printf("参考·原话分（只算用户原话词条，同义词扩展仅作诊断）：在域最低=%.3f 域外最高=%.3f%n",
+                    minInOriginal, maxOodOriginal);
 
             Map<String, Object> report = new LinkedHashMap<>();
             report.put("chunks", knowledge.chunks().size());
             report.put("mode", String.valueOf(retriever.stats().mode()));
             report.put("semantic", retriever.stats().semantic());
             report.put("effectiveThreshold", effective);
-            report.put("gateMetric", "keywordGateScore（只由用户原话词条贡献，与闸门同一口径）");
+            report.put("gateMetric", "keywordBestScore（排序分，含同义词扩展，与 HybridRetriever 判闸门同一口径）");
             report.put("inDomainWeakest", rows(inDomain));
             report.put("outOfDomain", rows(ood));
             report.put("minInDomain", EvalSupport.round(minIn, 4));
             report.put("maxOutOfDomain", EvalSupport.round(maxOod, 4));
-            report.put("minInDomainRanking", EvalSupport.round(minInRanking, 4));
-            report.put("maxOutOfDomainRanking", EvalSupport.round(maxOodRanking, 4));
+            report.put("minInDomainOriginal", EvalSupport.round(minInOriginal, 4));
+            report.put("maxOutOfDomainOriginal", EvalSupport.round(maxOodOriginal, 4));
             report.put("minMatchedTokensInDomain", minCovIn);
             report.put("maxMatchedTokensOutOfDomain", maxCovOod);
 
@@ -135,15 +138,15 @@ public final class Calibrate {
                 System.out.println("警告：分数区间不成立（域外最高分不低于在域最低分）：需要补同义词或换语义向量模型");
                 report.put("separated", false);
             }
-            // 闸门判据用的是排序分（keywordBestScore，含同义词扩展）——CI 要守的就是这条线：
-            // 域外最高分一旦越线，展厅就会对域外问题硬答，比误拦更难收拾。
-            boolean gateSafe = maxOodRanking < effective;
+            // 闸门判据用的是排序分（keywordBestScore，含同义词扩展）——与上面的区间同一口径，
+            // CI 要守的就是这条线：域外最高分一旦越线，展厅就会对域外问题硬答，比误拦更难收拾。
+            boolean gateSafe = maxOod < effective;
             report.put("gateMetricUsedByGate", "keywordBestScore（排序分，与 HybridRetriever 判闸门同一口径）");
             report.put("gateSafe", gateSafe);
-            report.put("gateMarginRanking", EvalSupport.round(effective - maxOodRanking, 4));
+            report.put("gateMargin", EvalSupport.round(effective - maxOod, 4));
             System.out.printf("闸门余量（排序分口径）：域外最高 %.3f / 阈值 %.2f → %s（余量 %.3f）%n",
-                    maxOodRanking, effective, gateSafe ? "守住" : "越线！域外问题会被放行",
-                    effective - maxOodRanking);
+                    maxOod, effective, gateSafe ? "守住" : "越线！域外问题会被放行",
+                    effective - maxOod);
             System.out.printf("参考：命中词条数 在域最低=%d 域外最高=%d（该维度不足以单独区分，仅作观察）%n",
                     minCovIn, maxCovOod);
 
