@@ -77,6 +77,9 @@ znwd:
   knowledge-dir: ${KNOWLEDGE_DIR:./knowledge}
   index-dir: ${INDEX_DIR:./server/indexes}
   data-dir: ${DATA_DIR:./server/data}
+  # 前端产物目录：整机部署时 jar 直接托管 web/dist（页面与 /api 同源，免静态服务器/免 CORS）；
+  # 目录不存在（或没有 index.html）时该功能自动关闭，开发时仍用 Vite dev（npm run dev）。
+  web-dist-dir: ${WEB_DIST_DIR:./web/dist}
   watch-knowledge: ${KNOWLEDGE_WATCH:false}
   min-relevance-score: ${MIN_RELEVANCE_SCORE:6.3}
   # 语义向量兜底阈值：关键词没过阈值时，余弦 ≥ 它才放行。

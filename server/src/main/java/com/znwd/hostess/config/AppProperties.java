@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.ConstructorBinding;
 
 /**
  * 全部业务配置（单一来源）。
@@ -51,7 +52,50 @@ public record AppProperties(
          * （classpath {@code resources/prompts/*.txt}）；填外部文件路径则覆盖对应文本，
          * 现场改措辞不必重编译。POST /api/knowledge/reload 时一并重读，读失败自动回退内置文本。
          */
-        Prompt prompt) {
+        Prompt prompt,
+        /**
+         * 前端产物目录（默认 {@code ./web/dist}）：目录里存在 index.html 时由
+         * {@code web/StaticUiConfig} 注册 {@code /**} 资源映射（SPA 回退 index.html），
+         * 页面与 /api 同源；目录不存在时该功能自动关闭，开发时仍用 Vite dev。
+         */
+        String webDistDir) {
+
+    /**
+     * 绑定用构造器：记录有两个构造器时必须显式指明绑定哪个（另一个是给直接 {@code new} 的
+     * 既有调用点保留的旧签名）。
+     */
+    @ConstructorBinding
+    public AppProperties {
+    }
+
+    /** 旧签名（不含 web-dist-dir）：保持既有直接构造点编译与行为不变 */
+    public AppProperties(
+            String knowledgeDir,
+            String indexDir,
+            String dataDir,
+            boolean watchKnowledge,
+            double minRelevanceScore,
+            double minVectorScore,
+            int chatRatePerMin,
+            int feedbackRatePerMin,
+            int answerCacheSize,
+            int uncoveredLogSize,
+            String adminToken,
+            boolean requireAdminToken,
+            boolean noHitLlm,
+            long logMaxBytes,
+            String logMessageMode,
+            String corsOrigins,
+            boolean trustForwardedFor,
+            String nodeEnv,
+            Llm llm,
+            Embed embed,
+            Audio audio,
+            Prompt prompt) {
+        this(knowledgeDir, indexDir, dataDir, watchKnowledge, minRelevanceScore, minVectorScore, chatRatePerMin,
+                feedbackRatePerMin, answerCacheSize, uncoveredLogSize, adminToken, requireAdminToken, noHitLlm,
+                logMaxBytes, logMessageMode, corsOrigins, trustForwardedFor, nodeEnv, llm, embed, audio, prompt, null);
+    }
 
     public record Llm(
             String provider,
@@ -241,6 +285,16 @@ public record AppProperties(
 
     public Path dataDirPath() {
         return underRepoRoot(dataDir == null ? "server/data" : dataDir);
+    }
+
+    /**
+     * 前端产物目录：相对路径按仓库根定位（与 index/data 目录同一套逻辑），绝对路径原样使用。
+     *
+     * <p>目录不存在或没有 index.html 时 StaticUiConfig 不注册任何资源映射，未知路由仍是 JSON 404。
+     */
+    public Path webDistDirPath() {
+        String raw = webDistDir == null || webDistDir.isBlank() ? "web/dist" : webDistDir;
+        return underRepoRoot(raw);
     }
 
     /** 仓库根：往上找到带 knowledge/_meta/zones.json 的那层；找不到就退回当前目录 */
