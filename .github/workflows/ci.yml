@@ -154,6 +154,37 @@ jobs:
           # 让 security.py 的 G07（中途断开不留 ERROR/堆栈）能读到服务日志
           SERVER_LOG: /tmp/server.log
 
+      # 并发压测：单独起一个实例，避免复用主实例——smoke/security 已经把它打到限流窗口里，
+      # 短跑要验的是并发正确性（会话隔离、SSE 帧序、只读接口不受牵连），不是限流本身，
+      # 所以把 CHAT_RATE_PER_MIN 抬到 1000。429 语义单列计数、不算失败，见 docs/loadtesting.md。
+      - name: 并发压测（mock、短跑）
+        run: |
+          set -euo pipefail
+          HOST=127.0.0.1 PORT=8899 CHAT_RATE_PER_MIN=1000 LLM_PROVIDER=mock DATA_DIR=/tmp/data-load \
+            java -jar server/target/hostess-server.jar --spring.main.banner-mode=off > /tmp/server-load.log 2>&1 &
+          # 与主实例同样的等待口径：只等端口通不够，知识库加载在 ApplicationReadyEvent 之后
+          ready=0
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:8899/api/health -o /tmp/health-load.json \
+              && python3 -c "import json,sys; h=json.load(open('/tmp/health-load.json')); sys.exit(0 if (h.get('ok') and h.get('ready') and h.get('knowledgeChunks',0)>0) else 1)"; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" != 1 ]; then
+            echo "压测实例 60s 内没达到 ok+ready+knowledgeChunks>0；最后一次 health 与日志尾部："
+            cat /tmp/health-load.json 2>/dev/null || true
+            echo
+            tail -40 /tmp/server-load.log || true
+            exit 1
+          fi
+          if ! python3 tools/loadtest.py --base http://127.0.0.1:8899 --n 24 --streams 12 --rounds 1; then
+            echo "并发压测失败；实例日志尾部："
+            tail -60 /tmp/server-load.log || true
+            exit 1
+          fi
+
       # 边界与安全用例。非回环那几组要另外几个实例，都用本机的非回环地址访问：
       #   B: HOST=0.0.0.0 + ADMIN_TOKEN      —— 验「非回环请求必须带对口令」（S16–S18）
       #   C: HOST=0.0.0.0 但故意不配口令      —— 验误配置下是 fail-closed 而不是把管理接口交给局域网（M01–M03）
