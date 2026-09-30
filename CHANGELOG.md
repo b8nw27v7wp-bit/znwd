@@ -2,6 +2,42 @@
 
 本项目版本与变更记录。日期：YYYY-MM-DD。
 
+## [未发布] — 2026-09-30 · Windows 一体机整机部署加固（P0/P2）
+
+目标场景：**另一台 Windows 一体机，演示屏与后端同机，前后端一起重部署**。知识库问法/闸门边界问题本轮不动。
+
+### Added — jar 直接托管前端（P0-1）
+
+- 新增 `server/.../web/StaticUiConfig`：`WEB_DIST_DIR`（默认 `./web/dist`）下存在 `index.html` 时，
+  jar 注册 `/**` 资源映射并回落 SPA 到 `index.html`；`/api`、`/actuator` 一律不回落，继续走统一 JSON 404 信封。
+  首页 `/` 由 `SpaIndexController` 直接返回（`/**` 资源处理器够不到根路径）。
+- `AppProperties` 增加 `webDistDirPath()`（与 knowledge/data 同套仓库根定位）；`application.yml`、`.env.example` 增加 `WEB_DIST_DIR`。
+  目录不存在时功能自动关闭，开发仍用 Vite dev。
+- 真机验证：`GET /` 与 `/some/spa/route` → 200 `text/html`；`GET /api/does-not-exist` → 404 JSON 信封。
+- 新增 `StaticUiConfigTest` 7 条，后端单测 167 → **174**（全绿）；冒烟仍 **100/0/0**。
+
+### Added — Windows 部署脚本（P0-2/P2-12）
+
+- `tools/windows/`：`start-znwd.cmd`、`stop-znwd.cmd`、`status-znwd.cmd`、`install-autostart.ps1`
+  （默认登录自启；`-AtStartup` 以 SYSTEM 运行需管理员；支持 `-Remove`/`-WhatIf`）、`pack.ps1`
+  （构建并打包 jar + `web/dist` + `.env.example` + `knowledge/` + `init.sql` + 脚本，生成 `DEPLOY.txt` 与 zip）。
+- 实测修掉两个脚本缺陷：`if (...)` 块里 `echo` 文案含未转义圆括号导致 cmd 解析错误；两个实例抢同一 `run.out.log`
+  文件句柄 → 日志按端口分文件（`run-<port>.out.log`）。
+- 脚本纯 ASCII、路径自推导、幂等；`pack.ps1 -SkipBuild` 打包实测 35 个文件（约 1.1MB）。
+
+### Changed — 文档（P2-10/11/12/13/14）
+
+- `docs/deployment.md`：整机首选形态写明「只装 JDK 21+ 与 MySQL，jar 托管 `web/dist`」；新增「Windows 整机部署步骤」
+  与可照抄的自启/启停命令；nginx 两拓扑保留为跨机备选；验收命令补 `py -3` 说明。
+- `README.md`：部署与运行补 Windows 整机最短路径；`docs/development.md` 同步 `py -3` 与 `WEB_DIST_DIR`。
+- `docs/CODE_REVIEW_HANDOFF.md`：清掉「黑盒未跑 / CI 未在 runner 执行」等与事实矛盾的旧结论，补 2026-09-29 实跑记录。
+- `docs/security.md`：已接受风险补 `/api/speech/*` 2MB 例外；`docs/README.md` 把三份交接文档明确标为历史快照。
+
+### Notes
+
+- 远端 CI 尚未验这 7 个提交：推送时 `github.com:22/443` 被网络掐断、HTTPS 亦不稳定（token 也不具备 git 推权限）。
+  网络恢复后用 `git push origin feature/virtual-receptionist`，或 `git push git@github-443:b8nw27v7wp-bit/znwd.git HEAD`。
+
 ## [未发布] — 2026-09-29 · 会话归属令牌 / 话术外置 / 运营面板 / 反馈独立限流 + 交付前全量复跑
 
 ### 文档-代码口径对齐（第四批复跑，2026-09-29）
