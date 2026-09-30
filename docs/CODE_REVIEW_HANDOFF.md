@@ -21,7 +21,7 @@
 - 目标部署是**单一体机**：MySQL、知识库、向量索引、日志和缓存全部本机；不使用远程 MySQL、对象存储或远程日志服务。
 - 仅允许 LLM、embedding、可选 TTS/ASR 出网；模型或语音不可用时必须按降级规则工作。
 - 本地编译、单元测试、前端测试、构建、离线不变量、检索评测和阈值门禁均通过。
-- 真实服务黑盒测试、GitHub Actions 远端执行、真实云端模型/embedding/TTS/ASR 和目标一体机重启恢复尚未验证。
+- 真实服务黑盒测试（2026-09-29 本机实跑）和 GitHub Actions 远端执行（run `36535739334` 全绿）已完成；真实云端模型/embedding/TTS/ASR 和目标一体机重启恢复尚未验证。
 - 工作区保留大量未提交修改和未跟踪语音文件；不要执行全量回滚或清理未跟踪文件。
 - 详细执行记录见 `docs/HERMES_HANDOFF.md`，任务拆分见 `docs/REPAIR_PLAN.md`。
 
@@ -29,7 +29,7 @@
 
 | 级别 | 问题 | 状态 | 证据/后续 |
 | --- | --- | --- | --- |
-| P0 | CI workflow YAML 缩进错误 | 已修复，待远端验证 | `.github/workflows/ci.yml` 已通过 YAML 解析；需跑 Actions |
+| P0 | CI workflow YAML 缩进错误 | 已修复，远端已验证 | `.github/workflows/ci.yml` 本地 YAML 解析通过；远端绿记录 run `36535739334`（提交 `e67f448`） |
 | P0 | CI readiness 只等端口、不等 ready | 已修复 | 冒烟步骤断言 `ok/ready/storageAvailable/knowledgeChunks` |
 | P0 | 误配置实例继承 `ADMIN_TOKEN`，无法验证 fail-closed | 已修复 | CI 误配置实例使用 `env -u ADMIN_TOKEN` |
 | P0 | `db-check.py` 缺客户端/连库失败时返回成功 | 已修复 | `CI=true` 或 `DB_CHECK_STRICT=true` 时严格失败 |
@@ -95,20 +95,28 @@ py -3 tools/offline-check.py
 py -3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml', encoding='utf-8'))"
 ```
 
-已取得的结果：
+已取得的结果（本地回归，2026-09-24，历史记录）：
 
 - 后端：167 tests，0 failures，0 errors，0 skipped。
 - 前端：12 个测试文件，144 tests passed。
 - 前端构建：`vue-tsc -b` + `vite build` 通过。
 - eval：145 条计分用例 top1/top3 均为 1.0，baseline 逐例不一致数为 0。
 - calibrate gate-check：退出码 0；域外关键词分与语义余弦未越线。
-- 离线检查：O01–O05 通过；O06/O07 因未加 `--runtime` 按设计跳过。
+- 离线检查：O01–O05 通过；O06/O07 因未加 `--runtime` 按设计跳过（旧口径；2026-09-29 加 `--runtime` 实跑为 7/0/1）。
 - `git diff --check`、CI YAML 解析、Python 脚本语法检查通过。
+
+2026-09-29 实跑补充（黑盒三件套 + 内容验收，现行口径）：
+
+- 冒烟 `tools/smoke.py`：100 通过 / 0 失败 / 0 跳过。
+- 安全 `tools/security.py`：主实例 91 / 0 / 7；四实例 99 / 0 / 0。
+- 库层 `tools/db-check.py`：19 / 0 / 0。
+- 离线 `tools/offline-check.py`：7 / 0 / 1。
+- 内容验收 `tools/acceptance.py`：40 / 0。
 
 ## 5. 审核遗留风险
 
-1. **不能把本地测试当作集成验证**：本轮没有启动 HTTP 服务，因此 `smoke.py`、`security.py`、`db-check.py` 尚未产生本轮结果。
-2. **CI 尚未在 runner 上执行**：本地 YAML 解析只能证明语法，不证明 MySQL service、`env -u`、端口探测和脚本顺序在 Ubuntu runner 上正常。
+1. **本地测试不能替代目标一体机的现场验收（黑盒实跑已完成）**：2026-09-29 已启动 HTTP 服务实跑黑盒三件套 + 内容验收——冒烟 100/0/0、安全主实例 91/0/7、四实例 99/0/0、库层 19/0/0、离线 7/0/1、内容验收 40/0。
+2. **CI 已在 runner 上跑通**：已有远端绿记录（run `36535739334`，提交 `e67f448`），MySQL service、`env -u`、端口探测和脚本顺序均已在 Ubuntu runner 实际执行；本文其余标注「未验证/待验证」的条目（如目标一体机演练）一律以实际运行输出为准，不再以本地静态检查推断。
 3. **语义兜底契约已定稿**：当前 `HybridRetriever` 在关键词未过闸门时可能把向量独有候选带入结果——已决策「允许语义新增候选、文档对齐代码」，`docs/architecture.md`、`docs/knowledge.md` 已同步（`MIN_VECTOR_SCORE=0.75` 仍等效关闭兜底）。
 4. **会话访问模型仍是单屏假设**：随机 ID 降低猜测概率，但不是访问控制。
 5. **阈值区间已成立但仍须重标定**：标定（排序分口径，与闸门一致）区间成立：域外最高 6.170 < 阈值 6.3 < 在域最低 6.438，余量 0.130；语料变化后必须重标定。

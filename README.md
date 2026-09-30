@@ -101,6 +101,24 @@ cd server && java -jar target/hostess-server.jar
 - **拓扑 B**：前端与后端跨源——构建期写死前缀 `VITE_API_BASE_URL=http://<后端>:8787 npm run build`（末尾不带 `/`），并在后端配 `CORS_ORIGINS=http://<前端来源>`。
 - **现场自查**（不装 nginx）：`cd web && npm run preview`（`:4173`，同样代理 `/api`）。
 
+**Windows 整机最短路径（演示屏与后端同机，推荐）**：交付机只需 **JDK 21+ 与 MySQL**（MySQL 设为 Windows 服务自启）；jar 自己托管前端——`WEB_DIST_DIR` 默认 `./web/dist`，页面与 `/api` 同源，不需要静态服务器，也不需要 CORS；目录不存在时该功能自动关闭（开发时照旧 `npm run dev`）。
+
+```bash
+# 构建与打包（有 Node 的机器；交付包用 tools\windows\pack.ps1 生成，含 jar + web/dist + .env + knowledge/）
+cd server && ../tools/mvn -B -DskipTests package
+cd web && npm ci && npm run build
+tools\windows\pack.ps1
+
+# 交付机：启停与自启（日志 server\run.out.log）
+tools\windows\start-znwd.cmd
+tools\windows\status-znwd.cmd
+tools\windows\stop-znwd.cmd
+powershell -ExecutionPolicy Bypass -File tools\windows\install-autostart.ps1             # 登录自启（默认）
+powershell -ExecutionPolicy Bypass -File tools\windows\install-autostart.ps1 -AtStartup  # 开机自启（需管理员）
+```
+
+交付包务必带上 `.env`（漏带会静默退回 `mock/bag/none`）；浏览器打开 `http://127.0.0.1:8787/`，验收见下节。
+
 展厅同机时保持 `HOST=127.0.0.1`、用 `http://127.0.0.1:<port>` 打开，管理接口就不必暴露到局域网；麦克风也只在 HTTPS 或 `localhost/127.0.0.1` 安全上下文可用（跨机 `http://内网IP` 打开时「语音提问」按钮不出现，键盘问答与自动播报不受影响）。
 
 ### 5. 启动验收与日常运维
@@ -114,6 +132,7 @@ curl -s http://127.0.0.1:8787/api/health
 - **重载知识 / 重建索引 / 清答案缓存**：`POST /api/knowledge/reload`（带 `Authorization: Bearer $ADMIN_TOKEN`）。
 - **诊断某句话为什么被拦/命中**：`GET /api/admin/diagnostics?q=…`（中文 query 用 Python 发，避免 GBK 控制台编坏，见 `docs/api.md`）。
 - **回滚**：换回旧 `jar` + 旧 `web/dist` 重启即可；数据表是增量兼容的，不需要回滚数据库。
+- **Windows 上的 Python**：本机 `python` 命令不可用，验收脚本改用 `py -3 tools\smoke.py` 等（虚拟环境里则用其 `python`）。
 
 ## 项目结构
 
@@ -164,6 +183,8 @@ python tools/offline-check.py --runtime                                  # 本�
 python tools/acceptance.py                                               # 问答内容验收（需真模型在跑，40 项）
 cd web && npm run build && npm test                                      # 前端类型检查+构建、单测（144 项）
 ```
+
+Windows 上本机 `python` 命令不可用：把上面的 `python tools/xxx.py` 改成 `py -3 tools/xxx.py`（虚拟环境里则用其 `python`）。
 
 当前已提交基线：145 条计分用例，检索 top1 **1.0** / top3 **1.0** / 闸门漏答 **0**（关键词阈值 6.3）；按闸门排序分口径区间成立（域外最高 6.170 < 6.3 < 在域最低 6.438，余量 0.130），CI 逐例守住 `top1Path` 与指标不退化。语义兜底阈值 `MIN_VECTOR_SCORE=0.75`，当前等价于关闭兜底。
 

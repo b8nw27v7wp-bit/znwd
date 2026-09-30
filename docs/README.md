@@ -15,9 +15,9 @@
 | [knowledge.md](./knowledge.md) | 知识库分区维护、分块与打分、同义词维护、改知识后的必做流程 |
 | [eval.md](./eval.md) | 检索评测与阈值标定（用例口径、指标、基线、标定工具） |
 | [deployment.md](./deployment.md) | 展厅/一体机部署、本机 MySQL 初始化、出网降级、运维与备份 |
-| [HERMES_HANDOFF.md](./HERMES_HANDOFF.md) | 当前工作区、已完成修复、验证结果和未验证项的交接记录 |
-| [CODE_REVIEW_HANDOFF.md](./CODE_REVIEW_HANDOFF.md) | 按严重级别汇总的代码审核结论、遗留风险和发布条件 |
-| [REPAIR_PLAN.md](./REPAIR_PLAN.md) | 一体机部署前后的 P0/P1/P2 修复任务与验收标准 |
+| [HERMES_HANDOFF.md](./HERMES_HANDOFF.md) | 2026-09-24 交接快照（历史，已被 `CHANGELOG.md` 与活文档取代，不代表现状） |
+| [CODE_REVIEW_HANDOFF.md](./CODE_REVIEW_HANDOFF.md) | 2026-09-24 代码审核交接快照（历史；审核表于 2026-09-29 复核，现状以 `CHANGELOG.md` 与活文档为准） |
+| [REPAIR_PLAN.md](./REPAIR_PLAN.md) | 2026-09-24 修复计划快照（历史，P0/P1/P2 任务多数已落地，不代表现状） |
 | [plan.md](./plan.md) | 语音播报修复计划（2026-09-22 历史快照，P0/P1/P2 已完成） |
 | [optimization-backlog.md](./optimization-backlog.md) | 已修问题、待做项、已知取舍 |
 | [security.md](./security.md) | 安全口径：已加固项、已核查项、已接受的风险、上线检查清单 |

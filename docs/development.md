@@ -41,6 +41,8 @@ cd server && ../tools/mvn -B test        # 等价于 mvn -B test
 | 前端单测 | `cd web && npm test` | `144 passed`（12 个测试文件，含 jsdom 下的组件接线测试） |
 | 打包后端 | `cd server && ../tools/mvn -B -DskipTests package` | `server/target/hostess-server.jar` |
 
+表里 `python tools/...` 的命令在 Windows 上改用 **`py -3 tools/...`**（本机 `python` 命令不可用；虚拟环境里用其 `python`）。
+
 评测/标定是**改语料、改同义词、改打分参数后的必跑项**；检索评测还要通过 `docs/eval/baseline-java.json` 的逐例门禁，口径见 `docs/eval.md`。
 
 ## 3. 配置读取
@@ -51,7 +53,9 @@ cd server && ../tools/mvn -B test        # 等价于 mvn -B test
 查找顺序：`server/.env` → `.env`（在仓库根启动也能命中）。
 `.env` 里**空值视为未配置**（`LLM_BASE_URL=` 不会把默认值覆盖成空串）。
 
-键名以 `server/.env.example` 与 `application.yml` 为准，分七组：LLM、Embedding、语音（`AUDIO_*`）、MySQL（`DB_*`）、HTTP（`HOST`/`PORT`/`ADMIN_TOKEN`/`REQUIRE_ADMIN_TOKEN`/`CORS_ORIGINS`）、检索（`MIN_RELEVANCE_SCORE`/`MIN_VECTOR_SCORE`/`ANSWER_CACHE_SIZE`/`UNCOVERED_LOG_SIZE`）、日志（`LOG_MAX_BYTES`/`LOG_MESSAGE_MODE`）。
+键名以 `server/.env.example` 与 `application.yml` 为准，分七组：LLM、Embedding、语音（`AUDIO_*`）、MySQL（`DB_*`）、HTTP/前端（`HOST`/`PORT`/`WEB_DIST_DIR`/`ADMIN_TOKEN`/`REQUIRE_ADMIN_TOKEN`/`CORS_ORIGINS`）、检索（`MIN_RELEVANCE_SCORE`/`MIN_VECTOR_SCORE`/`ANSWER_CACHE_SIZE`/`UNCOVERED_LOG_SIZE`）、日志（`LOG_MAX_BYTES`/`LOG_MESSAGE_MODE`）。
+
+`WEB_DIST_DIR`（默认 `./web/dist`）位于 HTTP/前端组：jar 直接托管该目录的前端产物、页面与 `/api` 同源（整机部署不需要静态服务器/CORS）；目录不存在时自动关闭，开发照旧 `npm run dev`。
 
 管理鉴权默认 fail-closed：`REQUIRE_ADMIN_TOKEN=true`，未配 `ADMIN_TOKEN` 时管理请求一律 401；仅可信的回环开发环境可显式设为 `false`，且守卫按连接对端 `remoteAddr` 判回环。`CORS_ORIGINS` 仍是 Origin 白名单，预检允许 `GET,POST,PUT,DELETE,OPTIONS`，其中 `PUT` 服务于在线替换同义词表。
 
@@ -110,6 +114,8 @@ MySQL 首次使用：把 `server/db/init.sql` 里两处 `CHANGE_ME_znwd` 改成�
 | 标定 | `exec:java@calibrate --gate-check` | 退出 0；关键词闸门按「排序分」口径 在域最低 6.438 / 域外最高 6.170，区间成立，余量 0.130 |
 | 真机连通性套件 | — | 17 条 |
 | 布局 | CSS | 实际是 `--panel-width: 25%`（约 1/4），不是 1/3 |
+
+上表与下面命令里的 `python tools/...` 在 Windows 上改用 `py -3 tools/...`（本机 `python` 命令不可用；虚拟环境里用其 `python`）。
 
 ```bash
 cd server && ../tools/mvn -B test                     # 167 项：检索/HTTP/统计会话/同义词/诊断文案/配置接线/管理口令/降级写路径与裁剪/资料入库/请求体上限/来源面板规则/落库截断/限流键取值/语音/问答接口契约

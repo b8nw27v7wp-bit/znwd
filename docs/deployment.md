@@ -5,7 +5,9 @@
 
 ## 0. 一体机目标档位（当前实际部署口径）
 
-本项目的目标部署形态是**单机闭环**，不是远程数据库架构：
+本项目的目标部署形态是**单机闭环**，不是远程数据库架构。
+
+**同机整机（演示屏与后端同一台 Windows）的首选形态：只装 JDK 21+ 与 MySQL，jar 直接托管前端产物 `web/dist`**——`WEB_DIST_DIR`（默认 `./web/dist`）指向该目录即开启，页面与 `/api` 同源，不需要静态服务器，也不需要 CORS；目录不存在时该功能自动关闭（开发时照旧用 Vite dev）。nginx 反代与跨源两种拓扑只在跨机访问/已有反向代理时使用（见 §1.1）。
 
 - MySQL 与应用运行在同一台机器，应用使用 `DB_HOST=127.0.0.1`；不使用远程 MySQL、对象存储或远程日志服务。
 - `knowledge/`、`server/indexes/`、`server/data/`、`.env` 和 jar/前端产物都在本机；断电/换机前按第 8 节备份。
@@ -14,26 +16,29 @@
 - 展厅浏览器与后端同机时保持 `HOST=127.0.0.1`，用 `http://127.0.0.1:<port>` 打开；这样不需要把管理接口暴露到局域网。若屏幕从另一台机器访问，才改 `HOST=0.0.0.0` 并同时配置防火墙、反代和 `ADMIN_TOKEN`。
 - 麦克风只在 HTTPS 或 `localhost/127.0.0.1` 安全上下文可用；同机打开可保留语音提问，跨机 HTTP 访问时按钮会隐藏，键盘问答不受影响。
 
-一体机上线前的最小验收顺序：启动本机 MySQL → 执行 `server/db/init.sql` → 启动 jar → 打开 `GET /api/health` → 确认 `ok=true`、`ready=true`、`storageAvailable=true`、`knowledgeChunks>0` → 跑 `tools/smoke.py`（要带与被测实例同源的 `ADMIN_TOKEN`，否则管理块与 `/api/knowledge/list` 会 401）、`tools/security.py`、`tools/db-check.py` 和 `tools/offline-check.py --runtime`。
+一体机上线前的最小验收顺序：启动本机 MySQL → 执行 `server/db/init.sql` → 启动 jar → 打开 `GET /api/health` → 确认 `ok=true`、`ready=true`、`storageAvailable=true`、`knowledgeChunks>0` → 跑 `tools/smoke.py`（要带与被测实例同源的 `ADMIN_TOKEN`，否则管理块与 `/api/knowledge/list` 会 401）、`tools/security.py`、`tools/db-check.py` 和 `tools/offline-check.py --runtime`。这些 Python 脚本在 Windows 上用 `py -3 tools/xxx.py` 执行（本机 `python` 命令不可用；用虚拟环境时用其 `python`）。
 
 ## 1. 部署形态
 
 ```
 展厅一体机（或后台电脑）
 ├── hostess-server.jar        监听 HOST:PORT（默认 127.0.0.1:8787）
-├── web/dist/                 静态文件（任意静态服务器/Nginx，或 vite preview 自查）
+├── web/dist/                 前端产物（jar 经 WEB_DIST_DIR 直接托管，默认 ./web/dist；跨机时才交给静态服务器/Nginx）
 ├── knowledge/                知识正文（必须与 jar 同机可读，路径由 KNOWLEDGE_DIR 指定）
 ├── server/data/              events.jsonl 日志（DATA_DIR）
 └── server/indexes/           向量索引（INDEX_DIR，可重建，丢了会自动重建）
 ```
 
 - **默认只监听本机**（`HOST=127.0.0.1`）。展厅内网跨机访问要显式改 `HOST=0.0.0.0`，并限制防火墙或经反向代理暴露；管理接口默认要求 `ADMIN_TOKEN`，只有开发回环环境显式设置 `REQUIRE_ADMIN_TOKEN=false` 才免口令。
+- **整机默认由 jar 托管前端**：`WEB_DIST_DIR`（默认 `./web/dist`）指向存在的前端产物目录时，页面与 `/api` 由 jar 在同一端口一并提供（SPA 回退与 SSE 直出由应用自己处理），不需要 nginx；目录不存在时该功能自动关闭，退回 dev/preview 或下面的静态服务器拓扑。
 - 前端 dev/preview 由 Vite 把 `/api` 代理到 `VITE_API_TARGET`（默认 `http://127.0.0.1:8787`）；SSE 会被强制 `no-cache, no-transform`，否则看不到逐字输出。
 - 展厅现场自查：`npm run build && npm run preview`（`:4173`，同样代理 `/api`），不必装 Nginx。
 
-### 1.1 前端产物怎么接后端（两种拓扑，二选一）
+### 1.1 前端产物怎么接后端（整机默认 jar 托管；跨机再选两种拓扑）
 
-**默认构建的前端是「同源」的**：`apiUrl()` 不带前缀时请求 `/api/...`，也就是打到**托管页面的那个源**。所以静态服务器必须把 `/api` 转给 jar，否则页面能打开、所有接口都 404——现场表现是「白屏/一直转圈」，而 curl 后端又是好的。
+**同机整机（推荐）不选拓扑**：`WEB_DIST_DIR` 指向 `web/dist`（默认 `./web/dist`）时 jar 直接托管前端，页面与 `/api` 同源，无需静态服务器、无需 `CORS_ORIGINS`。下面两种拓扑只在跨机访问或已有反向代理时使用。
+
+**前端产物默认构建出来是「同源」的**：`apiUrl()` 不带前缀时请求 `/api/...`，也就是打到**托管页面的那个源**。所以静态服务器必须把 `/api` 转给 jar，否则页面能打开、所有接口都 404——现场表现是「白屏/一直转圈」，而 curl 后端又是好的。
 
 **拓扑 A（推荐）：静态服务器反代 `/api`**，前端用默认构建（不需要 `VITE_API_BASE_URL`）：
 
@@ -59,6 +64,32 @@ server {
 
 排障口诀：**curl 后端好、页面却什么接口都不通** → 先看 Network 里的请求 URL 打到哪个源（拓扑没配对），再看是否 CORS（跨源没配白名单），最后看 SSE 是否被代理缓冲（回答一次性出现）。
 
+### 1.2 Windows 整机部署步骤（可照抄）
+
+演示屏浏览器与后端同机，MySQL 已作为 Windows 服务自启。交付机只需 JDK 21+ 与 MySQL 8+，不需要 Node、静态服务器（前端产物在构建机上打好后随包拷入）。
+
+1. **装依赖**：JDK 21+（`java -version` 显示 21 及以上）与 MySQL 8+。MySQL 安装时勾选设为 Windows 服务并设为自动启动（`services.msc` 里 `MySQL*` 服务启动类型「自动」）。
+2. **建库**：把 `server/db/init.sql` 里两处 `CHANGE_ME_znwd` 改成自定口令，用管理员账号执行一次（详见 §4）：`mysql -u root -p < server/db/init.sql`。
+3. **配 `.env`**：复制 `server/.env.example` 为 `server/.env`，至少改：`ADMIN_TOKEN=<现场生成的长随机串>`（不要弱口令）、`DB_PASSWORD=<与 init.sql 同一口令>`、真实 `LLM_PROVIDER=openai_compat` + `LLM_BASE_URL/LLM_API_KEY/LLM_MODEL`；可选 `EMBED_*`（语义路）与 `AUDIO_PROVIDER=mimo`（服务端语音）。
+4. **构建**：构建机上 `cd server && ../tools/mvn -B -DskipTests package`、`cd web && npm ci && npm run build`；或用 `tools\windows\pack.ps1` 打交付包（jar + `web/dist` + `.env` + `knowledge/`）。**`.env` 必须随包一起带**——漏带会静默退回 `mock/bag/none`。
+5. **起服务**：`tools\windows\start-znwd.cmd`（后台起 jar，日志 `server\run.out.log`）；要随机器长期运行用 `tools\windows\install-autostart.ps1`（见下）。
+6. **打开页面**：`http://127.0.0.1:8787/`（jar 托管前端时就是后端端口；若用静态服务器/反代，换成前端端口）。
+7. **验收**：`curl -s http://127.0.0.1:8787/api/health` 确认 `ok=true`、`ready=true`、`storageAvailable=true`、`knowledgeChunks>0`；再跑 `py -3 tools\smoke.py`（带 `ADMIN_TOKEN`）、`py -3 tools\security.py`、`py -3 tools\db-check.py`、`py -3 tools\offline-check.py --runtime`。
+
+**开机自启与启停（可照抄）**：
+
+```powershell
+# 登录自启（默认，当前用户）
+powershell -ExecutionPolicy Bypass -File tools\windows\install-autostart.ps1
+# 开机自启（需管理员）
+powershell -ExecutionPolicy Bypass -File tools\windows\install-autostart.ps1 -AtStartup
+
+tools\windows\status-znwd.cmd     # 查看进程与健康
+tools\windows\stop-znwd.cmd       # 停止
+```
+
+手工等价：登录自启用 `schtasks /Create /TN znwd /SC ONLOGON /TR "<仓库路径>\tools\windows\start-znwd.cmd"`；开机自启用 `schtasks /Create /TN znwd /SC ONSTARTUP /RU SYSTEM /TR ...`（需管理员）；删除用 `schtasks /Delete /TN znwd /F`。脚本清单与排障见 `tools\windows\README.md`。
+
 ## 2. 构建
 
 ```bash
@@ -80,6 +111,7 @@ cd web && npm ci && npm run build                    # → web/dist
 | --- | --- | --- |
 | `HOST` | `127.0.0.1` | 监听地址。展厅内网需 `0.0.0.0`（并配防火墙/反代） |
 | `PORT` | `8787` | 监听端口 |
+| `WEB_DIST_DIR` | `./web/dist` | jar 直接托管的前端产物目录（同源，页面与 `/api` 同端口，无需静态服务器/CORS）。目录不存在时自动关闭该功能（开发照旧 Vite dev） |
 | `ADMIN_TOKEN` | 空 | 管理接口 Bearer 口令。默认未配置，未配置时管理接口直接 401；要使用运营功能必须设置 |
 | `REQUIRE_ADMIN_TOKEN` | `true` | 默认强制管理口令；仅可信的回环开发环境可显式设为 `false`。回环按连接对端 `remoteAddr` 判断，不按 `localAddr` |
 | `NODE_ENV` | 空 | `production`/`prod`/`staging` 时即使关闭上一项也强制管理口令 |
@@ -169,7 +201,11 @@ mysql -u root -p < server/db/init.sql
 
 `init.sql` 只做三件事：建库 `znwd`、建本机最小权限账号 `znwd@localhost`、授权该库读写。**表结构不用手建**——应用启动时 `DatabaseStatus` 在库可达的情况下幂等执行 `schema.sql`（五张表：`session`、`session_message`、`chat_log`、`feedback`、`uncovered_question`）。
 
-一体机正式上线判定：MySQL 服务开机自启、应用 jar 开机自启、`.env` 和 `knowledge/` 有备份；任一条件不满足都不算可交付部署。
+一体机正式上线判定 / **上线检查**（缺一不可）：
+
+- MySQL 服务开机自启、应用 jar 开机自启（`tools\windows\install-autostart.ps1`）。
+- `.env` 与 `knowledge/` 有备份；`WEB_DIST_DIR`（默认 `./web/dist`）指向随交付包一起拷入的 `web/dist`。
+- **交付包必须带上 `.env`**：漏带会静默退回 `mock/bag/none`（服务照常起，但答的是演示回复、不落库）；`ADMIN_TOKEN` 用现场生成的长随机串，禁止 `admin`/`123456` 之类弱口令。
 
 判断服务是否可开始巡检：先看 `GET /api/health` 的 `ok=true`、`ready=true`（知识快照已发布）；再看 `storageAvailable`（一体机正式部署要求为 `true`；`false` 只表示降级为不落库）。该接口始终回 HTTP 200，探活脚本不能只看状态码。
 
@@ -206,7 +242,7 @@ curl -s -H "authorization: Bearer $ADMIN_TOKEN" http://127.0.0.1:8787/api/knowle
 # 5) 重新标定 + 评测（改语料后必须；阈值是相对量，语料一变 IDF 分数整体平移）
 cd server && ../tools/mvn -B test-compile exec:java@calibrate
 cd server && ../tools/mvn -B test-compile exec:java@eval -Dexec.args="--no-write --baseline=docs/eval/baseline-java.json"
-python tools/smoke.py
+python tools/smoke.py                  # Windows 上改用 py -3 tools/smoke.py
 ```
 
 阈值若需要改，**四处同步**：`.env`、`application.yml` 默认值、`HybridRetriever.DEFAULT_MIN_KEYWORD_SCORE`、CI 环境变量。
@@ -240,7 +276,7 @@ python tools/smoke.py
 cd server && ../tools/mvn -B test-compile exec:java@eval -Dexec.args="--no-write --baseline=docs/eval/baseline-java.json"
 # 6) 闸门余量核查（域外最高分不得越线，否则退出码 4）
 cd server && ../tools/mvn -B test-compile exec:java@calibrate -Dexec.args="--gate-check --no-write"
-# 7) python tools/smoke.py 全绿后再放开展厅使用
+# 7) python tools/smoke.py 全绿后再放开展厅使用（Windows 上改用 py -3 tools/smoke.py）
 ```
 
 回滚：换回旧 jar + 旧 `web/dist`，重启即可；若新旧版本的索引格式不同，删掉 `server/indexes/` 让它按旧代码重建。数据表是增量兼容的（只增字段/表），不需要回滚数据库。
@@ -263,6 +299,8 @@ cd server && ../tools/mvn -B test-compile exec:java@calibrate -Dexec.args="--gat
 python tools/offline-check.py              # 产物 / 后端源码出网入口 / 依赖清单
 python tools/offline-check.py --runtime    # 追加：语义路状态与检索模式是否自洽
 ```
+
+（Windows 上这两条改用 `py -3 tools/offline-check.py`。）
 
 | 类别 | 结论 | 依据 |
 | --- | --- | --- |
@@ -320,4 +358,4 @@ AUDIO_PROVIDER=mimo
 | 想离线也有真回答 | 在机器上放本地大模型，`LLM_BASE_URL` 指向它（OpenAI 兼容即可，无需改代码）；embedding 同理可指向本机 Ollama 的 `/v1` |
 
 自检套件本身也都在本地跑：`smoke.py`（接口契约）、`security.py`（边界与安全）、`db-check.py`（库层）、
-`offline-check.py`（本地化不变量），都不需要外网，可直接拷到一体机上执行。
+`offline-check.py`（本地化不变量），都不需要外网，可直接拷到一体机上执行（Windows 上用 `py -3` 起，本机 `python` 命令不可用）。
