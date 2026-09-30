@@ -17,7 +17,10 @@
 - **会话归属**：问答下发 `X-Session-Token`，`GET/DELETE /api/sessions/{id}` 必须带回来（不匹配 404）；换人清上下文。
 - **语音**：回答服务端 TTS 播报（小米 MiMo，失败当场退回浏览器合成）；麦克风录音 → ASR 转文字提问（16kHz WAV，前端自采自封装）。
 - **运营视图**（`?admin=1`）：统计与未覆盖问题、反馈 CSV、知识清单/一键 reload/同义词热更新、检索诊断（为什么被拦/命中、距阈值差多少）。
+- **展览联动**：展区可被 URL `?zone=<zoneId|mediaId>`、`window.znwdSetZone(id)` 或 `znwd:zone` 事件切换（旁侧展项/多屏联动推荐问题）；选择结果落 localStorage 并同步 URL。
 - **话术外置**：system prompt / 拒答文案可放外部文件（`PROMPT_*`），现场改措辞不必重编译。
+- **安全基线**：管理面 fail-closed（`ADMIN_TOKEN` 常量时间比对）、会话归属令牌、统一安全响应头（`nosniff` / `X-Frame-Options: DENY` / `Referrer-Policy: no-referrer`）、弱口令启动告警、请求体上限、独立限流桶、日志脱敏。
+- **可观测性**：`/api/health` + `/api/stats`；`/actuator/prometheus` 可抓 JVM/HTTP 指标（不鉴权，仅本机或反代限制下暴露）。
 - **落库**：会话、问答日志、反馈、未覆盖问题落 MySQL（`storageAvailable=false` 时服务照常讲解、只是不落库）。
 - **出网白名单**：后端只有 LLM、embedding、MiMo 语音三个适配器可出网，其余全在本机，用 `tools/offline-check.py` 可核。
 
@@ -191,16 +194,17 @@ curl -s http://127.0.0.1:8787/api/health
 ## 校验命令
 
 ```bash
-cd server && ../tools/mvn -B test                                        # 后端单测（174 项）
+cd server && ../tools/mvn -B test                                        # 后端单测（177 项）
 cd server && ../tools/mvn -B test-compile exec:java@eval -Dexec.args="--no-write --baseline=docs/eval/baseline-java.json"   # 检索评测 + 已提交基线门禁
 cd server && ../tools/mvn -B test-compile exec:java@calibrate            # 阈值标定（改语料/同义词后必跑）
 cd server && ../tools/mvn -B -q test-compile exec:java@ingest -Dexec.args="--src ./inbox --zone <展区id>"   # 资料入库（PDF/Word/txt）
 python tools/smoke.py                                                    # 接口契约冒烟（需服务在跑；带 ADMIN_TOKEN 满跑 100 项）
-python tools/security.py                                                 # 边界与安全（主实例 91/0/7；另起实例跑满）
+python tools/security.py                                                 # 边界与安全（主实例 94/0/7；另起实例跑满）
 python tools/db-check.py                                                 # 库层脱敏与最小权限（需 mysql 客户端）
 python tools/offline-check.py --runtime                                  # 本地化不变量（除 LLM/embedding/语音外一律本地）
-python tools/acceptance.py                                               # 问答内容验收（需真模型在跑，40 项）
-cd web && npm run build && npm test                                      # 前端类型检查+构建、单测（144 项）
+python tools/acceptance.py                                               # 问答内容验收（需真模型在跑，43 项）
+python tools/loadtest.py --n 8 --streams 4                               # 并发/压测（多路问答+SSE+只读+中断；429 单列）
+cd web && npm run build && npm test                                      # 前端类型检查+构建、单测（150 项）
 ```
 
 Windows 上本机 `python` 命令不可用：把 `python tools/xxx.py` 改成 `py -3 tools/xxx.py`（虚拟环境里则用其 `python`）。
@@ -215,5 +219,7 @@ Windows 上本机 `python` 命令不可用：把 `python tools/xxx.py` 改成 `p
 - 知识库维护、分块与打分、同义词：[docs/knowledge.md](docs/knowledge.md)
 - 本地开发与 CI：[docs/development.md](docs/development.md)
 - 评测与阈值标定：[docs/eval.md](docs/eval.md)
+- 并发与压测：[docs/loadtesting.md](docs/loadtesting.md)
 - 安全口径与上线检查清单：[docs/security.md](docs/security.md)
 - 待做与已知取舍：[docs/optimization-backlog.md](docs/optimization-backlog.md)
+- 历史快照（交接/审核/计划）：[docs/archive/](docs/archive/)

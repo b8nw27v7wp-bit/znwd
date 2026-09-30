@@ -315,8 +315,9 @@ python tools/db-check.py
 | TC-PERF-04 | 同一会话并发 6 发 | 无 5xx、无串答 | P1 | security B23 |
 | TC-PERF-05 | 打满 30 次/分钟限流 | 第 31 次 429 且 `retryAfterSec` 合理；滑过后恢复 | P0 | security S20 |
 | TC-PERF-06 | 前端连续快速发送（点击防抖） | 不产生重复气泡/并发流互相覆盖（generation 隔离） | P1 | vitest + 手工 |
-| TC-PERF-07 | 长时间运行 2 小时以上 + 周期提问 | 无线程/内存持续增长、无 SSE 连接泄漏；`uptimeSec`/`chatTotal` 正常累计 | P2 | 手工（`docs/CODE_REVIEW_HANDOFF.md` 标注的未做项，按需补） |
+| TC-PERF-07 | 长时间运行 2 小时以上 + 周期提问 | 无线程/内存持续增长、无 SSE 连接泄漏；`uptimeSec`/`chatTotal` 正常累计 | P2 | `tools/loadtest.py --duration 7200`（长跑人工触发；口径见 `docs/loadtesting.md`） |
 | TC-PERF-08 | 200 会话/200 缓存上限内的批量混合操作 | 会话与缓存按上限淘汰，延迟不随数据量线性上涨 | P2 | 手工 |
+| TC-PERF-09 | 并发混合：非流式 + SSE + 只读 + 中途断开 | 无 5xx/连接错误、无串话（sessionId 回显一致）、SSE 帧序 `meta→delta*→done`、只读接口不受聊天限流影响；429 单列不算失败 | P1 | `tools/loadtest.py`（CI 短跑 24+12；本地可加并发） |
 
 ### TC-DEP 部署与离线不变量
 
@@ -327,7 +328,7 @@ python tools/db-check.py
 | TC-DEP-03 | `offline-check.py --runtime`（服务在跑） | 运行期自洽：`embeddingReady/mode/degradedReason` 不矛盾；mock 模式下无任何外呼 | P0 | offline `--runtime` |
 | TC-DEP-04 | 阈值同步核查：改 `MIN_RELEVANCE_SCORE` 或 `MIN_VECTOR_SCORE` | `.env` / `application.yml` / `HybridRetriever` 默认常量 / CI workflow **四处同步**；`docs/.env.example` 注释同步 | P0 | 手工（改动时执行）+ calibrate 交叉 |
 | TC-DEP-05 | push 到 GitHub | CI backend + frontend 全绿（mvn test → eval → calibrate → smoke → security 三实例 → db-check ∥ build → vitest → offline-check）；**只在 push 后生效，本地绿不能替代** | P0 | CI |
-| TC-DEP-06 | Nginx/反代后面跑 smoke（`proxy_buffering off`、`X-Accel-Buffering` 透传） | SSE 不被缓冲、`meta` 首帧及时、长流不 502；`TRUST_FORWARDED_FOR` 未开时限流仍按真实源 IP | P1 | 手工（`docs/CODE_REVIEW_HANDOFF.md` 标注「真实反代未验证」——发布前必补） |
+| TC-DEP-06 | Nginx/反代后面跑 smoke（`proxy_buffering off`、`X-Accel-Buffering` 透传） | SSE 不被缓冲、`meta` 首帧及时、长流不 502；`TRUST_FORWARDED_FOR` 未开时限流仍按真实源 IP | P1 | 手工（`docs/archive/2026-09-24-code-review-handoff.md` 标注「真实反代未验证」——发布前必补） |
 | TC-DEP-07 | 展厅现场网络：外网完全不通时启动 | mock 档（默认）全功能可用；配了云模型时按降级路径回落，页面无外网请求 | P1 | 手工 + offline O07 |
 | TC-DEP-08 | `server/.env`、密钥、`server/indexes/`、`web/dist/` 不入库 | `git status` 干净、仓库历史无明文口令 | P0 | 手工核查 + offline O05 侧面 |
 

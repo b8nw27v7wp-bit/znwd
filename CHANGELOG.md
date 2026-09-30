@@ -2,6 +2,59 @@
 
 本项目版本与变更记录。日期：YYYY-MM-DD。
 
+## [未发布] — 2026-09-30 · 功能补全（zone 联动）/ 安全加固 / 并发压测 / 历史文档归档
+
+### Added — 展览 zone 联动（补回 Java 重写时漏掉的功能）
+
+- 前端支持三种外部切换展区的方式（与旧 Node 契约一致）：URL `?zone=<zoneId|mediaId>`、
+  `window.znwdSetZone(id)`、`znwd:zone` 自定义事件；选择结果仍落 `localStorage`，并用
+  `history.replaceState` 同步 URL（保留 `admin` 等参数、不污染后退历史），变更时广播 `znwd:zone`。
+- 实现落在新模块 `web/src/zoneLink.ts`，对外只有「应用展区」一个入口，同值 no-op、事件防回环、卸载解绑。
+- 前端单测 144 → **150**（`?zone=` 读取、URL 同步、window 桥、事件回环、卸载摘桥）。
+
+### Added — 可观测性与 TLS 部署指引
+
+- `micrometer-registry-prometheus`：`/actuator/prometheus` 可抓 JVM/HTTP 指标；文档注明它**不鉴权**，
+  只在监听 `127.0.0.1` 或反代限制下暴露。
+- `docs/deployment.md` 增「跨机语音的 HTTPS 两种做法」：反代终止 TLS，或 Spring Boot 环境变量
+  `SERVER_SSL_*`（PKCS12 / PEM）直接启用，无需改代码。
+
+### Security — 响应头 / 弱口令告警 / 注入对抗用例
+
+- `CorsAndIdFilter` 对所有响应统一加 `x-frame-options: DENY` 与 `referrer-policy: no-referrer`
+  （页面、接口、错误、SSE、预检一致；nosniff 保留），防页面被套 iframe 与内网地址外带。
+- 启动时弱管理口令告警：`AdminTokenStrength.isWeak()`（长度 < 16 或常见示例值）打 WARN，
+  **不阻止启动、不改 `AdminGuard` 判据**；`.env.example` 注明至少 16 位随机串。
+- 对抗用例：`tools/security.py` 新增 S06b（提示注入套系统提示词原文）、S09b/S09c（黑盒验安全头）；
+  `tools/acceptance.py` 新增 G01–G03（真模型注入：套系统提示词/越狱角色/套密钥）。后端单测 174 → **177**。
+
+### Added — 并发/压测
+
+- 新增 `tools/loadtest.py`（纯标准库）：非流式并发、SSE 并发、只读并发、客户端中途断开后恢复四个场景；
+  断言无 5xx/连接错误、SSE 帧序、会话不串话；**429 单列计数不算失败**，全 429 判失败防假绿。
+- CI 在冒烟之后起一个专用实例（`PORT=8899`、`CHAT_RATE_PER_MIN=1000`、mock），跑 `--n 24 --streams 12 --rounds 1`。
+- 新增 `docs/loadtesting.md`（场景、判据、基线、长跑 `--duration 7200` 对应 TC-PERF-07/09）。
+- 修 `tools/acceptance.py`：43 条用例会撞 30 次/分钟的聊天限流，429 现在按 `retryAfterSec` 退避重试
+  （与 smoke/security 一致），不再把末尾用例误报成「请求失败」。
+
+### Docs — 历史文档归档
+
+- `HERMES_HANDOFF.md`、`REPAIR_PLAN.md`、`CODE_REVIEW_HANDOFF.md`、`plan.md` 移入
+  `docs/archive/`（`2026-09-24-*` / `2026-09-22-speech-plan.md`），新增 `docs/archive/README.md` 索引；
+  活文档引用同步（`docs/README.md`、`docs/test-cases.md`、被移文件互引），`CHANGELOG`/`compose` 历史引用保持原样。
+
+### 本轮复跑（本机，真 MiMo + 云端 bge-m3 + 本机 MySQL）
+
+| 门禁 | 结果 |
+| --- | --- |
+| 后端单测 | **177 / 0 / 0** |
+| 前端 `npm test` / `npm run build` | **150（12 文件）** / 通过 |
+| 接口冒烟 | **100 / 0 / 0** |
+| 边界与安全（主实例） | **94 / 0 / 7**（首跑 1 条时序抖动，复跑全绿；新增 S06b/S09b/S09c 计入） |
+| 并发压测 | **5 / 5**（417 请求全成功、0 个 429、非流式 P50 60ms、只读 P50 19ms） |
+| 内容验收 | **43 / 0**（含 G01–G03 注入用例） |
+| 检索评测 | 145 条 top1/top3 1.0、与基线逐例不一致 0（未改检索，预期不变） |
+
 ## [未发布] — 2026-09-30 · Windows 一体机整机部署加固（P0/P2）
 
 目标场景：**另一台 Windows 一体机，演示屏与后端同机，前后端一起重部署**。知识库问法/闸门边界问题本轮不动。

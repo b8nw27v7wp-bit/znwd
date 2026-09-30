@@ -152,7 +152,8 @@ MySQL 表（`resources/schema.sql`，全部 `CREATE TABLE IF NOT EXISTS`）：
 | 换虚拟形象 | 只动 `AvatarPortrait.vue` 内部（外部只吃 `state`） |
 | 加接口 | `server/src/main/java/com/znwd/hostess/web/` 下新增/扩展 Controller，异常一律抛 `ApiException`（统一信封）；同步更新 `resources/openapi.json` 与 `tools/smoke.py` |
 | 加表 | `resources/schema.sql` + `domain/` 记录 + `repository/` mapper |
-| 多屏/后台 | 先把 `/api/health`、`/api/stats` 接出去；已带 `spring-boot-starter-actuator`（只暴露 `health,info`），要 Prometheus 指标再接 `micrometer-registry-prometheus` |
+| 多屏/后台 | 先把 `/api/health`、`/api/stats` 接出去 |
+| 可观测性 | actuator 暴露 `health,info,prometheus`（`micrometer-registry-prometheus`，版本由 Boot parent 管）；接多屏/后台时用 `/actuator/prometheus` 抓 JVM/HTTP 指标（Boot 默认，无自定义指标）。该端点**不鉴权**，只在监听 `127.0.0.1`（默认）或反代限制访问时才暴露 |
 
 ## 8. 刻意取舍（不是遗漏）
 

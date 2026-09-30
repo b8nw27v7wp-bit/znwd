@@ -112,7 +112,7 @@
 ## 7. 下一对话建议入口
 
 1. 先运行 `git status --short`，确认不要覆盖语音未跟踪文件。
-2. 阅读本文件和 `docs/REPAIR_PLAN.md`，再决定是否调整 RAG 兜底契约。
+2. 阅读本文件和 `./2026-09-24-repair-plan.md`，再决定是否调整 RAG 兜底契约。
 3. 若调整 RAG，先改实现和 `SemanticRetrievalTest`，再同步 `docs/architecture.md`、`docs/knowledge.md`、`docs/optimization-backlog.md`，最后跑 eval/calibrate。
 4. 若处理会话安全，先确定产品是单屏 kiosk 还是多用户，再选择签名 cookie、管理员 token 或服务端绑定；不要直接给 DELETE 套管理员 token 而破坏前端换人流程。
 5. 在目标一体机上先启动本机 MySQL 并确认 `storageAvailable=true`，再按顺序跑 `smoke.py`、`security.py`、`db-check.py`；不要并行运行 security 和 db-check，避免限流污染结果。

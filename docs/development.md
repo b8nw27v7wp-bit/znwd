@@ -32,6 +32,7 @@ cd server && ../tools/mvn -B test        # 等价于 mvn -B test
 | 阈值标定 | `cd server && ../tools/mvn -B test-compile exec:java@calibrate` | 在域最弱 8 条、域外降序、区间与建议、**语义兜底标定**（域外最高余弦 vs 待救用例）；**区间判据与闸门口径不一致，先读 `docs/eval.md` 的说明**；`--grid` 再加 36 组参数网格；`--gate-check` 判两条线（关键词域外越线退出码 3、语义余弦越线退出码 4，CI 用的就是这条）；报告落 `docs/eval/calibration-*.json` |
 | 资料入库 | `cd server && ../tools/mvn -B -q test-compile exec:java@ingest -Dexec.args="--src ./inbox --zone <展区id>"`（`--dry-run` 先看目标路径） | `完成：N/M 入库`；扫描件 PDF 与 `.doc` 明确报错；用法见 `docs/knowledge.md` §8 |
 | 接口冒烟 | `python tools/smoke.py`（需服务在跑，`BASE=http://…` 可改目标；管理块要 `ADMIN_TOKEN`） | `通过 100 项，失败 0 项`（带 `ADMIN_TOKEN`、语音启用；分档口径见 §7） |
+| 并发压测 | `python tools/loadtest.py`（需服务在跑；非流式/SSE/只读并发 + 客户端中断，`--duration` 可长跑） | mock 短跑（24+12）`通过 5 项，失败 0 项`；429 单列计数不算失败，口径与基线见 `docs/loadtesting.md` |
 | 问答内容验收 | `python tools/acceptance.py`（需服务 + 真模型在跑；`TAGS=fix,fact` 可只跑一组） | `通过 40 项，失败 0 项`（内容层：该答的答对、该拒的拒、资料里没有的不许编；CI 跑不了，要真模型） |
 | 边界与安全 | `python tools/security.py`（同上；非回环越权与误配置组见 `docs/security-testing.md`） | 主实例 `91 通过 / 0 失败 / 7 跳过`（缺第二/误配置/开发态实例）；四实例全跑 `99 通过 / 0 失败 / 0 跳过` |
 | 库层核查 | `python tools/db-check.py`（需本机 mysql 客户端：`MYSQL_BIN` 或候选路径 `D:/mysql-cli/mysql-8.4.0-winx64/bin/mysql.exe`；缺客户端整组 SKIP） | `通过 19 项，失败 0 项` |
@@ -117,6 +118,8 @@ MySQL 首次使用：把 `server/db/init.sql` 里两处 `CHANGE_ME_znwd` 改成�
 
 上表与下面命令里的 `python tools/...` 在 Windows 上改用 `py -3 tools/...`（本机 `python` 命令不可用；虚拟环境里用其 `python`）。
 
+并发/压测不在上面的全量复跑表里（要额外的实例与限流窗口，结果随模型与限流档位浮动）：mock 短跑 `py -3 tools/loadtest.py --n 24 --streams 12 --rounds 1`、长跑（`--duration 7200`，对应 TC-PERF-07）与 429 语义见 `docs/loadtesting.md`。
+
 ```bash
 cd server && ../tools/mvn -B test                     # 167 项：检索/HTTP/统计会话/同义词/诊断文案/配置接线/管理口令/降级写路径与裁剪/资料入库/请求体上限/来源面板规则/落库截断/限流键取值/语音/问答接口契约
 cd web && npm test                                     # 144 项（12 个文件）：SSE 解析、问答状态机、朗读与听写、回答排版、展区下拉、界面入口与播报接线、运营视图、对话主流程、来源面板、讲解图、检索诊断与知识面板（jsdom）
@@ -129,7 +132,7 @@ python tools/smoke.py                                  # 100 项契约（需服�
 
 CI（`.github/workflows/ci.yml`，push/PR 都跑）：
 
-- **backend**：起一个 MySQL 8.4 service 容器 → 用 root 执行 `server/db/init.sql`（`sed` 注入口令、`@'localhost'` 换成 `@'%'`，因为容器里来源是 docker 网关 IP）→ `mvn test` → `exec:java@eval --no-write --baseline=docs/eval/baseline-java.json` → `calibrate --gate-check --no-write` → `package` → 起 jar 跑 `python3 tools/smoke.py`（先等 `/api/health` 的 `ready:true`、`storageAvailable:true` 且知识块非零）→ 再起两个实例跑 `python3 tools/security.py`（`SECOND_BASE`/`MISCONFIG_BASE`）→ `python3 tools/db-check.py`。`LLM_PROVIDER=mock`、`MIN_RELEVANCE_SCORE=6.3`、`MIN_VECTOR_SCORE=0.75` 显式给出，失败时打印三个实例的日志。
+- **backend**：起一个 MySQL 8.4 service 容器 → 用 root 执行 `server/db/init.sql`（`sed` 注入口令、`@'localhost'` 换成 `@'%'`，因为容器里来源是 docker 网关 IP）→ `mvn test` → `exec:java@eval --no-write --baseline=docs/eval/baseline-java.json` → `calibrate --gate-check --no-write` → `package` → 起 jar 跑 `python3 tools/smoke.py`（先等 `/api/health` 的 `ready:true`、`storageAvailable:true` 且知识块非零）→ 另起 8899 mock 实例跑 `python3 tools/loadtest.py`（24 非流式 + 12 流式并发短跑，见 `docs/loadtesting.md`）→ 再起两个实例跑 `python3 tools/security.py`（`SECOND_BASE`/`MISCONFIG_BASE`）→ `python3 tools/db-check.py`。`LLM_PROVIDER=mock`、`MIN_RELEVANCE_SCORE=6.3`、`MIN_VECTOR_SCORE=0.75` 显式给出，失败时打印三个实例的日志。
 - **frontend**：`npm ci` → `npm run build` → `npm test` → `python3 tools/offline-check.py`；O04 守后端出网白名单，只允许 LLM、embedding、MiMo 语音三个适配器。
 
 失败时的判断顺序：先在本地复现对应命令；契约类失败（smoke）先看 `docs/api.md` 的字段表，检索类失败（eval/基线门禁）先看 `REGRESSION`/`DIFF`，再跑 `calibrate` 查阈值与降级原因，边界/安全类失败（security）先看 `docs/security-testing.md` 里该编号的期望与「已接受的风险」两节，别急着改代码。

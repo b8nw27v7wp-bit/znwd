@@ -138,6 +138,24 @@ cd web && npm ci && npm run build                    # → web/dist
 - **麦克风需要安全上下文**：浏览器只在 HTTPS 或 `localhost`／`127.0.0.1` 下给 `getUserMedia`。一体机上直接用 `http://内网IP` 打开时「语音提问」按钮不会出现（自动播报不受影响）。要么在本机以 `http://127.0.0.1:端口` 打开，要么给内网访问配一张证书。
 - **请求体上限**：语音接口单次上传最大约 853KB（20 秒录音 → 640KB WAV → base64）。Nginx 默认 `client_max_body_size 1m` 勉强够，建议显式设 `2m`；应用内还有一道 2MB 硬上限（`RequestSizeLimitFilter`），配得再大也会被它先拦。
 
+**跨机语音（HTTPS）两种做法**，均为纯配置、无需改 Java 代码：
+
+1. **前端反代终止 TLS**：nginx 监听 443 配证书，静态托管 `web/dist`、`/api` 反代到 `http://127.0.0.1:8787`（§1.1 拓扑 A 的 `proxy_buffering off` 是 SSE 逐字输出的前提，不能删）。浏览器只接触 `https://`。
+2. **后端直接启用 TLS**：Spring Boot 内置支持，用 `SERVER_SSL_*` 环境变量指向 PKCS12 或 PEM 证书，`HOST`/`PORT` 不变，同端口即 HTTPS。最小示例：
+
+```dotenv
+# 方式一：PKCS12（.p12/.pfx，含证书链与私钥）
+SERVER_SSL_ENABLED=true
+SERVER_SSL_KEY_STORE=file:./certs/znwd.p12
+SERVER_SSL_KEY_STORE_PASSWORD=<store 口令>
+
+# 方式二：PEM（与方式一二选一）
+# SERVER_SSL_CERTIFICATE=file:./certs/fullchain.pem
+# SERVER_SSL_CERTIFICATE_PRIVATE_KEY=file:./certs/znwd.key
+```
+
+启用后页面地址变为 `https://127.0.0.1:8787/`；跨机访问需同时 `HOST=0.0.0.0`。证书文件不进版本库，现场自行放置。
+
 ### MySQL（一体机本机库）
 
 | 变量 | 默认 | 说明 |
@@ -223,6 +241,7 @@ mysql -u root -p < server/db/init.sql
 | `PUT /api/admin/synonyms` | 有 | 整表替换同义词（默认 `persist=true` 写回 `knowledge/_meta/synonyms.tsv`，立即生效） |
 | `POST /api/knowledge/reload` | 有 | 重载知识、重建索引、清答案缓存 |
 | `GET /api/knowledge/list` | 有 | 知识清单：文件/块数、检索模式、同义词摘要 |
+| `GET /actuator/prometheus` | 无 | Prometheus 抓取端（JVM/HTTP 等 Boot 默认指标，无需自定义代码）。**无鉴权**：一体机同机抓取可直接用；跨机暴露必须在反代层限制来源（IP 白名单/独立 vhost），否则从 `management.endpoints.web.exposure.include` 移除 `prometheus` 关闭暴露 |
 
 日常巡检建议：
 
@@ -289,6 +308,7 @@ cd server && ../tools/mvn -B test-compile exec:java@calibrate -Dexec.args="--gat
 - `CORS_ORIGINS` 显式列出展厅域名/IP，不要用 `*`。
 - 应用账号只用 `znwd@localhost` 的最小权限账号，别把 root 口令写进 `.env`。
 - 限流 `CHAT_RATE_PER_MIN` 是防刷底线（默认 30/分钟/IP），现场若有人连续刷提问会收到 429。
+- **`/actuator/prometheus` 无鉴权**：指标含版本、流量等信息。默认只监听 `127.0.0.1` 时同机抓取安全；`HOST=0.0.0.0` 时必须由反代限制来源（IP 白名单），否则从 `management.endpoints.web.exposure.include` 去掉 `prometheus` 关闭暴露。
 - `.env`、`server/data/`、`server/indexes/`、`web/dist/` 都不进版本库（见 `docs/development.md` 提交约定）。
 
 ## 11. 单机出网与降级：仅 LLM、embedding 与可选语音服务出网

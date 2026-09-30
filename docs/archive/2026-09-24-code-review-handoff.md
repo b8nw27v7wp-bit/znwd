@@ -23,7 +23,7 @@
 - 本地编译、单元测试、前端测试、构建、离线不变量、检索评测和阈值门禁均通过。
 - 真实服务黑盒测试（2026-09-29 本机实跑）和 GitHub Actions 远端执行（run `36535739334` 全绿）已完成；真实云端模型/embedding/TTS/ASR 和目标一体机重启恢复尚未验证。
 - 工作区保留大量未提交修改和未跟踪语音文件；不要执行全量回滚或清理未跟踪文件。
-- 详细执行记录见 `docs/HERMES_HANDOFF.md`，任务拆分见 `docs/REPAIR_PLAN.md`。
+- 详细执行记录见 `./2026-09-24-hermes-handoff.md`，任务拆分见 `./2026-09-24-repair-plan.md`。
 
 ## 2. 审核状态总表
 
@@ -136,6 +136,6 @@ py -3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml', encoding=
 ## 7. 交接动作
 
 - 不要执行 `git reset --hard`、`git checkout -- .` 或删除未跟踪语音文件。
-- 下一对话先读本文件、`docs/HERMES_HANDOFF.md`、`docs/REPAIR_PLAN.md`。
+- 下一对话先读本文件、`./2026-09-24-hermes-handoff.md`、`./2026-09-24-repair-plan.md`。
 - 若继续修复，优先处理 P0-1/P0-2，再处理 RAG 契约和会话所有权。
 - 本文件不包含密钥；任何 `.env`、token、数据库导出和本地索引都不得复制到文档或提交。

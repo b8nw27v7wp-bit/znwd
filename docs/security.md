@@ -13,6 +13,8 @@
 | MySQL 账号权限 | `GRANT ALL PRIVILEGES ON znwd.*` | 收窄到 `SELECT, INSERT, UPDATE, DELETE, CREATE`（建表靠 `CREATE`；不给 DROP/ALTER/LOCK TABLES/GRANT） | 临时实例（3307）实测：用该账号建出 5 张表、问答与反馈各落 1 行、重启后会话与统计恢复 |
 | 会话接口归属 | `GET/DELETE /api/sessions/:id` 只凭 `sessionId` 放行，知道 id 就能读/删（**已接受风险**） | 问答响应下发会话令牌（非流式字段 `sessionToken`、SSE 挂 `done` 帧），客户端用 `X-Session-Token` 头或 `?sessionToken=` 带回来；不匹配一律 404 | 2026-09-29 实测：无令牌/错令牌删除 404、持令牌读 200、持令牌删 200；`ChatWebContractTest` 4 条单测 + `tools/security.py` S19/S19a–d |
 | 降级模式（写库 + 日志） | 库挂掉时**每次问答/反馈/定时裁剪白等 Hikari `connection-timeout`（实测 3.0 秒/次）**，且连接池每 65 秒刷一条建连 WARN + 16 行堆栈（同一根因反复刷屏，真日志被淹） | 写路径与 `trimStorage` 先问 `DatabaseStatus.shouldAttempt()`；`minimum-idle: 0` 去掉后台反复建连；压掉 `PoolBase` 的重探 WARN；新增每 60 秒静默探活（恢复后无需重启即续写） | 实测：反馈 3.0s → **0.019s**；降级静置 70 秒日志 = 1 条 WARN + **0 行堆栈**；建库后未重启第 50 秒自动恢复并落库 4 行；单测 7 条 |
+| 安全响应头 | 只有 `x-content-type-options: nosniff`；页面可被任意站点套 iframe（点按劫持/钓鱼），跨站跳转不带 Referrer 策略 | `CorsAndIdFilter` 对**所有响应**（页面/接口/错误/SSE/预检）统一加 `x-frame-options: DENY` 与 `referrer-policy: no-referrer`，nosniff 保留 | `SecurityHardeningTest` 3 条（普通请求/预检/弱口令判定）+ `tools/security.py` S09b/S09c（黑盒，打活实例） |
+| 弱管理口令启动告警 | 口令配短了或用了示例值（如 `root:123456`）没有任何提示，展厅上局域网时才暴露 | 启动时 `AdminTokenStrength.isWeak()` 判定，弱则打醒目 WARN（**不阻止启动、不改 `AdminGuard` 判据**）；`.env.example` 注明至少 16 位随机串 | `SecurityHardeningTest` 的弱口令判定用例 |
 
 ## 二、已核查、确认没问题（含复核命令）
 
