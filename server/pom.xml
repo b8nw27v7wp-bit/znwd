@@ -39,6 +39,11 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-actuator</artifactId>
     </dependency>
+    <!-- /actuator/prometheus：JVM/HTTP 等 Boot 默认指标，无需自定义代码；版本由 Boot parent 管理 -->
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-registry-prometheus</artifactId>
+    </dependency>
 
     <!-- 会话 / 问答日志 / 反馈落库 -->
     <dependency>

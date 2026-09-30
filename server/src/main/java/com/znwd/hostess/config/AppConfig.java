@@ -154,6 +154,11 @@ public class AppConfig {
                     knowledge.chunks().size(), props.embedProvider(), props.llmProvider(),
                     props.minRelevanceScore(), props.minVectorScore(), props.adminTokenRequired(),
                     props.chatRatePerMin(), props.corsOriginList());
+            if (AdminTokenStrength.isWeak(props.adminToken())) {
+                log.warn("[startup] ADMIN_TOKEN 强度偏弱（长度 < {} 或为常见示例值）：局域网/展厅部署请换成至少 {} 位随机串；"
+                                + "当前口令仍按配置生效，改完需重启。",
+                        AdminTokenStrength.MIN_LENGTH, AdminTokenStrength.MIN_LENGTH);
+            }
         }
 
         /**

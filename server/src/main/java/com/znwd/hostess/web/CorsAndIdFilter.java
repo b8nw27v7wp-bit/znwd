@@ -41,6 +41,10 @@ public class CorsAndIdFilter extends OncePerRequestFilter {
         // 让浏览器不要"猜"内容类型：JSON 就只当 JSON。所有响应（含错误与 SSE）统一带上，
         // 万一将来某条响应被拼进了 HTML 片段，浏览器也不会把它当页面解析。
         response.setHeader("x-content-type-options", "nosniff");
+        // 展厅大屏就是页面本身，不该被任何站点套进 iframe（防点按劫持/钓鱼）；
+        // Referrer-Policy 让页面跳外部链接时不把内网地址带出去。jar 托管前端后这两条也作用于页面。
+        response.setHeader("x-frame-options", "DENY");
+        response.setHeader("referrer-policy", "no-referrer");
 
         String origin = request.getHeader("origin");
         String allowed = CorsPolicy.allowedOrigin(origin, allowOrigins);
