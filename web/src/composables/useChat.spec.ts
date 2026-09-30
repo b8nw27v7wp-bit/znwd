@@ -301,6 +301,38 @@ describe('展区切换竞态', () => {
 });
 
 /**
+ * 同值 setZone 必须直接 no-op。
+ *
+ * 下拉重复点同一项、znwd:zone 事件回声都会走到这里；不拦的话每一声回声都要重打一次
+ * 推荐问题接口，回环场景下还会放大成请求风暴——这是 zoneLink 防回环的最后一道闸。
+ */
+describe('展区同值设置', () => {
+  it('同值 setZone 不重复请求推荐问题（含清空）', async () => {
+    const suggestionCalls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/api/suggestions')) {
+          suggestionCalls.push(url);
+          return new Response(JSON.stringify({ items: [] }), { status: 200 });
+        }
+        throw new Error(`unexpected fetch: ${url}`);
+      }),
+    );
+
+    const chat = useChat();
+    await chat.setZone('pv-clean');
+    await chat.setZone('pv-clean');
+    expect(suggestionCalls.filter((u) => u.includes('zone=pv-clean')), '同值只该请求一次').toHaveLength(1);
+
+    await chat.setZone(null);
+    await chat.setZone(null);
+    expect(suggestionCalls.filter((u) => !u.includes('zone=')), '清空同值也只该请求一次').toHaveLength(1);
+  });
+});
+
+/**
  * 会话归属令牌（服务端 2026-09-29 收紧）。
  *
  * 服务端对下发过令牌的会话：GET/DELETE 不带或不匹配一律 404。

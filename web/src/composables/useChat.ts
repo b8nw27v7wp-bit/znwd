@@ -10,6 +10,7 @@ import {
   streamChat,
 } from '../api';
 import { readStorage, removeStorage, writeStorage } from '../storage';
+import { readZoneFromUrl } from '../zoneLink';
 
 const SESSION_KEY = 'znwd.sessionId';
 const ZONE_KEY = 'znwd.zone';
@@ -37,7 +38,9 @@ export function useChat() {
   const resetting = ref(false);
   const sessionId = ref<string>(readSessionId());
   const sessionToken = ref<string>(readStorage('session', SESSION_TOKEN_KEY) ?? '');
-  const zone = ref<string | null>(readStorage('local', ZONE_KEY));
+  // 当前展区：URL 的 `?zone=` 优先于 localStorage——展览播放系统切媒体时带参数进页面，
+  // 这次进页面就该按它拉推荐问题；没带 URL 参数才回落到上次的选择（旧 Node 版 P2 契约）。
+  const zone = ref<string | null>(readZoneFromUrl() ?? readStorage('local', ZONE_KEY));
   const suggestions = ref<Suggestion[]>([]);
   const zones = ref<ZoneInfo[]>([]);
   const health = ref<HealthInfo | null>(null);
@@ -113,6 +116,9 @@ export function useChat() {
   }
 
   async function setZone(next: string | null): Promise<void> {
+    // 同值 no-op：重复点同一展区、外部桥的事件回声都不该再打一次推荐问题接口，
+    // 也是 zoneLink 防回环的最后一道闸。
+    if (next === zone.value) return;
     zone.value = next;
     if (next) writeStorage('local', ZONE_KEY, next);
     else removeStorage('local', ZONE_KEY);

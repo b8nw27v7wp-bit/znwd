@@ -29,7 +29,7 @@ class FakeUtterance {
   }
 }
 
-/** reject=true 时模拟浏览器的自动播放策略：speak 立刻回 not-allowed（plan.md 的机理 1） */
+/** reject=true 时模拟浏览器的自动播放策略：speak 立刻回 not-allowed（docs/archive/2026-09-22-speech-plan.md 的机理 1） */
 function installSpeech(options: { reject?: boolean } = {}) {
   const spoken: string[] = [];
   const utterances: FakeUtterance[] = [];
@@ -120,6 +120,8 @@ function mountWithAdmin() {
 beforeEach(() => {
   localStorage.clear();
   window.history.replaceState({}, '', '/');
+  // 展览桥是全局副作用：上个用例万一没卸载干净，这里兜底清掉，避免跨用例污染
+  delete (window as unknown as { znwdSetZone?: unknown }).znwdSetZone;
   vi.unstubAllGlobals();
   stubFetch();
 });
@@ -562,7 +564,7 @@ describe('展厅页面：对话主流程接线', () => {
 });
 
 /**
- * 语音的两条现场行为（plan.md 的 P0/P1）：
+ * 语音的两条现场行为（docs/archive/2026-09-22-speech-plan.md 的 P0/P1）：
  * 1) 被浏览器策略拦下时必须进「最近的技术问题」——大屏上不提示，但运营要能查到「为什么没声音」；
  * 2) 第一次真实手势要把语音解锁（空 utterance 暖机），且只解一次。
  */
@@ -758,5 +760,146 @@ describe('缺口用例补全', () => {
     expect(wrapper.text()).toContain('不需要停机');
 
     wrapper.unmount();
+  });
+});
+
+/**
+ * 展览 zone 联动（旧 Node 版 P2 契约，Java/Vue 重写时漏掉的那层）：
+ * URL `?zone=`、`window.znwdSetZone`、`znwd:zone` 事件。
+ *
+ * 挂在真组件上验完整链路：URL 读取 → 推荐问题、下拉写 URL（replaceState、保留 admin）、
+ * 外部桥进出、防回环与卸载清理。jsdom 的 history.replaceState 可用，每个用例收尾都复位 URL。
+ */
+describe('展厅页面：展览 zone 联动', () => {
+  function urlZone(): string | null {
+    return new URLSearchParams(window.location.search).get('zone');
+  }
+
+  function zoneSetter(): ((id: string | null) => void) | undefined {
+    return (window as Window & { znwdSetZone?: (id: string | null) => void }).znwdSetZone;
+  }
+
+  function suggestionCalls(): string[] {
+    return fetchCalls()
+      .map((c) => String(c[0]))
+      .filter((u) => u.includes('/api/suggestions'));
+  }
+
+  it('URL 带 ?zone= 时优先按该展区拉推荐问题，且 ?admin=1 行为不变', async () => {
+    installSpeech();
+    localStorage.setItem('znwd.zone', 'wind-inspect'); // URL 必须压过 localStorage
+    window.history.replaceState({}, '', '/?zone=pv-doctor&admin=1');
+
+    const wrapper = mount(App);
+    await flushPromises();
+
+    expect(suggestionCalls().some((u) => u.includes('zone=pv-doctor')), '要按 URL 的展区拉推荐').toBe(true);
+    expect(suggestionCalls().some((u) => u.includes('zone=wind-inspect')), 'localStorage 的旧展区不该被请求').toBe(false);
+    expect(wrapper.find('.drawer').exists(), '?admin=1 仍要打开运营视图').toBe(true);
+    wrapper.unmount();
+  });
+
+  it('下拉选择后 URL 出现 zone 且保留 admin（replaceState，不 pushState）', async () => {
+    installSpeech();
+    window.history.replaceState({}, '', '/?admin=1');
+    const events: unknown[] = [];
+    const onZone = (e: Event) => events.push((e as CustomEvent).detail);
+    window.addEventListener('znwd:zone', onZone);
+    const pushSpy = vi.spyOn(window.history, 'pushState');
+
+    const wrapper = mount(App);
+    await flushPromises();
+    await wrapper.find('.zone-trigger').trigger('click');
+    const pv = wrapper.findAll('.zone-option').find((o) => o.text() === '光伏清洁');
+    await pv!.trigger('click');
+    await flushPromises();
+
+    expect(urlZone()).toBe('pv-clean');
+    expect(new URLSearchParams(window.location.search).get('admin')).toBe('1');
+    expect(pushSpy, '只允许 replaceState，不能污染后退历史').not.toHaveBeenCalled();
+    expect(events, '下拉变化也要广播 znwd:zone').toEqual([{ zone: 'pv-clean' }]);
+    expect(suggestionCalls().some((u) => u.includes('zone=pv-clean'))).toBe(true);
+
+    pushSpy.mockRestore();
+    window.removeEventListener('znwd:zone', onZone);
+    wrapper.unmount();
+  });
+
+  it('清空展区后 URL 去掉 zone 参数（其余参数保留）', async () => {
+    installSpeech();
+    window.history.replaceState({}, '', '/?zone=pv-clean&admin=1');
+    const wrapper = mount(App);
+    await flushPromises();
+
+    await wrapper.find('.zone-trigger').trigger('click');
+    const all = wrapper.findAll('.zone-option').find((o) => o.text() === '全部展区');
+    await all!.trigger('click');
+    await flushPromises();
+
+    expect(urlZone()).toBeNull();
+    expect(new URLSearchParams(window.location.search).get('admin')).toBe('1');
+    expect(suggestionCalls().some((u) => /\/api\/suggestions$/.test(u)), '清空后拉全馆推荐').toBe(true);
+    wrapper.unmount();
+  });
+
+  it('window.znwdSetZone 切换展区、同步 URL 并派发 znwd:zone 事件', async () => {
+    installSpeech();
+    const events: unknown[] = [];
+    const onZone = (e: Event) => events.push((e as CustomEvent).detail);
+    window.addEventListener('znwd:zone', onZone);
+
+    const wrapper = mount(App);
+    await flushPromises();
+    const setZone = zoneSetter();
+    expect(typeof setZone, '挂载后要暴露 window.znwdSetZone').toBe('function');
+
+    setZone!('pv-clean');
+    await flushPromises();
+    expect(wrapper.find('.zone-trigger').text()).toBe('光伏清洁');
+    expect(urlZone()).toBe('pv-clean');
+    expect(suggestionCalls().some((u) => u.includes('zone=pv-clean'))).toBe(true);
+    expect(events).toEqual([{ zone: 'pv-clean' }]);
+
+    setZone!(null);
+    await flushPromises();
+    expect(urlZone()).toBeNull();
+    expect(events).toEqual([{ zone: 'pv-clean' }, { zone: null }]);
+
+    wrapper.unmount();
+    expect(zoneSetter(), '卸载要摘掉 window 桥').toBeUndefined();
+    window.removeEventListener('znwd:zone', onZone);
+  });
+
+  it('外部派发 znwd:zone 能切换展区（detail 对象/字符串都认）且不回环', async () => {
+    installSpeech();
+    const wrapper = mount(App);
+    await flushPromises();
+
+    const seen: unknown[] = [];
+    const onZone = (e: Event) => seen.push((e as CustomEvent).detail);
+    window.addEventListener('znwd:zone', onZone);
+
+    window.dispatchEvent(new CustomEvent('znwd:zone', { detail: { zone: 'pv-clean' } }));
+    await flushPromises();
+    expect(wrapper.find('.zone-trigger').text()).toBe('光伏清洁');
+
+    window.dispatchEvent(new CustomEvent('znwd:zone', { detail: 'wind-inspect' }));
+    await flushPromises();
+    expect(wrapper.find('.zone-trigger').text()).toBe('风场检测');
+
+    const before = suggestionCalls().length;
+    window.dispatchEvent(new CustomEvent('znwd:zone', { detail: { zone: 'wind-inspect' } }));
+    await flushPromises();
+    expect(suggestionCalls().length, '同值事件不重复请求').toBe(before);
+
+    expect(seen, '外部监听只看到自己派的 3 次事件，本页不回声').toHaveLength(3);
+
+    wrapper.unmount();
+    window.removeEventListener('znwd:zone', onZone);
+
+    const afterUnmount = suggestionCalls().length;
+    window.dispatchEvent(new CustomEvent('znwd:zone', { detail: { zone: 'pv-doctor' } }));
+    await flushPromises();
+    expect(suggestionCalls().length, '卸载后事件监听要摘掉').toBe(afterUnmount);
   });
 });

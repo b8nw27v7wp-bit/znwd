@@ -4,6 +4,7 @@ import { useChat } from './composables/useChat';
 import { useSpeech } from './composables/useSpeech';
 import { useDictation } from './composables/useDictation';
 import { formatAnswer, type Block } from './format';
+import { bindZoneBridge, dispatchZoneChange, writeZoneToUrl, type ZoneSource } from './zoneLink';
 import SourcePanel from './components/SourcePanel.vue';
 import AdminPanel from './components/AdminPanel.vue';
 import AvatarPortrait from './components/AvatarPortrait.vue';
@@ -36,6 +37,22 @@ const showSources = ref(false);
 const scrollArea = ref<HTMLElement | null>(null);
 const composer = ref<HTMLTextAreaElement | null>(null);
 let idleTimer: number | undefined;
+
+/**
+ * 展区变化的唯一入口：下拉、window.znwdSetZone、znwd:zone 事件都从这里走。
+ * - 同值 no-op：不重复拉推荐问题，也截断事件回声；
+ * - 变更经 chat.setZone 落 localStorage，再用 replaceState 同步 URL（保留 admin 等参数）；
+ * - source='api' 的变更向 window 广播 znwd:zone；外部事件本身就是广播，不再回发（防回环）。
+ */
+function applyZone(id: string | null, source: ZoneSource = 'api'): void {
+  if (id === chat.zone.value) return;
+  void chat.setZone(id);
+  writeZoneToUrl(id);
+  if (source === 'api') dispatchZoneChange(id);
+}
+
+// 展览桥：挂载即可被外部调用；卸载时必须解绑，避免反复挂载（测试/热更新）互相污染
+const unbindZoneBridge = bindZoneBridge(applyZone);
 
 function bumpActivity(): void {
   if (idleTimer) window.clearTimeout(idleTimer);
@@ -72,6 +89,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (idleTimer) window.clearTimeout(idleTimer);
+  unbindZoneBridge();
   chat.cancel();
   speech.stop();
   // 录音中途被卸载（切页面/热更新）也要把麦克风与 AudioContext 放掉：
@@ -147,9 +165,9 @@ const zoneLabel = computed(
   () => zoneOptions.value.find((z) => z.id === chat.zone.value)?.label ?? '全部展区',
 );
 
-async function pickZone(id: string | null): Promise<void> {
+function pickZone(id: string | null): void {
   zoneOpen.value = false;
-  await chat.setZone(id);
+  applyZone(id);
 }
 
 const placeholder = computed(() =>
