@@ -1,0 +1,25 @@
+# 行尾统一：仓库内文本文件一律按 LF 存储，检出时按平台/类型转换。
+# 目的：消除 Windows 上 autocrlf 带来的 LF↔CRLF 警告与跨平台 diff 噪声。
+* text=auto
+
+# Windows 脚本保持 CRLF（现场编辑器/记事本多为 CRLF）
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Unix 脚本保持 LF
+*.sh  text eol=lf
+tools/mvn text eol=lf
+
+# 二进制：禁止行尾转换与文本 diff
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.jar  binary
+*.zip  binary
+*.woff binary
+*.woff2 binary
+*.ttf  binary
+*.pdf  binary
