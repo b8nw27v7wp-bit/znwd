@@ -12,6 +12,7 @@
 | `stop-znwd.cmd` | 找到监听端口的 PID 并 `taskkill /F`；没在跑就提示 |
 | `status-znwd.cmd` | 打印端口监听状态、java 进程命令行、`/api/health` 返回 |
 | `install-autostart.ps1` | 用计划任务 `znwd-hostess` 配置开机自启/登录自启，支持 `-Remove` 卸载 |
+| `deploy-znwd.ps1` | 一体机一键部署：执行 `init.sql` 建库 → 写 `server\.env` → 启动 → 轮询 `/api/health` 验收 →（可选）注册自启 |
 | `pack.ps1` | 构建（可跳过）并打包到 `dist\znwd-<日期>\`，同时生成 `DEPLOY.txt` 与同名 zip |
 
 ## 常用例子
@@ -40,6 +41,10 @@ powershell -ExecutionPolicy Bypass -File tools\windows\install-autostart.ps1 -Re
 # 只预览要做什么（WhatIf），不做任何修改
 powershell -ExecutionPolicy Bypass -File tools\windows\install-autostart.ps1 -WhatIf
 
+# 一键部署：建库 + 写 .env + 启动 + 健康检查（未给参数则交互输入；-SetAutostart 顺带注册开机自启）
+powershell -ExecutionPolicy Bypass -File tools\windows\deploy-znwd.ps1
+powershell -ExecutionPolicy Bypass -File tools\windows\deploy-znwd.ps1 -SkipInitDb -NoStart
+
 # 打包（默认先 mvn package + npm ci && npm run build）
 powershell -ExecutionPolicy Bypass -File tools\windows\pack.ps1
 powershell -ExecutionPolicy Bypass -File tools\windows\pack.ps1 -SkipBuild
@@ -53,3 +58,4 @@ powershell -ExecutionPolicy Bypass -File tools\windows\pack.ps1 -SkipBuild
 - `-AtStartup` 以 SYSTEM 运行，只认**机器级** PATH 和 `JAVA_HOME`；脚本会检查并提醒。普通账号的 JDK 装在用户环境里时，请改用默认的 `-AtLogon`。
 - 启停/状态脚本必须保存为**纯 ASCII**（注释全英文），`.ps1` 为 ASCII 或带 BOM 的 UTF-8。PowerShell 5.1 会把无 BOM 的非 ASCII 文件按 ANSI 解码，中文注释可能把下一行代码一起毁掉。
 - 打包产物保留了仓库目录结构，`tools\windows` 里的脚本在包内可直接使用；`DEPLOY.txt` 是给现场人员的纯 ASCII 操作单。
+- `deploy-znwd.ps1` 前置为「环境已装好 + 应用已解压」，它**不安装** JDK/MySQL；执行 init.sql 时用 `MYSQL_PWD` 传 root 口令，不落盘。要覆盖的键写在 `.env` 末尾带标记的托管块，可重复执行（同键以后者为准）。
