@@ -9,7 +9,6 @@ import com.znwd.hostess.knowledge.RetrievalDiagnostics;
 import com.znwd.hostess.knowledge.RetrievalOutcome;
 import com.znwd.hostess.llm.ChatMessage;
 import com.znwd.hostess.llm.ChatModel;
-import com.znwd.hostess.llm.LlmUsage;
 
 /**
  * RAG 主链路：检索 → 拼 prompt → 调模型。
@@ -63,12 +62,11 @@ public class RagPipeline {
      * 命中位置带给前端，不改变任何入选、过滤与排序行为。
      */
     public static List<RagSource> toSources(List<HybridHit> hits) {
-        double bestKeyword = hits.stream().mapToDouble(HybridHit::keywordScore).max().orElse(0);
-        double floor = bestKeyword * SOURCE_KEEP_RATIO;
+        double bestKeyword = bestKeywordScore(hits);
         List<RagSource> out = new ArrayList<>(hits.size());
         java.util.Set<String> seen = new java.util.LinkedHashSet<>();
         for (HybridHit h : hits) {
-            if (bestKeyword > 0 && h.keywordScore() < floor) {
+            if (!keptByKeywordScore(h, bestKeyword)) {
                 continue;
             }
             String key = h.sourcePath() == null || h.sourcePath().isBlank() ? h.title() : h.sourcePath();
@@ -175,43 +173,22 @@ public class RagPipeline {
                 result.usage());
     }
 
+    /** 本次命中的最高关键词分（来源面板门槛与 prompt 装配门槛共用的那把尺子） */
+    static double bestKeywordScore(List<HybridHit> hits) {
+        return hits == null || hits.isEmpty()
+                ? 0
+                : hits.stream().mapToDouble(HybridHit::keywordScore).max().orElse(0);
+    }
+
     /**
-     * 流式回答。闸门拦截时把固定回复一次性推给前端（与原实现一致：前端不必区分两种收尾方式）。
+     * 量级过滤的唯一判据：低于「本次最高关键词分 × {@link #SOURCE_KEEP_RATIO}」的命中不入选。
      *
-     * @param onDelta 正文增量回调
+     * <p>来源面板（{@link #toSources}）与 prompt 装配（{@link #filterForPrompt}）各调一次——
+     * 两边口径必须永远一致，否则会出现「面板里挂着的资料没进回答」这种对不上的展示。
+     * 最高分 ≤ 0（一条都没命中关键词）时不过滤：没有任何量级可比。
      */
-    public StreamOutcome stream(String message, List<ChatMessage> history, java.util.function.Consumer<String> onDelta) {
-        List<ChatMessage> trimmed = history.size() > MAX_HISTORY_MESSAGES
-                ? history.subList(history.size() - MAX_HISTORY_MESSAGES, history.size())
-                : history;
-        RetrievalForMessage retrieved = retrieveForMessage(message, trimmed, DEFAULT_TOP_K);
-        List<HybridHit> hits = retrieved.hits();
-        boolean gated = hits.isEmpty() && !noHitLlm;
-        String provider = gated ? RagAnswer.PROVIDER_GATE : model.name();
-
-        if (gated) {
-            String reply = prompts.noHitReply();
-            onDelta.accept(reply);
-            return new StreamOutcome(reply, toSources(hits), RagAnswer.MODE_LLM_ONLY, provider,
-                    retrieved.diagnostics().mode().value(), true, retrieved.diagnostics(), retrieved.rewrite(), null);
-        }
-
-        StringBuilder full = new StringBuilder();
-        model.stream(buildPrompt(hits, message, trimmed), delta -> {
-            full.append(delta);
-            onDelta.accept(delta);
-        });
-        LlmUsage usage = model.lastUsage();
-        return new StreamOutcome(
-                full.toString(),
-                toSources(hits),
-                hits.isEmpty() ? RagAnswer.MODE_LLM_ONLY : RagAnswer.MODE_RAG,
-                provider,
-                retrieved.diagnostics().mode().value(),
-                hits.isEmpty(),
-                retrieved.diagnostics(),
-                retrieved.rewrite(),
-                usage);
+    static boolean keptByKeywordScore(HybridHit hit, double bestKeyword) {
+        return bestKeyword <= 0 || hit.keywordScore() >= bestKeyword * SOURCE_KEEP_RATIO;
     }
 
     /** 命中片段装进 system；闸门未通过时换成「直说没有」指令 */
@@ -219,11 +196,8 @@ public class RagPipeline {
         if (hits == null || hits.isEmpty()) {
             return List.of();
         }
-        double best = hits.stream().mapToDouble(HybridHit::keywordScore).max().orElse(0);
-        if (best <= 0) {
-            return List.copyOf(hits);
-        }
-        return hits.stream().filter(hit -> hit.keywordScore() >= best * SOURCE_KEEP_RATIO).toList();
+        double bestKeyword = bestKeywordScore(hits);
+        return hits.stream().filter(hit -> keptByKeywordScore(hit, bestKeyword)).toList();
     }
 
     public List<ChatMessage> buildPrompt(List<HybridHit> hits, String message, List<ChatMessage> history) {
@@ -276,17 +250,5 @@ public class RagPipeline {
     }
 
     public record RetrievalForMessage(List<HybridHit> hits, RetrievalDiagnostics diagnostics, RewriteResult rewrite) {
-    }
-
-    public record StreamOutcome(
-            String full,
-            List<RagSource> sources,
-            String mode,
-            String provider,
-            String retrieval,
-            boolean noHit,
-            RetrievalDiagnostics diagnostics,
-            RewriteResult rewrite,
-            LlmUsage usage) {
     }
 }

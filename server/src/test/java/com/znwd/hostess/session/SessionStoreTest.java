@@ -3,6 +3,11 @@ package com.znwd.hostess.session;
 import java.lang.reflect.Proxy;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
 
@@ -105,46 +110,119 @@ class SessionStoreTest {
     }
 
     // ══════════════════════════════════════════════════════════════
-    // 会话归属令牌 tokenFor / mayAccess
+    // 会话归属令牌 issueTokenOnce / mayAccess
     // ══════════════════════════════════════════════════════════════
 
     /**
-     * 令牌生命周期：生成 → 匹配 → 不匹配 → reset 后消失。
+     * 令牌生命周期：创建后首次交付 → 匹配 → 不匹配 → reset 后消失。
+     *
+     * <p>关键语义（P0-2）：**一个会话至多交付一次**。老实现每次调用都把同一枚令牌再给一遍，
+     * 于是拿着共用大屏 localStorage 里的 sessionId 再问一句，就能把上一位访客的令牌换出来。
      */
     @Test
     void 令牌生命周期() {
         SessionStore store = new SessionStore(null, null);
         store.append("s1", "问", "答");
 
-        String token = store.tokenFor("s1");
-        assertNotNull(token, "首次 tokenFor 应生成令牌");
+        String token = store.issueTokenOnce("s1");
+        assertNotNull(token, "会话创建后的首次调用应交付令牌");
         assertFalse(token.isEmpty());
-        assertEquals(token, store.tokenFor("s1"), "重复调用应返回同一令牌");
+        assertNull(store.issueTokenOnce("s1"), "一个会话至多下发一次：再次问答拿不到令牌");
+        assertNull(store.issueTokenOnce("s1"), "之后每次问答都拿不到");
 
         assertTrue(store.mayAccess("s1", token), "匹配令牌应放行");
         assertFalse(store.mayAccess("s1", "wrong"), "不匹配令牌应拒绝");
         assertFalse(store.mayAccess("s1", null), "null 令牌应拒绝");
 
         assertTrue(store.reset("s1"));
-        assertNull(store.tokenFor("s1"), "reset 后令牌消失");
+        assertNull(store.issueTokenOnce("s1"), "reset 后会话不存在，无令牌可发");
         // reset 后会话不存在，mayAccess 按向后兼容语义返回 true
         assertTrue(store.mayAccess("s1", token),
                 "reset 后会话不存在，mayAccess 返回 true（向后兼容）");
     }
 
     /**
-     * 从未下发令牌的老会话：tokenFor 未调过，mayAccess 对所有调用方放行。
+     * 令牌不再下发 ≠ 旧令牌作废：前端就是拿**第一次**拿到的那枚令牌去 GET/DELETE 的，
+     * 之后的问答响应不再带令牌，但读会话必须照旧放行。
      */
     @Test
-    void 从未下发令牌的老会话对所有调用方放行() {
+    void 持旧令牌在令牌不再下发之后仍可读会话() {
         SessionStore store = new SessionStore(null, null);
         store.append("s1", "问", "答");
-        // 不调 tokenFor → entry.token 保持 null
 
-        assertTrue(store.mayAccess("s1", "anything"),
-                "从未下发令牌的会话应允许任何 token");
-        assertTrue(store.mayAccess("s1", null),
-                "从未下发令牌的会话，null token 也应放行");
+        String oldToken = store.issueTokenOnce("s1");
+        assertNotNull(oldToken);
+        assertNull(store.issueTokenOnce("s1"), "第二次问答拿不到令牌（只持 sessionId 不够）");
+
+        assertTrue(store.mayAccess("s1", oldToken), "GET 带旧令牌仍要能读");
+        assertFalse(store.mayAccess("s1", "stolen"), "拿错令牌照样拒绝");
+    }
+
+    /**
+     * 重启恢复的老会话：令牌在内存里铸好但**从不下发**，于是
+     * ① 拿 sessionId 换不到令牌 ② 没有令牌读历史一律拒绝——
+     * 老实现的「entry.token == null 就放行」是条后门，等于无凭证可读历史。
+     */
+    @Test
+    void 恢复的老会话换不到令牌也读不走历史() {
+        long activeLastActive = System.currentTimeMillis() - 5_000;
+        SessionMapper mapper = fakeMapper(
+                List.of(new SessionMapper.SessionRow("restored-s", 2000L, activeLastActive)),
+                id -> List.of(new SessionMapper.MessageRow(0, "user", "重启前问")));
+        SessionStore store = new SessionStore(mapper, null);
+        assertEquals(1, store.restore());
+
+        assertNotNull(store.peek("restored-s"), "恢复的会话在内存里（历史仍在，只是不对 API 开放）");
+        assertNull(store.issueTokenOnce("restored-s"), "恢复的老会话不得再下发令牌");
+        assertFalse(store.mayAccess("restored-s", null), "无令牌读历史 → 拒绝");
+        assertFalse(store.mayAccess("restored-s", "anything"), "随便给个令牌也拒绝");
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // restore 与日常读写的并发（P1-7：查库在锁外）
+    // ══════════════════════════════════════════════════════════════
+
+    /**
+     * restore() 的慢查询（deleteExpired + recentSessions + 每会话 messages）期间，
+     * append/history/peek 不得被挡住，合并完成后也不能冲掉并发写入的会话。
+     *
+     * <p>老实现整段 {@code synchronized}，这条用例会在 {@code write.get(3s)} 处超时失败，
+     * 而不是挂死——故意用超时判据，让「锁内 I/O」这类退化表现为明确的失败信息。
+     */
+    @Test
+    void restore查库期间不阻塞读写且合并不丢并发会话() throws Exception {
+        CountDownLatch inDbCall = new CountDownLatch(1);
+        CountDownLatch releaseDbCall = new CountDownLatch(1);
+        SessionMapper mapper = blockingMapper(
+                List.of(new SessionMapper.SessionRow("db-s", 1000L, System.currentTimeMillis() - 1_000)),
+                id -> List.of(new SessionMapper.MessageRow(0, "user", "重启前问")),
+                inDbCall, releaseDbCall);
+        SessionStore store = new SessionStore(mapper, null);
+
+        Thread restorer = new Thread(store::restore, "restore");
+        ExecutorService writers = Executors.newSingleThreadExecutor();
+        restorer.start();
+        try {
+            assertTrue(inDbCall.await(2, TimeUnit.SECONDS), "restore 应已进入查库阶段");
+            Future<?> write = writers.submit(() -> store.append("live-s", "并发问", "并发答"));
+            try {
+                write.get(3, TimeUnit.SECONDS);
+            } catch (java.util.concurrent.TimeoutException e) {
+                fail("restore 查库期间 append 被锁挡住（查库不该在全局锁里做）");
+            }
+            assertNotNull(store.peek("live-s"), "查库期间 peek/history 也要可用");
+            assertEquals(2, store.history("live-s").size(), "并发写入的问/答当场可读");
+        } finally {
+            releaseDbCall.countDown();
+            writers.shutdownNow();
+            restorer.join(5_000);
+        }
+
+        assertFalse(restorer.isAlive(), "restore 应正常结束");
+        assertEquals(2, store.count(), "库里恢复的 1 条 + 并发写入的 1 条都要在");
+        assertNotNull(store.peek("db-s"), "恢复的会话要进来");
+        assertNotNull(store.peek("live-s"), "合并不得冲掉恢复期间并发写入的会话");
+        assertEquals("并发答", store.history("live-s").get(1).content());
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -157,7 +235,7 @@ class SessionStoreTest {
 
         assertNull(store.peek(null));
         assertTrue(store.history(null).isEmpty());
-        assertNull(store.tokenFor(null));
+        assertNull(store.issueTokenOnce(null));
         assertFalse(store.mayAccess(null, "tok"));
         assertFalse(store.reset(null));
         assertEquals(0, store.count());
@@ -168,23 +246,60 @@ class SessionStoreTest {
     private static SessionMapper fakeMapper(
             List<SessionMapper.SessionRow> rows,
             java.util.function.Function<String, List<SessionMapper.MessageRow>> msgProvider) {
+        return mapperProxy((method, args) -> {
+            if (method.getName().equals("recentSessions")) {
+                return rows;
+            }
+            if (method.getName().equals("messages")) {
+                return msgProvider.apply((String) args[0]);
+            }
+            return null;
+        });
+    }
+
+    /** 查库阶段卡在 recentSessions 上（发信号后等待放行）：用来制造「restore 正在做慢 I/O」的窗口 */
+    private static SessionMapper blockingMapper(
+            List<SessionMapper.SessionRow> rows,
+            java.util.function.Function<String, List<SessionMapper.MessageRow>> msgProvider,
+            CountDownLatch inDbCall, CountDownLatch releaseDbCall) {
+        return mapperProxy((method, args) -> {
+            if (method.getName().equals("recentSessions")) {
+                inDbCall.countDown();
+                try {
+                    if (!releaseDbCall.await(5, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("测试放行信号超时");
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(e);
+                }
+                return rows;
+            }
+            if (method.getName().equals("messages")) {
+                return msgProvider.apply((String) args[0]);
+            }
+            return null;
+        });
+    }
+
+    private static SessionMapper mapperProxy(Body body) {
         return (SessionMapper) Proxy.newProxyInstance(
                 SessionMapper.class.getClassLoader(),
                 new Class<?>[]{SessionMapper.class},
                 (proxy, method, args) -> {
-                    if (method.getName().equals("recentSessions")) {
-                        return rows;
-                    }
-                    if (method.getName().equals("messages")) {
-                        return msgProvider.apply((String) args[0]);
-                    }
                     if (method.getName().equals("toString")) {
                         return "FakeSessionMapper";
                     }
-                    if (method.getReturnType() == int.class) {
+                    Object value = body.invoke(method, args);
+                    if (value == null && method.getReturnType() == int.class) {
                         return 0;
                     }
-                    return null;
+                    return value;
                 });
+    }
+
+    @FunctionalInterface
+    private interface Body {
+        Object invoke(java.lang.reflect.Method method, Object[] args) throws Throwable;
     }
 }

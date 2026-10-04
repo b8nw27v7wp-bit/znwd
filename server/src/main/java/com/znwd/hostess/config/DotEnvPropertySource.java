@@ -36,9 +36,7 @@ public class DotEnvPropertySource implements EnvironmentPostProcessor {
         MapPropertySource source = new MapPropertySource("znwdDotEnv", values) {
             @Override
             public Object getProperty(String name) {
-                // 空值视为未配置：避免 .env 里 `LLM_BASE_URL=` 把默认值覆盖成空串
-                Object value = super.getProperty(name);
-                return (value instanceof String s && s.isBlank()) ? null : value;
+                return blankAsUnset(super.getProperty(name));
             }
         };
         environment.getPropertySources()
@@ -66,6 +64,12 @@ public class DotEnvPropertySource implements EnvironmentPostProcessor {
      *
      * <p>处理行首 BOM（U+FEFF）：Java 的 {@code strip()} 按 {@code Character.isWhitespace}
      * 判定，U+FEFF 不属于空白字符，Windows 编辑器保存的 UTF-8 with BOM 会导致首行 key 静默失效。
+     *
+     * <p><b>值里的 # 原样保留，不剥行内注释</b>：注释只允许独占一行（行首 {@code #}）。
+     * 这里曾把「空白后跟 #」当行内注释截断，于是 {@code DB_PASSWORD=abc #def} 的口令被静默截成
+     * {@code abc}——现场表现是建库成功、连接全失败，极难排查。口令/URL 片段里出现 {@code #}
+     * 是合法的，宁可让「想写行内注释的人」把注释挪到上一行（.env.example 就是这么写的：全部
+     * 注释独占一行），也不再猜哪段是注释。
      */
     static Map<String, Object> parse(Path path) throws IOException {
         Map<String, Object> values = new LinkedHashMap<>();
@@ -79,7 +83,7 @@ public class DotEnvPropertySource implements EnvironmentPostProcessor {
                 continue;
             }
             String key = line.substring(0, eq).strip();
-            String value = stripInlineComment(line.substring(eq + 1).strip());
+            String value = line.substring(eq + 1).strip();
             if (value.length() >= 2
                     && ((value.startsWith("\"") && value.endsWith("\""))
                         || (value.startsWith("'") && value.endsWith("'")))) {
@@ -95,33 +99,11 @@ public class DotEnvPropertySource implements EnvironmentPostProcessor {
         return !line.isEmpty() && line.charAt(0) == '\uFEFF' ? line.substring(1) : line;
     }
 
-    private static String stripInlineComment(String value) {
-        boolean singleQuoted = false;
-        boolean doubleQuoted = false;
-        boolean escaped = false;
-        for (int i = 0; i < value.length(); i++) {
-            char current = value.charAt(i);
-            if (escaped) {
-                escaped = false;
-                continue;
-            }
-            if (current == '\\' && doubleQuoted) {
-                escaped = true;
-                continue;
-            }
-            if (current == '\'' && !doubleQuoted) {
-                singleQuoted = !singleQuoted;
-                continue;
-            }
-            if (current == '"' && !singleQuoted) {
-                doubleQuoted = !doubleQuoted;
-                continue;
-            }
-            if (current == '#' && !singleQuoted && !doubleQuoted
-                    && (i == 0 || Character.isWhitespace(value.charAt(i - 1)))) {
-                return value.substring(0, i).strip();
-            }
-        }
-        return value;
+    /**
+     * 空值视为未配置（README / docs 同口径）：避免 .env 里 {@code LLM_BASE_URL=} 把
+     * application.yml 的默认值覆盖成空串。包级可见，供单测直接断言。
+     */
+    static Object blankAsUnset(Object value) {
+        return (value instanceof String s && s.isBlank()) ? null : value;
     }
 }

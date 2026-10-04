@@ -2,6 +2,76 @@
 
 本项目版本与变更记录。日期：YYYY-MM-DD。
 
+## [未发布] — 2026-10-04 · 审查收口（三路代码审查的 P0/P1/P2 修复 + 文档口径修正 + 前端门禁）
+
+### Fixed — P0 中断路径缺陷
+
+- **SSE 中断不再丢账**：客户端中途断开（前端新提问 abort 旧流是常态交互）时，已生成的部分回答
+  写回会话（下一轮追问上下文不丢）、`chat_log` 落一条 `error=client_gone` 留痕；半截回答不进答案
+  缓存、不发 done 帧。`ClientGoneException` 从 `ChatController` 私有类移到 `http` 包（rag 层不依赖 web 层）。
+- **会话令牌改为至多一次交付**：令牌在会话创建时铸造、只随首答下发一次；仅凭 localStorage 里的
+  sessionId 再次问答拿不到令牌（此前共用大屏下一位访客可换取上一位令牌读走全部历史）。
+  `mayAccess` 收掉「无令牌即放行」后门；重启恢复的老会话令牌标记为已交付、历史对 API 关闭等 TTL 清理。
+- **闲置复位计时器不再一次性失效**：`bumpActivity` 回调落空（streaming/resetting）时无条件重新武装，
+  挂死流超时报错后对话仍会自动回到欢迎态。
+
+### Fixed — P1 健壮性与热路径
+
+- **SSE 断流活性检测 + 自动重问**：前端新增 45s inactivity 计时（任何字节含 `:ping` 心跳刷新），
+  连接僵死从干等 180s 提前到 45s 失败；零 delta 的失败沿用同一 sessionId 自动重问一次
+  （有 delta 不重问防双发，总超时不重问防拖到 360s）。
+- **deploy 脚本不再假成功**：`deploy-znwd.ps1` 检查 start 退出码（端口占用退 2 即 Die）、健康超时
+  Warn→Die、启动后比对包内 jar 版本与 `/api/health` 的 `version`（不一致判死）。
+- **热路径去重活**：向量-语料对齐结论改到索引换代时算一次随 `volatile Snapshot` 走（此前每问、
+  每次改写、health 轮询都对全语料拼串+SHA）；检索分词改索引构建期预算。新增 `HotPathCacheTest`
+  比值型守卫。QueryRewriter top8 预查复用经评估跳过（eval 风险大于收益）。
+- **SessionStore 恢复不再锁内查库**：`restore()` 锁外取数、短锁整体合并；新增首条并发测试
+  （restore 期间读写不阻塞、合并不丢）。
+- **死代码收敛**：删除零调用方的 `RagPipeline.stream`/`StreamOutcome`（与 ChatRunService 并行的
+  第二份闸门+流式实现）；SOURCE_KEEP_RATIO 过滤与 rewrite/usage 字段拼装各收敛为单份
+  （响应 JSON 字段名未变）。
+
+### Fixed — 文档与实现口径漂移
+
+- `docs/security.md` / `optimization-backlog.md`：actuator 实配为 `health,info,prometheus`
+  （`prometheus` 无鉴权，靠只监听 127.0.0.1 或反代限源），原「只暴露 health,info」已过时。
+- `docs/deployment.md` / `README.md`：交付包**不含** `.env`（pack.ps1 只打包 `.env.example`），
+  部署时复制填写；原「交付包必须带上 .env」口径与脚本相反。
+- `docs/deployment.md`：手工 `schtasks` 命令修正为 `/TN znwd-hostess` 与 `/SC ONSTART`（与
+  `install-autostart.ps1` 实配一致）。
+- `docs/test-cases.md` TC-DEP-06 + `deployment.md` §1.1：反代未开 `TRUST_FORWARDED_FOR` 时限流
+  **共用代理 IP 一个桶**（原期望「按真实源 IP」与实现相反）；补共桶风险与调参说明。
+
+### Fixed — P2 安全与日志
+
+- **HTTP 客户端禁止跟随重定向**：LLM / 语音 / embedding 三个出网适配器 `followRedirects` 改为
+  `NEVER` 并对 3xx 报明确错误——此前 `NORMAL` 会把静态 `Authorization: Bearer` 随 30x 带给
+  Location 目标；3xx 加入不可重试判定（跟随已关，重发只是把密钥再送一遍）。
+- **DotEnv 不再剥行内注释**：`DB_PASSWORD=abc #def` 这类含 ` #` 的口令此前被静默截断（现场表现
+  为建库成功但连接全失败）。`.env.example` 注释均为独占一行，改为值原样保留、只留整行注释。
+- **SSE 异步线程 requestId 对账**：进 `sseExecutor` 前捕获 requestId，error 帧与错误日志改用
+  捕获值——此前 `RequestContextHolder` 非继承 ThreadLocal 导致异步线程恒为 null，无法与
+  `x-request-id` 响应头对账。
+
+### Changed — 前端工程化（api.ts 拆分与门禁）
+
+- **api.ts 拆分**：1011 行五职责单文件 → `web/src/api/{types,http,stream,admin,speech,index}.ts`，
+  barrel 显式 re-export 保证 48 个导出与对外 import 路径完全不变（纯结构重组，行为零变化）。
+- **ESLint 门禁**：`eslint` + `typescript-eslint` + `eslint-plugin-vue` 扁平配置，只开真问题规则
+  （风格类不开、`no-explicit-any` 降 off 的取舍写进配置注释）；`npm run lint` 0 error / 0 warn，
+  CI frontend job 新增 lint 步骤。
+- **coverage 门禁**：`@vitest/coverage-v8`，实测 Stmts 88.14 / Branch 75.08 / Funcs 90.32 /
+  Lines 91.67，阈值设为 86.5 / 73.5 / 88.5 / 90（各留约 2 点防抖余量）；CI 单测步骤改跑
+  `npm run test:coverage`，覆盖率不低于当前水平成为硬门禁。
+- **测试缺口补全**（P0/P1 轮遗留）：真·中途断流保留半句且不自动重问、SSE `event:error` 帧
+  （含缺 message 字段）、ASR `stop()` 识别成功/录音太短/服务端失败三条回调链。
+
+### 验证
+
+- 后端单测 177 → **198** 全绿（三项 P2 修复均做变异验证：改回旧实现测试变红）；检索评测 145 例
+  top1=1.0 与基线逐例一致；前端单测 150 → **164** 全绿，`npm run lint` 0/0、`npm run test:coverage`
+  过阈值、`npm run build` 通过；`deploy-znwd.ps1` PowerShell 语法解析通过、4 处漂移文案 grep 清零。
+
 ## [未发布] — 2026-09-30 · 功能补全（zone 联动）/ 安全加固 / 并发压测 / 历史文档归档
 
 ### Added — 展览 zone 联动（补回 Java 重写时漏掉的功能）

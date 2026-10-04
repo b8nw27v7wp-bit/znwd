@@ -26,14 +26,15 @@ class DotEnvBomTest {
     @TempDir
     Path tempDir;
 
-    /** 首行带 BOM + CRLF + 引号值 + 行尾注释：必须正确解析出所有键 */
+    /** 首行带 BOM + CRLF + 引号值 + 整行注释：必须正确解析出所有键 */
     @Test
     void bomFirstLineShouldParseCorrectly() throws IOException {
-        // 构造带 BOM 的 .env 内容：首行 key 故意放在 BOM 之后
+        // 构造带 BOM 的 .env 内容：首行 key 故意放在 BOM 之后。
+        // 注释一律独占一行（值里的 # 不再被当行内注释剥离，见 DotEnvValueTest）。
         String envContent = "\uFEFFLLM_API_KEY=sk-test-123\r\n"
                 + "LLM_MODEL=\"mimo-v2.5\"\r\n"
                 + "# 注释行\r\n"
-                + "AUDIO_VOICE='冰糖'  # 行尾注释\r\n";
+                + "AUDIO_VOICE='冰糖'\r\n";
 
         Path envFile = tempDir.resolve(".env");
         Files.writeString(envFile, envContent, StandardCharsets.UTF_8);

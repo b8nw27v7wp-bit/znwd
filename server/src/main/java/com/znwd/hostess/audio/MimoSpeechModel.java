@@ -83,7 +83,9 @@ public class MimoSpeechModel implements SpeechModel {
         this.mapper = mapper;
         this.http = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
-                .followRedirects(HttpClient.Redirect.NORMAL)
+                // 不跟随重定向：请求带静态 Authorization: Bearer，30x 由 JDK 跟随时会把该头
+                // 一并送到 Location 目标（网关被劫持/误配就等于把密钥送出去）。3xx 当失败上报。
+                .followRedirects(HttpClient.Redirect.NEVER)
                 .build();
     }
 
@@ -195,8 +197,12 @@ public class MimoSpeechModel implements SpeechModel {
                         http.send(request, HttpResponse.BodyHandlers.ofInputStream());
                 String raw = readResponseBody(response);
                 if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                    // 3xx 不跟随（HttpClient.Redirect.NEVER）：状态码写进文案，别让现场对着
+                    // 空响应体的 302 去查 JSON 解析
+                    String redirectNote = response.statusCode() >= 300 && response.statusCode() < 400
+                            ? "（重定向未跟随）" : "";
                     SpeechException error = new SpeechException(response.statusCode(),
-                            "语音接口 HTTP " + response.statusCode() + "：" + truncate(raw, 300),
+                            "语音接口 HTTP " + response.statusCode() + redirectNote + "：" + truncate(raw, 300),
                             isRetryable(response.statusCode()));
                     if (!error.retryable() || attempt == maxRetries) {
                         throw error;

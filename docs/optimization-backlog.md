@@ -56,9 +56,34 @@
 > 本轮**没有改任何业务逻辑**：改的是测试载体（探针→契约用例）、检查脚本的期望（S19）与文档口径。
 > 唯一的行为性改动是上一批（会话令牌 / 反馈独立桶 / 话术外置 / 运营面板），本轮把它们跑成了可交付证据。
 
-## 待做（更新于 2026-09-29）
+## 已完成（第十三轮：三路代码审查收口 P0/P1/P2，2026-10-04）
 
-1. **（可选）指标暴露**：已带 `spring-boot-starter-actuator`（只暴露 `health,info`）；接多屏/后台要 Prometheus 指标时再接 `micrometer-registry-prometheus`。单机展厅当前 `/api/health` + `/api/stats` 够用。
+三路并行审查（后端主链路 / 前端工程资产 / 安全运维）发现问题，按文件不重叠分工作流修复：
+
+| 优先级 | 项 | 修法与验证 |
+| --- | --- | --- |
+| P0 | **SSE 中断静默丢账** | 客户端中途断开时部分回答写回会话、`chat_log` 落 `error=client_gone`、半截不进缓存；`ClientGoneException` 移入 `http` 包（rag 不依赖 web）。新增 ChatRunServiceStreamAbortTest + 契约层两条（error 路径对照） |
+| P0 | **会话令牌可无凭证换取** | 令牌创建即铸造、`issueTokenOnce` 至多交付一次；`mayAccess` 收掉「无令牌即放行」后门；restore 的老会话标为已交付（历史对 API 关闭等 TTL）。仅凭 localStorage 的 sessionId 换不到上一位访客的令牌 |
+| P0 | **闲置计时器一次性失效** | `bumpActivity` 回调落空（streaming/resetting）时无条件重新武装；挂死流报错后仍会自动回欢迎态。红绿验证过 |
+| P1 | **SSE 断流活性检测** | 前端 45s inactivity（任何字节含 `:ping` 刷新）替代干等 180s 总超时；零 delta 失败自动重问一次（有 delta 不重问、总超时不重问） |
+| P1 | **热路径重复重活** | 向量-语料对齐结论改换代时算一次随 Snapshot 走（此前每问/每次改写/health 轮询都对全语料拼串+SHA）；检索分词建索引期预算。`HotPathCacheTest` 比值型守卫（退化实现必越线）。QueryRewriter 预查复用经评估跳过（eval 风险大于收益） |
+| P1 | **SessionStore 锁内 I/O** | `restore()` 锁外查库、短锁整体合并；新增首条并发用例（restore 期间读写不阻塞） |
+| P1 | **死代码与重复** | 删零调用方的 `RagPipeline.stream`/`StreamOutcome`；SOURCE_KEEP_RATIO 与 rewrite/usage 拼装收敛（响应 JSON 字段名未变） |
+| P1 | **deploy 脚本假成功** | start 退出码非零即 Die、健康超时 Warn→Die、包内 jar 版本与 `health.version` 三态比对 |
+| P2 | **30x 密钥外带面** | 三出网适配器 `followRedirects=NEVER`、3xx 报明确错误且不可重试；302 用例带目标命中计数，变异验证 |
+| P2 | **DotEnv 行内 ` #` 截断** | 值原样保留（example 注释均独占一行）；`DotEnvValueTest` 6 条，变异验证 |
+| P2 | **SSE 异步线程 requestId 丢失** | 进 executor 前捕获，error 帧 == `x-request-id` 头有契约用例；ProbeBeans 改真线程才能复现该 bug |
+| P2 | **api.ts 1011 行五职责** | 拆 `api/{types,http,stream,admin,speech,index}.ts`，48 导出逐一比对无缺漏、消费方 import 零改动 |
+| P2 | **无 lint/coverage 门禁** | ESLint（真问题规则集，0 error/0 warn）+ v8 coverage 阈值 86.5/73.5/88.5/90（实测 88.14/75.08/90.32/91.67 留 ~2 点余量），CI frontend job 两步都接 |
+| P2 | **三个测试缺口** | 真·断流保留半句（不重问）、SSE `event:error` 帧、ASR `stop()` 三路回调 |
+| 文档 | **4 处口径漂移** | actuator 实配 `health,info,prometheus`；交付包不含 `.env`；schtasks `ONSTART`/`znwd-hostess`；反代限流共桶（TC-DEP-06 改写）。另 `web/src/api.ts` 路径在活文档 5 处更新 |
+
+验证口径：后端 **198** / 前端 **164** / lint 0/0 / coverage 过阈值 / 检索评测 145 例 top1 不一致 0 / build 通过。
+详情见 `CHANGELOG.md` 2026-10-04 条目。**已知取舍**（审查确认、刻意不改）：令牌「已交付却无人持有」窗口 fail-closed；写帧异常统一归类 client_gone（与 G07 口径一致）；restore 先整库读完再合并（仅 DB 读放大）。
+
+## 待做（更新于 2026-10-04）
+
+1. ~~**（可选）指标暴露**~~ **已完成（本待做项关闭）**：`micrometer-registry-prometheus` 已接入，`management.endpoints.web.exposure.include` 暴露 `health,info,prometheus`；`/actuator/prometheus` **无鉴权**，默认只监听 `127.0.0.1` 同机抓取，跨机须反代限源（否则从 include 移除 `prometheus`，见 `docs/architecture.md`、`docs/deployment.md`）。单机展厅当前 `/api/health` + `/api/stats` 够用。
 2. ~~近域域外漏放~~ **已处理（第十一轮）**：`near-3`「扫地机器人多少钱？」/ `near-4`「这个机器人能送外卖吗？」词面命中的
    就是「机器 / 器人」两个高频 bigram（实测 8.996 / 8.994），**抬阈值会连带误拦真实问句**，所以没抬；改成让这类问法
    **答得对**：`01_光伏清洁机器人/常见问题.md` 新增一节「你们做扫地机器人吗」，答案用原文产品口径 + 明说

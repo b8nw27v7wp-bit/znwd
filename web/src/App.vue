@@ -57,7 +57,11 @@ const unbindZoneBridge = bindZoneBridge(applyZone);
 function bumpActivity(): void {
   if (idleTimer) window.clearTimeout(idleTimer);
   idleTimer = window.setTimeout(() => {
+    // streaming/resetting 期间落空时必须重新武装：否则计时器被消耗后再无下一个，
+    // 挂死的流超时报错后对话就永远留在公共大屏上，直到有人再碰屏（违背本常量的设计初衷）。
+    // 重新武装走的是 setTimeout 而非直接递归调用，无深递归风险。
     if (chat.messages.value.length && !chat.streaming.value && !chat.resetting.value) void chat.startOver();
+    bumpActivity();
   }, IDLE_RESET_MS);
 }
 

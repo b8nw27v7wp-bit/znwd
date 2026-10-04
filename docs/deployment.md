@@ -57,6 +57,8 @@ server {
 }
 ```
 
+拓扑 A 里反代后面的限流键要注意：限流默认取连接对端 `remoteAddr`（`ClientIp.java`），同机反代时**所有访客共用反代 IP 一个桶**（javadoc 明言这是刻意取舍——更严而不误放），一人刷满会整站 429。要按访客各自地址分桶，前提是反代**先剥离**客户端自带的同名 `X-Forwarded-For` 头（如 `proxy_set_header X-Forwarded-For $remote_addr;`），再设 `TRUST_FORWARDED_FOR=true`——不剥离就开开关等于把限流键交给调用方。桶容量用 `CHAT_RATE_PER_MIN` 调（默认 30/分钟/IP，调参与 429 表现见 §10 安全要点）。
+
 **拓扑 B：前端与后端跨源**——构建时把 API 前缀写死：`VITE_API_BASE_URL=http://127.0.0.1:8787 npm run build`（末尾不要带 `/`），并在后端配 `CORS_ORIGINS`：
 
 - 前端从**本机回环**打开（`http://127.0.0.1:任意端口`、`http://localhost:…`）时，后端默认就放行（`CorsPolicy` 内置回环源规则），**不用配** `CORS_ORIGINS`；`vite preview` 走的就是这种。
@@ -71,7 +73,7 @@ server {
 1. **装依赖**：JDK 21+（`java -version` 显示 21 及以上）与 MySQL 8+。MySQL 安装时勾选设为 Windows 服务并设为自动启动（`services.msc` 里 `MySQL*` 服务启动类型「自动」）。
 2. **建库**：把 `server/db/init.sql` 里两处 `CHANGE_ME_znwd` 改成自定口令，用管理员账号执行一次（详见 §4）：`mysql -u root -p < server/db/init.sql`。
 3. **配 `.env`**：复制 `server/.env.example` 为 `server/.env`，至少改：`ADMIN_TOKEN=<现场生成的长随机串>`（不要弱口令）、`DB_PASSWORD=<与 init.sql 同一口令>`、真实 `LLM_PROVIDER=openai_compat` + `LLM_BASE_URL/LLM_API_KEY/LLM_MODEL`；可选 `EMBED_*`（语义路）与 `AUDIO_PROVIDER=mimo`（服务端语音）。
-4. **构建**：构建机上 `cd server && ../tools/mvn -B -DskipTests package`、`cd web && npm ci && npm run build`；或用 `tools\windows\pack.ps1` 打交付包（jar + `web/dist` + `.env` + `knowledge/`）。**`.env` 必须随包一起带**——漏带会静默退回 `mock/bag/none`。
+4. **构建**：构建机上 `cd server && ../tools/mvn -B -DskipTests package`、`cd web && npm ci && npm run build`；或用 `tools\windows\pack.ps1` 打交付包（jar + `web/dist` + `.env.example` + `knowledge/`）。**交付包不含 `.env`**（只带 `.env.example`；真 `.env` 里的 LLM key / DB 口令 / `ADMIN_TOKEN` 不打进分发 zip）：部署时复制 `server\.env.example` 为 `server\.env` 并填写——漏配会静默退回 `mock/bag/none`。
 5. **起服务**：`tools\windows\start-znwd.cmd`（后台起 jar，日志 `server\run.out.log`）；要随机器长期运行用 `tools\windows\install-autostart.ps1`（见下）。
 6. **打开页面**：`http://127.0.0.1:8787/`（jar 托管前端时就是后端端口；若用静态服务器/反代，换成前端端口）。
 7. **验收**：`curl -s http://127.0.0.1:8787/api/health` 确认 `ok=true`、`ready=true`、`storageAvailable=true`、`knowledgeChunks>0`；再跑 `py -3 tools\smoke.py`（带 `ADMIN_TOKEN`）、`py -3 tools\security.py`、`py -3 tools\db-check.py`、`py -3 tools\offline-check.py --runtime`。
@@ -88,7 +90,7 @@ tools\windows\status-znwd.cmd     # 查看进程与健康
 tools\windows\stop-znwd.cmd       # 停止
 ```
 
-手工等价：登录自启用 `schtasks /Create /TN znwd /SC ONLOGON /TR "<仓库路径>\tools\windows\start-znwd.cmd"`；开机自启用 `schtasks /Create /TN znwd /SC ONSTARTUP /RU SYSTEM /TR ...`（需管理员）；删除用 `schtasks /Delete /TN znwd /F`。脚本清单与排障见 `tools\windows\README.md`。
+手工等价：登录自启用 `schtasks /Create /TN znwd-hostess /SC ONLOGON /TR "<仓库路径>\tools\windows\start-znwd.cmd"`；开机自启用 `schtasks /Create /TN znwd-hostess /SC ONSTART /RU SYSTEM /TR ...`（需管理员）；删除用 `schtasks /Delete /TN znwd-hostess /F`（任务名与 `install-autostart.ps1` 的 `$TaskName` 默认值 `znwd-hostess` 一致）。脚本清单与排障见 `tools\windows\README.md`。
 
 ## 2. 构建
 
@@ -223,7 +225,7 @@ mysql -u root -p < server/db/init.sql
 
 - MySQL 服务开机自启、应用 jar 开机自启（`tools\windows\install-autostart.ps1`）。
 - `.env` 与 `knowledge/` 有备份；`WEB_DIST_DIR`（默认 `./web/dist`）指向随交付包一起拷入的 `web/dist`。
-- **交付包必须带上 `.env`**：漏带会静默退回 `mock/bag/none`（服务照常起，但答的是演示回复、不落库）；`ADMIN_TOKEN` 用现场生成的长随机串，禁止 `admin`/`123456` 之类弱口令。
+- **部署时必须由 `.env.example` 生成并填写 `.env`**（交付包只带 `server\.env.example`、不含 `.env`，见 §1.2 第 4 步）：漏配 `.env` 会静默退回 `mock/bag/none`（服务照常起，但答的是演示回复、不落库）；`ADMIN_TOKEN` 用现场生成的长随机串，禁止 `admin`/`123456` 之类弱口令。
 
 判断服务是否可开始巡检：先看 `GET /api/health` 的 `ok=true`、`ready=true`（知识快照已发布）；再看 `storageAvailable`（一体机正式部署要求为 `true`；`false` 只表示降级为不落库）。该接口始终回 HTTP 200，探活脚本不能只看状态码。
 

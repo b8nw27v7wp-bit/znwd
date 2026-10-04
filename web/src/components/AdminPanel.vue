@@ -15,7 +15,7 @@ import DiagnosticsPanel from './DiagnosticsPanel.vue';
 /**
  * 运营视图：统计、未覆盖问题（要补的资料）、负反馈，以及知识库管理与检索诊断（子面板）。
  * 口令只存 sessionStorage，不进 URL、不进日志；管理接口没配 ADMIN_TOKEN 时后端直接放行（开发态）。
- * 所有管理请求都经 api.ts 的 adminRequest 统一带 authorization 头。
+ * 所有管理请求都经 api/admin.ts 的 adminRequest 统一带 authorization 头。
  */
 const TOKEN_KEY = 'znwd.adminToken';
 

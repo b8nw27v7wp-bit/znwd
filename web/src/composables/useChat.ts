@@ -4,6 +4,7 @@ import {
   fetchHealth,
   fetchSuggestions,
   fetchZones,
+  isTotalTimeoutError,
   newSessionId,
   resetSession,
   sendFeedback,
@@ -148,40 +149,53 @@ export function useChat() {
     streaming.value = true;
     activeAssistant = assistant;
     const started = performance.now();
-    const requestController = new AbortController();
     const requestSessionId = sessionId.value;
-    controller = requestController;
 
     try {
-      await streamChat(text, requestSessionId, {
-        onMeta: (meta) => {
-          if (generation !== streamGeneration) return;
-          assistant.meta = meta;
-          lastMeta.value = meta;
-          sources.value = meta.sources ?? [];
-        },
-        onDelta: (chunk) => {
-          if (generation !== streamGeneration) return;
-          assistant.content += chunk;
-        },
-        onDone: (done) => {
-          if (generation !== streamGeneration) return;
-          assistant.pending = false;
-          assistant.content = done.answer;
-          assistant.meta = done;
-          assistant.latencyMs = done.latencyMs;
-          sources.value = done.sources ?? [];
-          lastMeta.value = done;
-          if (typeof done.sessionId === 'string' && done.sessionId && done.sessionId !== sessionId.value) {
-            sessionId.value = done.sessionId;
-            writeStorage('local', SESSION_KEY, done.sessionId);
-          }
-          // 令牌跟着会话走：拿到就存下来，换人清上下文时要原样带回服务端
-          if (typeof done.sessionToken === 'string' && done.sessionToken) {
-            rememberToken(done.sessionToken);
-          }
-        },
-      }, requestController.signal);
+      // 零 delta 的失败自动重问一次：连接僵死这类故障「重开一条流多半就好」，而展厅访客不会
+      // 主动点重试。防双发三道闸：已有 delta（assistant.content 非空）、已重问过（attempt）、
+      // 总超时 isTotalTimeoutError（再等一整轮 180s 没有意义）。取消/换会话由 generation
+      // 挡在重问之前；重问与首发同 sessionId、紧挨着发出，后端 30/min/IP 的限流不会被连击。
+      for (let attempt = 0; ; attempt += 1) {
+        const requestController = new AbortController();
+        controller = requestController;
+        try {
+          await streamChat(text, requestSessionId, {
+            onMeta: (meta) => {
+              if (generation !== streamGeneration) return;
+              assistant.meta = meta;
+              lastMeta.value = meta;
+              sources.value = meta.sources ?? [];
+            },
+            onDelta: (chunk) => {
+              if (generation !== streamGeneration) return;
+              assistant.content += chunk;
+            },
+            onDone: (done) => {
+              if (generation !== streamGeneration) return;
+              assistant.pending = false;
+              assistant.content = done.answer;
+              assistant.meta = done;
+              assistant.latencyMs = done.latencyMs;
+              sources.value = done.sources ?? [];
+              lastMeta.value = done;
+              if (typeof done.sessionId === 'string' && done.sessionId && done.sessionId !== sessionId.value) {
+                sessionId.value = done.sessionId;
+                writeStorage('local', SESSION_KEY, done.sessionId);
+              }
+              // 令牌跟着会话走：拿到就存下来，换人清上下文时要原样带回服务端
+              if (typeof done.sessionToken === 'string' && done.sessionToken) {
+                rememberToken(done.sessionToken);
+              }
+            },
+          }, requestController.signal);
+          break;
+        } catch (e) {
+          if (generation !== streamGeneration) throw e;
+          const canRetry = attempt === 0 && !assistant.content && !isTotalTimeoutError(e);
+          if (!canRetry) throw e;
+        }
+      }
     } catch (e) {
       if (generation !== streamGeneration) return;
       assistant.pending = false;
@@ -196,7 +210,8 @@ export function useChat() {
         if (!assistant.content) assistant.content = '（没有返回内容）';
         if (!assistant.latencyMs) assistant.latencyMs = Math.round(performance.now() - started);
         streaming.value = false;
-        if (controller === requestController) controller = null;
+        // generation 未变就意味着没有更新的 ask/取消接管过这条流，controller 必然属于本次
+        controller = null;
         activeAssistant = null;
       }
     }

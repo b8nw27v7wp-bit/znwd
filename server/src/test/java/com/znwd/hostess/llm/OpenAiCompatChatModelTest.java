@@ -27,9 +27,12 @@ class OpenAiCompatChatModelTest {
     private HttpServer server;
     private String baseUrl;
     private final AtomicInteger hits = new AtomicInteger();
+    /** 重定向目标被访问的次数：非 0 就说明 HttpClient 跟随了 30x（Authorization 会被一并送出去） */
+    private final AtomicInteger redirectHits = new AtomicInteger();
     private volatile boolean firstBusinessError;
     private volatile int status = 200;
     private volatile String contentType = "application/json";
+    private volatile String location;
     private volatile String response = "{\"choices\":[{\"message\":{\"content\":\"ok\"}}]}";
 
     @BeforeEach
@@ -46,7 +49,19 @@ class OpenAiCompatChatModelTest {
             }
             byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("content-type", contentType);
+            if (location != null) {
+                exchange.getResponseHeaders().set("location", location);
+            }
             exchange.sendResponseHeaders(responseStatus, bytes.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(bytes);
+            }
+        });
+        server.createContext("/redirect-target", exchange -> {
+            redirectHits.incrementAndGet();
+            exchange.getRequestBody().readAllBytes();
+            byte[] bytes = "{}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, bytes.length);
             try (OutputStream out = exchange.getResponseBody()) {
                 out.write(bytes);
             }
@@ -54,9 +69,11 @@ class OpenAiCompatChatModelTest {
         server.start();
         baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
         hits.set(0);
+        redirectHits.set(0);
         firstBusinessError = false;
         status = 200;
         contentType = "application/json";
+        location = null;
         response = "{\"choices\":[{\"message\":{\"content\":\"ok\"}}]}";
     }
 
@@ -160,6 +177,24 @@ class OpenAiCompatChatModelTest {
 
         assertEquals(500, error.status());
         assertFalse(error.getMessage().contains("x".repeat(1000)));
+    }
+
+    /**
+     * 302 必须当失败上报、且绝不跟随：请求带静态 Authorization，JDK 一旦跟随就会把
+     * 该头送给 Location 目标（网关被劫持/误配 = 密钥外带）。
+     */
+    @Test
+    void http302响应报错且不跟随重定向() {
+        status = 302;
+        location = baseUrl + "/redirect-target";
+
+        LlmHttpException error = assertThrows(LlmHttpException.class,
+                () -> model(2).complete(List.of(ChatMessage.user("hello"))));
+
+        assertEquals(302, error.status(), "3xx 要带状态码进错误，不能当成功或解析失败");
+        assertTrue(error.getMessage().contains("302"), error.getMessage());
+        assertEquals(1, hits.get(), "跟随已关闭 + 3xx 不可重试 → 只发一次");
+        assertEquals(0, redirectHits.get(), "重定向目标不应被访问（否则 Authorization 已外送）");
     }
 
     private OpenAiCompatChatModel model(int maxRetries) {

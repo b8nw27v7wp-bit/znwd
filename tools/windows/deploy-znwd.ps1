@@ -126,6 +126,25 @@ function Find-MysqlExe {
     return $null
 }
 
+# 从包内 jar 读期望版本（META-INF/maven/com.znwd/hostess-server/pom.properties）。
+# 读不到（包外构建、条目缺失等）返回 $null：调用方只打印实际版本、不做一致性校验。
+function Get-JarVersion([string]$jarPath) {
+    try {
+        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+        $zip = [System.IO.Compression.ZipFile]::OpenRead($jarPath)
+        try {
+            $entry = $zip.GetEntry('META-INF/maven/com.znwd/hostess-server/pom.properties')
+            if (-not $entry) { return $null }
+            $reader = New-Object System.IO.StreamReader($entry.Open())
+            try { $props = $reader.ReadToEnd() } finally { $reader.Dispose() }
+            if ($props -match '(?m)^version=(.+)$') { return $Matches[1].Trim() }
+        } finally {
+            $zip.Dispose()
+        }
+    } catch { return $null }
+    return $null
+}
+
 Write-Host ''
 Write-Host '=============================================' -ForegroundColor White
 Write-Host ' znwd 一体机一键部署' -ForegroundColor White
@@ -282,8 +301,17 @@ if ($NoStart) {
 } else {
     $startCmd = Join-Path $AppDir 'tools\windows\start-znwd.cmd'
     if (-not (Test-Path -LiteralPath $startCmd)) { Die "缺少启动脚本: $startCmd" }
+    $expectedVersion = Get-JarVersion (Join-Path $AppDir 'server\target\hostess-server.jar')
     Info "启动服务（端口 $Port）..."
     & $startCmd --port $Port
+    $startRc = $LASTEXITCODE
+    if ($startRc -ne 0) {
+        # start-znwd.cmd：2 = 端口已被占用（没有起新实例）；1 = jar/java 缺失或启动异常
+        if ($startRc -eq 2) {
+            Die "start-znwd.cmd 报端口占用（退出码 2）：端口 $Port 已在监听，本次没有启动新实例。先跑 tools\windows\stop-znwd.cmd 停掉旧实例，或换端口重试。"
+        }
+        Die "start-znwd.cmd 启动失败（退出码 $startRc）：jar/java 缺失或启动异常。看上方输出与 server\run.out.log。"
+    }
 
     Info '等待健康检查（最多 120 秒）...'
     $health = $null
@@ -302,6 +330,17 @@ if ($NoStart) {
         Ok '健康检查通过：'
         Write-Host ("      ok={0}  ready={1}  storageAvailable={2}  knowledgeChunks={3}" -f `
             $health.ok, $health.ready, $health.storageAvailable, $health.knowledgeChunks)
+        Write-Host ("      version={0}（/api/health 实报）" -f $health.version)
+        if ($expectedVersion) {
+            # 一致性校验：端口上应答的实例必须是本包的 jar，否则就是打到了旧实例
+            if (-not $health.version) {
+                Warn "包内 jar=$expectedVersion，但 /api/health 未返回 version 字段，本次未做版本一致性校验。"
+            } elseif ($health.version -ne $expectedVersion) {
+                Die "版本不一致：包内 jar=$expectedVersion，但 /api/health 报 version=$($health.version)——端口 $Port 上跑的不是本包实例。先 tools\windows\stop-znwd.cmd 再重启部署。"
+            } else {
+                Ok "版本与包内 jar 一致：$expectedVersion"
+            }
+        }
         if ($health.storageAvailable -ne $true) {
             Warn 'storageAvailable != true：数据库未连通。检查 .env 的 DB_PASSWORD 与 MySQL 服务。'
         }
@@ -309,7 +348,8 @@ if ($NoStart) {
             Warn 'knowledgeChunks <= 0：知识库为空，检查 knowledge\ 目录。'
         }
     } else {
-        Warn '120 秒内未通过健康检查。查看日志 server\run.out.log，或运行 status-znwd.cmd 排查。'
+        # 部署超时不能报成功：下面第 7 节会打「部署完成」，这里必须先掐断
+        Die '120 秒内未通过健康检查，部署失败（不打「部署完成」）。查看日志 server\run.out.log，或运行 status-znwd.cmd 排查。'
     }
 }
 
@@ -335,6 +375,7 @@ Write-Host '=============================================' -ForegroundColor Whit
 Write-Host ("  访问地址 : http://127.0.0.1:{0}/" -f $Port)
 Write-Host ("  运营视图 : http://127.0.0.1:{0}/?admin=1" -f $Port)
 Write-Host ("  健康检查 : curl.exe -s http://127.0.0.1:{0}/api/health" -f $Port)
+if ($health) { Write-Host ("  服务版本 : {0}（/api/health 实报）" -f $health.version) }
 Write-Host ("  ADMIN_TOKEN: {0}" -f $AdminToken)
 Write-Host '  启停/状态: tools\windows\start-znwd.cmd / stop-znwd.cmd / status-znwd.cmd'
 Write-Host ''

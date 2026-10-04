@@ -27,6 +27,7 @@ import com.znwd.hostess.analytics.Analytics;
 import com.znwd.hostess.config.AppProperties;
 import com.znwd.hostess.domain.FeedbackEntry;
 import com.znwd.hostess.http.ApiError;
+import com.znwd.hostess.http.ClientGoneException;
 import com.znwd.hostess.http.ClientIp;
 import com.znwd.hostess.http.JsonlStore;
 import com.znwd.hostess.http.RateLimiter;
@@ -104,6 +105,9 @@ public class ChatController {
         response.setHeader("connection", "keep-alive");
 
         SseEmitter emitter = new SseEmitter(props.llm().streamTimeoutMs() + 30_000L);
+        // 进 executor 前先取 requestId：RequestContextHolder 只在 MVC 请求线程有值，
+        // 线程池里 RequestId.current() 恒为空，error 帧就对不上响应头 x-request-id。
+        String requestId = RequestId.current();
         sseExecutor.execute(() -> {
             ScheduledFuture<?> ping = heartbeat.scheduleAtFixedRate(() -> {
                 try {
@@ -135,13 +139,15 @@ public class ChatController {
                 });
                 emitter.complete();
             } catch (ClientGoneException gone) {
-                // 客户端断开（关屏/切页）：正常收尾，不打错误日志
+                // 客户端断开（关屏/切页/新提问 abort 旧流）：正常收尾，不打错误日志。
+                // 中途断开时的部分回答与 chat_log 已在 ChatRunService.stream 里落过账
+                // （meta/delta 断开时补账，done 帧断开时本来就已完成），这里绝不再补第二条。
                 emitter.complete();
             } catch (RuntimeException e) {
-                log.error("[chat] SSE 问答失败 requestId={}", RequestId.current(), e);
+                log.error("[chat] SSE 问答失败 requestId={}", requestId, e);
                 chat.logError(input.sessionId(), input.message(), started, ApiError.INTERNAL_ERROR);
                 try {
-                    send(emitter, "error", ApiError.payload(ApiError.INTERNAL_ERROR, "服务内部错误", RequestId.current()));
+                    send(emitter, "error", ApiError.payload(ApiError.INTERNAL_ERROR, "服务内部错误", requestId));
                 } catch (RuntimeException ignored) {
                     // 客户端已断开，错误事件也没必要再发
                 }
@@ -256,9 +262,15 @@ public class ChatController {
         }
     }
 
-    /** 会话令牌随问答响应下发；没建过会话（sessionId 为空）就无令牌可发 */
+    /**
+     * 会话令牌随问答响应下发；**每个会话至多一次**（会话首次创建的那次响应）。
+     *
+     * <p>之后的问答响应不再带这个字段：只拿着 sessionId（展厅大屏 localStorage 里的那个）
+     * 再来一问，换不走上一位访客的令牌——详见 {@link SessionStore#issueTokenOnce}。
+     * 前端对「done 帧没有 sessionToken」是容忍的（拿不到就保留已存的那枚），契约不破。
+     */
     private void attachSessionToken(Map<String, Object> out, String sessionId) {
-        String token = sessions.tokenFor(sessionId);
+        String token = sessions.issueTokenOnce(sessionId);
         if (token != null) {
             out.put("sessionToken", token);
         }
@@ -279,10 +291,6 @@ public class ChatController {
             // 客户端断开：停止后续推送（不抛给上层，避免刷错误日志）
             throw new ClientGoneException();
         }
-    }
-
-    /** 客户端断开（关闭浏览器/切屏）——不是服务端错误，按正常收尾处理 */
-    private static class ClientGoneException extends RuntimeException {
     }
 
     private static String cut(String s, int max) {

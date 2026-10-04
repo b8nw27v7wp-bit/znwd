@@ -739,6 +739,86 @@ describe('缺口用例补全', () => {
   });
 
   /**
+   * P0-3：闲置计时器落空后必须重新武装。
+   *
+   * 场景：挂死流让 idle 回调在 streaming 期间触发（条件为假、本轮落空），随后流以总超时收场——
+   * 旧实现到此再无任何计时器，上一位访客的对话会永远留在公共大屏上，直到有人碰屏。
+   * 桩刻意持续发 `:ping`：活性计时（45s）不会提前杀流，能精确构造「idle 在 streaming 中落空」。
+   */
+  it('TC-UI-14b：流挂起时闲置回调落空，流结束后下一轮计时器仍会自动复位', async () => {
+    vi.useFakeTimers();
+    installSpeech();
+    const encoder = new TextEncoder();
+    const hangController = new AbortController();
+    stubFetchWith((url) => {
+      if (url.includes('/api/chat/stream')) {
+        // 挂死但每 15s 心跳：inactivity 永不触发，只有 180s 总超时能结束这条流；
+        // idle 计时器与总超时都挂在 180s，idle 先挂载先调度 → 先触发（此时 streaming 仍为 true）
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              let stopped = false;
+              controller.enqueue(encoder.encode(':ping\n\n'));
+              const beat = () => {
+                if (stopped) return;
+                try {
+                  controller.enqueue(encoder.encode(':ping\n\n'));
+                } catch {
+                  return;
+                }
+                setTimeout(beat, 15_000);
+              };
+              setTimeout(beat, 15_000);
+              hangController.signal.addEventListener(
+                'abort',
+                () => {
+                  stopped = true;
+                  try {
+                    controller.close();
+                  } catch {
+                    /* 流已结束 */
+                  }
+                },
+                { once: true },
+              );
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'text/event-stream' } },
+        );
+      }
+      return defaultFetchHandler(url);
+    });
+    const wrapper = mount(App);
+    await flushPromises();
+
+    await wrapper.find('textarea').setValue('挂死测试问题');
+    await wrapper.find('textarea').trigger('keydown', { key: 'Enter' });
+    await flushPromises();
+    const sessionBefore = localStorage.getItem('znwd.sessionId');
+
+    // 第一轮 180s：idle 回调在 streaming 中触发（落空）→ 紧接着挂死流总超时收场
+    await vi.advanceTimersByTimeAsync(180_000);
+    await flushPromises();
+    expect(wrapper.findAll('.msg').length, 'idle 回调在 streaming 期间落空，对话应还在').toBeGreaterThan(0);
+    expect(localStorage.getItem('znwd.sessionId'), '落空时不该换会话').toBe(sessionBefore);
+
+    // 流已由总超时结束（兜底：显式中止桩，等价于「流结束」）
+    hangController.abort();
+    await flushPromises();
+
+    // 第二轮 180s：重新武装的计时器到点 → 无人碰屏也自动复位（旧实现此处是红的）
+    await vi.advanceTimersByTimeAsync(180_000);
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(0); // 让 startOver 里的 DELETE / 推荐问题两个异步链走完
+    await flushPromises();
+    expect(wrapper.findAll('.msg').length, '流结束后闲置一轮必须自动复位').toBe(0);
+    expect(localStorage.getItem('znwd.sessionId'), '复位要换新会话').not.toBe(sessionBefore);
+
+    vi.useRealTimers();
+    wrapper.unmount();
+  });
+
+  /**
    * 输入法组字：中文场景必踩。
    * 回车在中文输入法里也用来「确认候选词」，不判断组字状态就会把半截文本当问题发出去。
    */

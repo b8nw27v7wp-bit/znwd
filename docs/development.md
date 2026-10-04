@@ -39,7 +39,9 @@ cd server && ../tools/mvn -B test        # 等价于 mvn -B test
 | 本地化不变量 | `python tools/offline-check.py`（`--runtime` 追加运行期核查） | O04 后端出网白名单只含 LLM、embedding、MiMo 语音三个适配器；其它网络调用即失败 |
 | 前端 dev | `cd web && npm install && npm run dev` | `VITE v6 ready`，`:5173`，`/api` 代理到 8787 |
 | 前端构建 | `cd web && npm run build` | `vue-tsc -b` 类型检查 + `vite build`，产物 `web/dist` |
-| 前端单测 | `cd web && npm test` | `144 passed`（12 个测试文件，含 jsdom 下的组件接线测试） |
+| 前端单测 | `cd web && npm test` | `164 passed`（12 个测试文件，含 jsdom 下的组件接线测试） |
+| 前端 lint | `cd web && npm run lint` | ESLint 门禁（`web/eslint.config.mjs`，只看 `src` 下 `.ts/.vue`）**0 error**；风格类规则有意不开（仓库无 prettier） |
+| 前端覆盖率 | `cd web && npm run test:coverage` | 同一批 164 项单测 + coverage 阈值门禁（阈值取实测下调 1–2 点，落在 `vite.config.ts`） |
 | 打包后端 | `cd server && ../tools/mvn -B -DskipTests package` | `server/target/hostess-server.jar` |
 
 表里 `python tools/...` 的命令在 Windows 上改用 **`py -3 tools/...`**（本机 `python` 命令不可用；虚拟环境里用其 `python`）。
@@ -73,7 +75,7 @@ MySQL 首次使用：把 `server/db/init.sql` 里两处 `CHANGE_ME_znwd` 改成�
 | 同义词 | `PUT /api/admin/synonyms`（在线，可落盘）或 `knowledge/_meta/synonyms.tsv` | 改完重跑标定与评测 |
 | 虚拟形象 | 只动 `web/src/components/AvatarPortrait.vue` 内部 | 外部只吃 `state` 属性，换 3D/Live2D 不改调用方 |
 | 加一张表 | `resources/schema.sql` + `domain/` 记录 + `repository/` mapper | 幂等 `CREATE TABLE IF NOT EXISTS`，由 `DatabaseStatus` 执行 |
-| 加前端 API | `web/src/api.ts` + `composables/useChat.ts` | 字段名必须与后端一致（有 `x-request-id`、`non_null` 两个坑） |
+| 加前端 API | `web/src/api/`（入口 `api/index.ts`，按 `types`/`http`/`stream`/`admin`/`speech` 拆文件）+ `composables/useChat.ts` | 字段名必须与后端一致（有 `x-request-id`、`non_null` 两个坑） |
 
 ## 5. 代码约定
 
@@ -104,7 +106,9 @@ MySQL 首次使用：把 `server/db/init.sql` 里两处 `CHANGE_ME_znwd` 改成�
 | 检查项 | 命令 | 结果 |
 | --- | --- | --- |
 | 后端单测 | `mvn -B test` | 167 项，0 失败/错误/跳过 |
-| 前端单测 | `npm test` | 144 项 / 12 个文件 |
+| 前端单测 | `npm test` | 164 项 / 12 个文件（2026-10-04 复核；上表其余行仍为 09-29 复跑口径） |
+| 前端 lint | `npm run lint` | 0 error / 0 warn（ESLint 平坦配置，见 `web/eslint.config.mjs`） |
+| 前端覆盖率 | `npm run test:coverage` | 过阈值；实测 Stmts 88.14 / Branch 75.08 / Funcs 90.32 / Lines 91.67 |
 | 前端构建 | `npm run build`（vue-tsc+vite） | 通过 |
 | 接口冒烟 | `python tools/smoke.py`（带 `ADMIN_TOKEN`、语音启用） | 100 通过 / 0 失败 / 0 跳过 |
 | 边界安全 | `python tools/security.py` | 主实例 91 通过 / 0 失败 / 7 跳过（S16–S18、S16c、M01–M03 需另起 `SECOND_BASE`/`MISCONFIG_BASE`/`DEV_RELAXED_BASE` 三个实例）；四个实例全跑时 99 通过 / 0 失败 / 0 跳过 |
@@ -122,7 +126,9 @@ MySQL 首次使用：把 `server/db/init.sql` 里两处 `CHANGE_ME_znwd` 改成�
 
 ```bash
 cd server && ../tools/mvn -B test                     # 167 项：检索/HTTP/统计会话/同义词/诊断文案/配置接线/管理口令/降级写路径与裁剪/资料入库/请求体上限/来源面板规则/落库截断/限流键取值/语音/问答接口契约
-cd web && npm test                                     # 144 项（12 个文件）：SSE 解析、问答状态机、朗读与听写、回答排版、展区下拉、界面入口与播报接线、运营视图、对话主流程、来源面板、讲解图、检索诊断与知识面板（jsdom）
+cd web && npm run lint                                 # ESLint 门禁：src 下 .ts/.vue，0 error（风格类规则不开，取舍见 web/eslint.config.mjs）
+cd web && npm test                                     # 164 项（12 个文件）：SSE 解析、问答状态机、朗读与听写、回答排版、展区下拉、界面入口与播报接线、运营视图、对话主流程、来源面板、讲解图、检索诊断与知识面板（jsdom）
+cd web && npm run test:coverage                        # 同一批单测 + 覆盖率阈值门禁（阈值落在 vite.config.ts：86.5/73.5/88.5/90，实测 88.14/75.08/90.32/91.67）
 python tools/smoke.py                                  # 100 项契约（需服务在跑，带 ADMIN_TOKEN、语音启用；分档口径见下）
 ```
 
@@ -133,7 +139,7 @@ python tools/smoke.py                                  # 100 项契约（需服�
 CI（`.github/workflows/ci.yml`，push/PR 都跑）：
 
 - **backend**：起一个 MySQL 8.4 service 容器 → 用 root 执行 `server/db/init.sql`（`sed` 注入口令、`@'localhost'` 换成 `@'%'`，因为容器里来源是 docker 网关 IP）→ `mvn test` → `exec:java@eval --no-write --baseline=docs/eval/baseline-java.json` → `calibrate --gate-check --no-write` → `package` → 起 jar 跑 `python3 tools/smoke.py`（先等 `/api/health` 的 `ready:true`、`storageAvailable:true` 且知识块非零）→ 另起 8899 mock 实例跑 `python3 tools/loadtest.py`（24 非流式 + 12 流式并发短跑，见 `docs/loadtesting.md`）→ 再起两个实例跑 `python3 tools/security.py`（`SECOND_BASE`/`MISCONFIG_BASE`）→ `python3 tools/db-check.py`。`LLM_PROVIDER=mock`、`MIN_RELEVANCE_SCORE=6.3`、`MIN_VECTOR_SCORE=0.75` 显式给出，失败时打印三个实例的日志。
-- **frontend**：`npm ci` → `npm run build` → `npm test` → `python3 tools/offline-check.py`；O04 守后端出网白名单，只允许 LLM、embedding、MiMo 语音三个适配器。
+- **frontend**：`npm ci` → `npm run build` → `npm run lint`（ESLint 0 error）→ `npm run test:coverage`（单测 + 覆盖率阈值门禁）→ `python3 tools/offline-check.py`；O04 守后端出网白名单，只允许 LLM、embedding、MiMo 语音三个适配器。
 
 失败时的判断顺序：先在本地复现对应命令；契约类失败（smoke）先看 `docs/api.md` 的字段表，检索类失败（eval/基线门禁）先看 `REGRESSION`/`DIFF`，再跑 `calibrate` 查阈值与降级原因，边界/安全类失败（security）先看 `docs/security-testing.md` 里该编号的期望与「已接受的风险」两节，别急着改代码。
 

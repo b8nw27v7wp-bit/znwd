@@ -50,7 +50,11 @@ public class OpenAiCompatEmbeddingProvider implements EmbeddingProvider {
         this.dims = dims;
         this.timeout = timeout;
         this.mapper = mapper;
-        this.http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+        this.http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10))
+                // 不跟随重定向：请求带静态 Authorization: Bearer，30x 由 JDK 跟随时会把该头
+                // 一并送到 Location 目标（网关被劫持/误配就等于把密钥送出去）。3xx 当失败上报。
+                .followRedirects(HttpClient.Redirect.NEVER)
+                .build();
     }
 
     @Override
@@ -97,7 +101,10 @@ public class OpenAiCompatEmbeddingProvider implements EmbeddingProvider {
             HttpResponse<InputStream> response = http.send(request, HttpResponse.BodyHandlers.ofInputStream());
             String body = readResponseBody(response);
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw new EmbeddingException("Embeddings HTTP " + response.statusCode() + ": "
+                // 3xx 不跟随（HttpClient.Redirect.NEVER）：状态码写进文案，别当成解析失败排查
+                String redirectNote = response.statusCode() >= 300 && response.statusCode() < 400
+                        ? " (redirect not followed)" : "";
+                throw new EmbeddingException("Embeddings HTTP " + response.statusCode() + redirectNote + ": "
                         + truncate(body, 400));
             }
             JsonNode root = mapper.readTree(body);

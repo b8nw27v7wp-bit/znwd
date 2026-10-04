@@ -289,7 +289,7 @@ jobs:
           retention-days: 14
 
   frontend:
-    name: 前端（类型检查 + 构建 + 单测）
+    name: 前端（类型检查 + 构建 + ESLint + 单测与覆盖率）
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -312,9 +312,17 @@ jobs:
         working-directory: web
         run: npm run build
 
-      - name: 单测（SSE 解析、问答状态机、朗读切片、播报接线、注入面）
+      # ESLint 门禁：只看 web/src 下的 .ts/.vue，0 error 才放行。
+      # 规则取舍（只留真问题、风格类不开）写在 web/eslint.config.mjs 头部注释里。
+      - name: ESLint
         working-directory: web
-        run: npm test
+        run: npm run lint
+
+      # 同一批单测（164 项）+ 覆盖率阈值门禁：阈值落在 vite.config.ts（实测值下调 1–2 点，
+      # 语义是「不低于当前水平」）。npm test 本地仍是不带 coverage 的 vitest run。
+      - name: 单测与覆盖率（SSE 解析、问答状态机、朗读切片、播报接线、注入面）
+        working-directory: web
+        run: npm run test:coverage
 
       # 部署一体机的要求是「除大模型外一律本地」，这条容易被一次顺手引 CDN 破坏，
       # 所以放在构建之后跑：产物、后端源码出网入口、依赖清单一起查。

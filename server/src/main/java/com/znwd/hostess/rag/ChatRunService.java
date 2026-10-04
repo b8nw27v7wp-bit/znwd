@@ -7,6 +7,7 @@ import java.util.Map;
 import com.znwd.hostess.analytics.Analytics;
 import com.znwd.hostess.config.KnowledgeService;
 import com.znwd.hostess.domain.ChatLogEntry;
+import com.znwd.hostess.http.ClientGoneException;
 import com.znwd.hostess.http.JsonlStore;
 import com.znwd.hostess.http.LruCache;
 import com.znwd.hostess.http.LruCache.CachedAnswer;
@@ -24,6 +25,9 @@ import com.znwd.hostess.session.SessionStore;
  * 老版本只有非流式写缓存，导致「流式问过的问题再走非流式仍然重算」——两个入口行为不一致最难查。
  */
 public class ChatRunService {
+
+    /** 客户端中途断开时 chat_log 的错误码（schema 的 error 列，运营侧按它区分「服务故障」与「访客关页」） */
+    public static final String ERROR_CLIENT_GONE = "client_gone";
 
     private final KnowledgeService knowledge;
     private final ChatModel model;
@@ -62,7 +66,7 @@ public class ChatRunService {
             String retrieval = normalizeRetrieval(hit.retrieval());
             sessions.append(sessionId, message, hit.answer());
             logChat(started, sessionId, message, hit.answer(), hit.mode(), hit.provider(), retrieval,
-                    hit.noHit(), false, 0, null, null);
+                    hit.noHit(), false, 0, null, null, null);
             return response(hit.answer(), hit.sources(), hit.mode(), hit.provider(), retrieval, sessionId, 0, true,
                     hit.noHit(), null, null);
         }
@@ -80,7 +84,7 @@ public class ChatRunService {
         long latency = System.currentTimeMillis() - started;
         logChat(started, sessionId, message, answer, result.mode(), result.provider(), result.retrieval(),
                 result.noHit(), result.rewrite() != null && result.rewrite().rewritten(), latency,
-                result.noHit() ? message : null, result.usage());
+                result.noHit() ? message : null, result.usage(), null);
 
         return response(answer, result.sources(), result.mode(), result.provider(), result.retrieval(),
                 sessionId, latency, false, result.noHit(), result.rewrite(), result.usage());
@@ -101,7 +105,10 @@ public class ChatRunService {
             RewriteResult rewrite = RewriteResult.unchanged(message, RewriteResult.RewriteReason.NONE);
             sessions.append(sessionId, message, hit.answer());
             logChat(started, sessionId, message, hit.answer(), hit.mode(), hit.provider(), retrieval,
-                    hit.noHit(), false, 0, null, null);
+                    hit.noHit(), false, 0, null, null, null);
+            // 这条路径的 append/logChat 在发帧**之前**就完成了：客户端此刻断开，账已经落过，
+            // 异常直穿到控制器收尾（catch ClientGoneException），这里绝不补第二条——
+            // 否则「缓存命中 + 关屏」一问会落两条 chat_log。
             sink.meta(meta(hit.mode(), sources, hit.provider(), hit.noHit(), retrieval, rewrite, sessionId));
             sink.delta(hit.answer());
             sink.done(done(hit.answer(), sources, hit.mode(), retrieval, hit.noHit(), 0, true, hit.provider(),
@@ -120,18 +127,36 @@ public class ChatRunService {
         String mode = hits.isEmpty() ? RagAnswer.MODE_LLM_ONLY : RagAnswer.MODE_RAG;
         String retrieval = retrieved.diagnostics().mode().value();
 
-        sink.meta(meta(mode, sources, provider, hits.isEmpty(), retrieval, retrieved.rewrite(), sessionId));
-
         StringBuilder full = new StringBuilder();
-        if (gated) {
-            String reply = prompts.noHitReply();
-            full.append(reply);
-            sink.delta(reply);
-        } else {
-            model.stream(pipeline.buildPrompt(hits, message, trimmed), delta -> {
-                full.append(delta);
-                sink.delta(delta);
-            });
+        try {
+            sink.meta(meta(mode, sources, provider, hits.isEmpty(), retrieval, retrieved.rewrite(), sessionId));
+
+            if (gated) {
+                String reply = prompts.noHitReply();
+                full.append(reply);
+                sink.delta(reply);
+            } else {
+                model.stream(pipeline.buildPrompt(hits, message, trimmed), delta -> {
+                    full.append(delta);
+                    sink.delta(delta);
+                });
+            }
+        } catch (ClientGoneException gone) {
+            // 客户端中途断开（前端新提问 abort 旧流是常态交互）：本轮问答不能就这么蒸发——
+            // 已生成的部分回答写回会话（下一轮追问的上下文里有它），chat_log 落一条
+            // client_gone 留痕；**半截回答不进答案缓存**、也不发 done（客户端已经走了）。
+            // done 帧失败不走这里：那会儿 append/logChat 已经完成，异常直穿即可。
+            String partial = full.toString();
+            if (hasText(partial)) {
+                sessions.append(sessionId, message, partial);
+            }
+            logChat(started, sessionId, message, partial, mode, provider, retrieval, hits.isEmpty(),
+                    retrieved.rewrite().rewritten(), System.currentTimeMillis() - started,
+                    hits.isEmpty() ? message : null, null, ERROR_CLIENT_GONE);
+            // 落完账继续上抛：由控制器在 catch (ClientGoneException) 里收尾（complete，不打错误日志）。
+            // 刻意不在这里吞掉——吞掉就变成「流正常返回 + 客户端已死」，控制器会走到成功路径的
+            // emitter.complete()，那是条从未被 tools/security.py G06/G07 走过的组合。
+            throw gone;
         }
 
         String answer = full.toString();
@@ -145,7 +170,7 @@ public class ChatRunService {
             cache.put(key, new CachedAnswer(answer, sources, mode, provider, retrieval, hits.isEmpty()));
         }
         logChat(started, sessionId, message, answer, mode, provider, retrieval, hits.isEmpty(),
-                retrieved.rewrite().rewritten(), latency, hits.isEmpty() ? message : null, usage);
+                retrieved.rewrite().rewritten(), latency, hits.isEmpty() ? message : null, usage, null);
         sink.done(done(answer, sources, mode, retrieval, hits.isEmpty(), latency, false, provider,
                 retrieved.rewrite(), usage));
     }
@@ -178,13 +203,22 @@ public class ChatRunService {
         meta.put("provider", provider);
         meta.put("noHit", noHit);
         meta.put("retrieval", retrieval);
+        meta.put("rewrite", rewriteMap(rewrite));
+        meta.put("sessionId", sessionId);
+        return meta;
+    }
+
+    /**
+     * rewrite 字段组：meta 帧、done 帧与非流式响应三处共用（字段名与内部顺序不得变——
+     * done 的 rewrite 会被前端拿去覆盖 meta，漏了就等于把「已按上下文补全提问」的标记擦掉）。
+     * meta 无条件携带（没有改写时是 rewrite:null 语义的空组），done/response 仅在非 null 时携带。
+     */
+    private static Map<String, Object> rewriteMap(RewriteResult rewrite) {
         Map<String, Object> rw = new LinkedHashMap<>();
         rw.put("rewritten", rewrite != null && rewrite.rewritten());
         rw.put("reason", rewrite == null ? "none" : rewrite.reason().value());
         rw.put("carriedTokens", rewrite == null ? List.of() : rewrite.carriedTokens());
-        meta.put("rewrite", rw);
-        meta.put("sessionId", sessionId);
-        return meta;
+        return rw;
     }
 
     private Map<String, Object> done(String answer, List<RagSource> sources, String mode, String retrieval,
@@ -202,11 +236,7 @@ public class ChatRunService {
         // rewrite 必须跟着 done 一起发：前端收到 done 会用它覆盖 meta，这里漏掉就等于把
         // 「已按上下文补全提问」的标记擦掉（非流式响应一直带着它，这里补上对齐）。
         if (rewrite != null) {
-            Map<String, Object> rw = new LinkedHashMap<>();
-            rw.put("rewritten", rewrite.rewritten());
-            rw.put("reason", rewrite.reason().value());
-            rw.put("carriedTokens", rewrite.carriedTokens());
-            done.put("rewrite", rw);
+            done.put("rewrite", rewriteMap(rewrite));
         }
         if (usage != null) {
             done.put("usage", usageMap(usage));
@@ -229,11 +259,7 @@ public class ChatRunService {
         out.put("latencyMs", latencyMs);
         out.put("cached", cached);
         if (rewrite != null) {
-            Map<String, Object> rw = new LinkedHashMap<>();
-            rw.put("rewritten", rewrite.rewritten());
-            rw.put("reason", rewrite.reason().value());
-            rw.put("carriedTokens", rewrite.carriedTokens());
-            out.put("rewrite", rw);
+            out.put("rewrite", rewriteMap(rewrite));
         }
         if (usage != null) {
             out.put("usage", usageMap(usage));
@@ -241,13 +267,17 @@ public class ChatRunService {
         return out;
     }
 
+    /**
+     * @param error 非 null 时写进 chat_log 的 error 列与 JSONL 行（如 {@link #ERROR_CLIENT_GONE}）；
+     *              成功路径传 null，字段不出现（与旧行为一致）
+     */
     private void logChat(long started, String sessionId, String message, String answer, String mode, String provider,
                          String retrieval, boolean noHit, boolean rewritten, long latencyMs, String question,
-                         LlmUsage usage) {
+                         LlmUsage usage, String error) {
         Map<String, Object> preview = MessageLog.fields(message, logStore.previewMode());
         analytics.logChat(new ChatLogEntry(started, sessionId, mode, provider,
                 (String) preview.get("messagePreview"), (Integer) preview.get("messageLen"), cut(answer, 80),
-                latencyMs, noHit, retrieval, rewritten, question, usage, null));
+                latencyMs, noHit, retrieval, rewritten, question, usage, error));
 
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("type", "chat");
@@ -260,6 +290,9 @@ public class ChatRunService {
         row.put("noHit", noHit);
         row.put("retrieval", retrieval);
         row.put("rewritten", rewritten);
+        if (error != null) {
+            row.put("error", error);
+        }
         if (usage != null) {
             row.put("usage", usageMap(usage));
         }

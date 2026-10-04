@@ -1,5 +1,14 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import { STREAM_TIMEOUT_MS, SYNTH_TIMEOUT_MS, sendFeedback, streamChat, synthesizeSpeech, type ChatDone, type ChatMeta } from './api';
+import {
+  STREAM_INACTIVITY_MS,
+  STREAM_TIMEOUT_MS,
+  SYNTH_TIMEOUT_MS,
+  sendFeedback,
+  streamChat,
+  synthesizeSpeech,
+  type ChatDone,
+  type ChatMeta,
+} from './api';
 
 /** 把若干 SSE 帧拼成 fetch 的流式响应 */
 function sseResponse(chunks: string[]): Response {
@@ -302,6 +311,146 @@ describe('SSE 解析', () => {
 
     const pending = streamChat('问', null, { onMeta: () => {}, onDelta: () => {}, onDone: () => {} });
     const assertion = expect(pending).rejects.toThrow('超时');
+    await vi.advanceTimersByTimeAsync(STREAM_TIMEOUT_MS);
+    await assertion;
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * `event: error` 帧：parseFrame 见到它直接抛（带 payload 的 message 就用原文案），
+ * 此前只有实现、没有用例——这里把两条分支钉住：有 message 用 message，缺了回落通用文案。
+ */
+describe('SSE error 事件帧', () => {
+  it('中途 event: error 以 payload 的 message reject，已上屏的回调保留且 reader 照常取消', async () => {
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    const encoder = new TextEncoder();
+    const meta: ChatMeta = {
+      mode: 'rag', provider: 'mock', retrieval: 'keyword', noHit: false, cached: false, sources: [],
+    };
+    const read = vi.fn()
+      .mockResolvedValueOnce({ done: false, value: encoder.encode(frame('meta', meta)) })
+      .mockResolvedValueOnce({ done: false, value: encoder.encode(frame('delta', { text: '半句' })) })
+      .mockResolvedValueOnce({ done: false, value: encoder.encode(frame('error', { message: '上游模型超时' })) })
+      .mockResolvedValue({ done: true, value: undefined });
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      body: { getReader: () => ({ read, cancel }) },
+    } as unknown as Response)));
+
+    const events: string[] = [];
+    await expect(
+      streamChat('问', null, {
+        onMeta: () => events.push('meta'),
+        onDelta: () => events.push('delta'),
+        onDone: () => events.push('done'),
+      }),
+    ).rejects.toThrow('上游模型超时');
+
+    expect(events, 'error 之前已分发的帧保留，done 永远不回调').toEqual(['meta', 'delta']);
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('error 帧缺 message 字段时抛「服务内部错误」，不吐 undefined', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => sseResponse([frame('error', {})])));
+    await expect(
+      streamChat('问', null, { onMeta: () => {}, onDelta: () => {}, onDone: () => {} }),
+    ).rejects.toThrow('服务内部错误');
+  });
+});
+
+/**
+ * P1-4：断流活性检测。
+ *
+ * 后端每 15s 发一次 `:ping` 注释心跳；对端僵死（不关流、不吐字）时，旧实现要干等 180s
+ * 总上限才报错。现在：收到任何字节刷新活性计时器，45s（3× 心跳）无数据即提前失败；
+ * 总时长 180s 上限保留，语义由错误文案区分（「连接中断」vs「流式回答超时」）。
+ */
+describe('SSE 断流活性检测', () => {
+  const meta: ChatMeta = { mode: 'rag', provider: 'mock', retrieval: 'keyword', noHit: false, cached: false, sources: [] };
+
+  it('心跳持续刷新活性：跨过 45s 阈值但每 30s 有 :ping 的流照常走完', async () => {
+    vi.useFakeTimers();
+    const encoder = new TextEncoder();
+    const done: ChatDone = { ...meta, answer: '字', latencyMs: 1 };
+    // 脚本化读：t=0 meta → 每 30s 一个 :ping → t=120 delta+done → EOF
+    const script: Array<{ delay: number; chunk: string }> = [
+      { delay: 0, chunk: frame('meta', meta) },
+      { delay: 30_000, chunk: ':ping\n\n' },
+      { delay: 30_000, chunk: ':ping\n\n' },
+      { delay: 30_000, chunk: ':ping\n\n' },
+      { delay: 30_000, chunk: frame('delta', { text: '字' }) + frame('done', done) },
+      { delay: 0, chunk: '' }, // EOF
+    ];
+    let step = 0;
+    const read = vi.fn(() =>
+      new Promise<ReadableStreamReadResult<Uint8Array>>((resolve) => {
+        const next = script[step++];
+        setTimeout(() => {
+          if (!next || next.chunk === '') resolve({ done: true, value: undefined });
+          else resolve({ done: false, value: encoder.encode(next.chunk) });
+        }, next?.delay ?? 0);
+      }),
+    );
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      body: { getReader: () => ({ read, cancel: vi.fn().mockResolvedValue(undefined) }) },
+    } as unknown as Response)));
+
+    const events: string[] = [];
+    const pending = streamChat('问', null, {
+      onMeta: () => events.push('meta'),
+      onDelta: () => events.push('delta'),
+      onDone: () => events.push('done'),
+    });
+    // fetch→read 链全是微任务：先排干，第一只 read 定时器才会挂到假钟上
+    for (let i = 0; i < 50; i += 1) await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(0); // meta 落地并刷新活性
+    await vi.advanceTimersByTimeAsync(130_000); // 跨 45s 阈值，但心跳间隔 30s 始终压着
+    await pending;
+    expect(events).toEqual(['meta', 'delta', 'done']);
+  });
+
+  it('连接僵死：45 秒收不到任何字节就快速失败（远早于 180s），并取消 reader', async () => {
+    vi.useFakeTimers();
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    const read = vi.fn(() => new Promise<never>(() => {}));
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      body: { getReader: () => ({ read, cancel }) },
+    } as unknown as Response)));
+
+    const pending = streamChat('问', null, { onMeta: () => {}, onDelta: () => {}, onDone: () => {} });
+    const assertion = expect(pending).rejects.toMatchObject({
+      name: 'TimeoutError',
+      message: expect.stringContaining('连接中断'),
+    });
+    // 只推进 45s（总上限的 1/4）：断言能在这里完成，本身就证明没干等 180s
+    await vi.advanceTimersByTimeAsync(STREAM_INACTIVITY_MS);
+    await assertion;
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('总超时语义不回归：期间心跳不断，到 180s 仍以「流式回答超时」失败', async () => {
+    vi.useFakeTimers();
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    const encoder = new TextEncoder();
+    // 每 30s 一个心跳：活性不断被刷新，只有 180s 总上限能结束这条流
+    const read = vi.fn(() =>
+      new Promise<ReadableStreamReadResult<Uint8Array>>((resolve) => {
+        setTimeout(() => resolve({ done: false, value: encoder.encode(':ping\n\n') }), 30_000);
+      }),
+    );
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      body: { getReader: () => ({ read, cancel }) },
+    } as unknown as Response)));
+
+    const pending = streamChat('问', null, { onMeta: () => {}, onDelta: () => {}, onDone: () => {} });
+    // 排干微任务：让第一只 read（30s 后吐心跳）先挂上假钟，否则活性计时会在总超时前先开火
+    for (let i = 0; i < 50; i += 1) await Promise.resolve();
+    // 文案精确匹配「流式回答超时」：若被活性计时提前杀掉，错误会是「连接中断」，这里就会红
+    const assertion = expect(pending).rejects.toThrow('流式回答超时');
     await vi.advanceTimersByTimeAsync(STREAM_TIMEOUT_MS);
     await assertion;
     expect(cancel).toHaveBeenCalledTimes(1);

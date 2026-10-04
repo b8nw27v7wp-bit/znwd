@@ -27,7 +27,7 @@ public class HybridRetriever {
     private final double minKeywordScore;
     private final double minVectorScore;
     private volatile Snapshot snapshot = new Snapshot(0, new Retriever(), VectorStore.VecData.empty(),
-            Synonyms.snapshot(), false);
+            Synonyms.snapshot(), false, false);
 
     public HybridRetriever(VectorStore vectors, double minKeywordScore, double minVectorScore) {
         this.vectors = vectors;
@@ -61,10 +61,14 @@ public class HybridRetriever {
             vectors.build(source);
         }
         VectorStore.VecData vectorData = vectors.snapshot();
-        if (!vectorData.matches(source)) {
+        // 对齐与否在构建期判一次并随快照走：VecData.matches 要对**全语料**拼串+排序+SHA
+        // （KnowledgeLoader.fingerprint），而 keyword 列表与 VecData 都是不可变的，
+        // 结果一旦成立就不会变——挪到 stats() 里每问一次纯属白烧 CPU。
+        boolean vectorAligned = vectorData.matches(source);
+        if (!vectorAligned) {
             vectorData = VectorStore.VecData.empty();
         }
-        snapshot = new Snapshot(snapshot.gen() + 1, nextKeyword, vectorData, nextSynonyms, true);
+        snapshot = new Snapshot(snapshot.gen() + 1, nextKeyword, vectorData, nextSynonyms, true, vectorAligned);
     }
 
     public synchronized void refreshSynonyms() {
@@ -80,7 +84,9 @@ public class HybridRetriever {
                 && current.synonyms().source().equals(synonyms.source())) {
             return;
         }
-        snapshot = new Snapshot(current.gen() + 1, current.keyword(), current.vectorData(), synonyms, true);
+        // 同义词换代不动语料：keyword 与向量原样带过去，对齐结论（以及它的语义）也一起带过去
+        snapshot = new Snapshot(current.gen() + 1, current.keyword(), current.vectorData(), synonyms, true,
+                current.vectorAligned());
     }
 
     public List<KnowledgeChunk> list() {
@@ -171,8 +177,9 @@ public class HybridRetriever {
     public HybridStats stats() {
         Snapshot current = snapshot;
         VectorStore.VecData vectorData = current.vectorData();
-        boolean currentVector = vectors.isCurrent(vectorData)
-                && vectorData.matches(current.keyword().list());
+        // 「向量快照与关键词快照是否同代」在 replace 时已经判过（见那里）：这里只查生成号，
+        // stats() 是问答/改写/健康轮询的热路径，不能再对全语料算一遍指纹。
+        boolean currentVector = vectors.isCurrent(vectorData) && current.vectorAligned();
         VectorStats vectorStats = vectors.stats(vectors.snapshot());
         boolean semantic = vectors.semantic(vectorData) && currentVector;
         String degradedReason;
@@ -293,7 +300,11 @@ public class HybridRetriever {
         }
     }
 
+    /**
+     * @param vectorAligned 向量快照是否与本代关键词快照对齐（{@link VectorStore.VecData#matches}
+     *                      的结果，在 replace 里随快照一次算好——两个对象都不可变，结论不会过期）
+     */
     private record Snapshot(long gen, Retriever keyword, VectorStore.VecData vectorData,
-                            Synonyms.Version synonyms, boolean ready) {
+                            Synonyms.Version synonyms, boolean ready, boolean vectorAligned) {
     }
 }

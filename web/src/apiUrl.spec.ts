@@ -17,7 +17,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** 动态导入 api.ts 并让 import.meta.env.VITE_API_BASE_URL 返回指定值 */
+/** 动态导入 api 模块（api/index.ts → http.ts 的 configuredApiBase）并让 import.meta.env.VITE_API_BASE_URL 返回指定值 */
 async function loadApi(base: string) {
   vi.stubEnv('VITE_API_BASE_URL', base);
   vi.resetModules();

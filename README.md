@@ -47,7 +47,7 @@ znwd/
 │   ├── src/main/resources/prompts/  # 内置话术（可被 PROMPT_* 外部文件覆盖）
 │   └── src/main/java/com/znwd/hostess/{config,embedding,knowledge,llm,audio,http,domain,repository,session,analytics,rag,web}
 ├── web/                         # Vue 3 + Vite：左约 1/4 形象 + 下方对话
-│   └── src/{App.vue,api.ts,composables,components,styles.css}
+│   └── src/{App.vue,api/,composables,components,styles.css}
 ├── knowledge/                   # RAG 知识正文；_meta/zones.json 管展区、_meta/synonyms.tsv 管同义词
 ├── tools/                       # mvn（MSYS 包装）、smoke/security/db-check/offline-check/acceptance 脚本
 │   └── windows/                 # Windows 一体机启停/自启/打包脚本
@@ -105,7 +105,7 @@ tools\windows\pack.ps1                               # 打包 jar + web/dist + .
 5) 浏览器打开 http://127.0.0.1:8787/  （整页即应用；?admin=1 进运营视图）
 ```
 
-> **交付包必须带上 `.env`**：漏带时应用会静默退回 `mock/bag/none`（页面正常但答案是假摘要）。启动日志会打印生效的 `chunks/embed/llm/阈值/adminRequired`，先对一眼再验收。
+> **交付包不含 `.env`**（只带 `.env.example`，避免把 LLM key / DB 口令 / `ADMIN_TOKEN` 打进分发 zip）：解压后按上文第 3 步复制 `server\.env.example` 为 `server\.env` 并填写；漏配时应用会静默退回 `mock/bag/none`（页面正常但答案是假摘要）。启动日志会打印生效的 `chunks/embed/llm/阈值/adminRequired`，先对一眼再验收。
 > 展厅同机保持 `HOST=127.0.0.1` 即可；麦克风只在 HTTPS 或 `localhost/127.0.0.1` 安全上下文可用（跨机 `http://内网IP` 打开时「语音提问」按钮不出现，键盘问答与自动播报不受影响）。
 
 **Windows 构建注意**：`-DskipTests package` 会覆盖 `hostess-server.jar`，而运行中的实例锁着它，会报 `Unable to rename ... -> .original`——**先 `stop-znwd.cmd` 再构建**。
@@ -204,7 +204,7 @@ python tools/db-check.py                                                 # 库�
 python tools/offline-check.py --runtime                                  # 本地化不变量（除 LLM/embedding/语音外一律本地）
 python tools/acceptance.py                                               # 问答内容验收（需真模型在跑，43 项）
 python tools/loadtest.py --n 8 --streams 4                               # 并发/压测（多路问答+SSE+只读+中断；429 单列）
-cd web && npm run build && npm test                                      # 前端类型检查+构建、单测（150 项）
+cd web && npm run build && npm run lint && npm run test:coverage   # 前端类型检查+构建、ESLint 门禁、单测+覆盖率门禁（164 项）
 ```
 
 Windows 上本机 `python` 命令不可用：把 `python tools/xxx.py` 改成 `py -3 tools/xxx.py`（虚拟环境里则用其 `python`）。

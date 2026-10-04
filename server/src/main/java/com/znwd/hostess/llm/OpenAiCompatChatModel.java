@@ -107,7 +107,9 @@ public class OpenAiCompatChatModel implements ChatModel {
         this.mapper = mapper;
         this.http = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
-                .followRedirects(HttpClient.Redirect.NORMAL)
+                // 不跟随重定向：请求带静态 Authorization: Bearer，30x 由 JDK 跟随时会把该头
+                // 一并送到 Location 目标（网关被劫持/误配就等于把密钥送出去）。3xx 当失败上报。
+                .followRedirects(HttpClient.Redirect.NEVER)
                 .build();
     }
 
@@ -460,7 +462,15 @@ public class OpenAiCompatChatModel implements ChatModel {
 
     private static LlmHttpException httpFailure(int status, String body, String retryAfter) {
         String text = body == null ? "" : body;
-        return new LlmHttpException(status, text, "LLM HTTP " + status + ": " + truncate(text, 300), retryAfter);
+        // 3xx 不跟随（HttpClient.Redirect.NEVER）：把状态码与「没跟随」写进文案，免得现场
+        // 看到空响应体的 302 被当成「响应不是合法 JSON」去查解析逻辑。
+        String note = isRedirectStatus(status) ? " (redirect not followed)" : "";
+        return new LlmHttpException(status, text,
+                "LLM HTTP " + status + note + ": " + truncate(text, 300), retryAfter);
+    }
+
+    private static boolean isRedirectStatus(int status) {
+        return status >= 300 && status < 400;
     }
 
     private static LlmHttpException businessFailure(int status, String body, String retryAfter) {
@@ -550,6 +560,10 @@ public class OpenAiCompatChatModel implements ChatModel {
 
     public static boolean isRetryableFailure(int status, String body) {
         String text = body == null ? "" : body;
+        // 3xx 不重试：跟随已关闭，同一个 30x 重发多少次都一样，只会把密钥多送一遍
+        if (isRedirectStatus(status)) {
+            return false;
+        }
         Matcher m = BUSINESS_CODE.matcher(text);
         String code = m.find() ? m.group(1) : null;
         if (code != null && HARD_LIMIT_CODES.contains(code)) {

@@ -5,6 +5,7 @@ import {
   TARGET_SAMPLE_RATE,
   dictationSupported,
   useDictation,
+  type DictationOptions,
 } from './useDictation';
 
 /** 把 WAV 头读回来断言：这些字段错一个，服务端就会把它当成非 WAV 拒掉 */
@@ -18,7 +19,12 @@ function ascii(view: DataView, offset: number, length: number): string {
   return out;
 }
 
+/** performance.now 探针的复位钩子：stop() 靠它把录音时长拨过 400ms 的有效门槛 */
+let restoreNow: (() => void) | undefined;
+
 afterEach(() => {
+  restoreNow?.();
+  restoreNow = undefined;
   vi.unstubAllGlobals();
 });
 
@@ -87,29 +93,34 @@ describe('dictationSupported', () => {
   });
 });
 
-describe('录音操作生命周期', () => {
-  function installBrowser(getUserMedia: () => Promise<MediaStream>): void {
-    const processor = {
-      onaudioprocess: null as ((event: { inputBuffer: { getChannelData: (channel: number) => Float32Array } }) => void) | null,
-      connect: vi.fn(),
-      disconnect: vi.fn(),
-    };
-    const source = { connect: vi.fn(), disconnect: vi.fn() };
-    class FakeAudioContext {
-      sampleRate = TARGET_SAMPLE_RATE;
-      destination = {};
-      createMediaStreamSource = vi.fn(() => source);
-      createScriptProcessor = vi.fn(() => processor);
-      close = vi.fn(async () => {});
-    }
-    vi.stubGlobal('window', {
-      setInterval: globalThis.setInterval,
-      clearInterval: globalThis.clearInterval,
-    });
-    vi.stubGlobal('navigator', { mediaDevices: { getUserMedia } });
-    vi.stubGlobal('AudioContext', FakeAudioContext);
+/**
+ * 假浏览器：getUserMedia + AudioContext + ScriptProcessorNode 三件套。
+ * 返回 processor——stop() 的三条回调分支都要先往它里面喂 PCM 才走得到识别。
+ */
+function installBrowser(getUserMedia: () => Promise<MediaStream>) {
+  const processor = {
+    onaudioprocess: null as ((event: { inputBuffer: { getChannelData: (channel: number) => Float32Array } }) => void) | null,
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+  };
+  const source = { connect: vi.fn(), disconnect: vi.fn() };
+  class FakeAudioContext {
+    sampleRate = TARGET_SAMPLE_RATE;
+    destination = {};
+    createMediaStreamSource = vi.fn(() => source);
+    createScriptProcessor = vi.fn(() => processor);
+    close = vi.fn(async () => {});
   }
+  vi.stubGlobal('window', {
+    setInterval: globalThis.setInterval,
+    clearInterval: globalThis.clearInterval,
+  });
+  vi.stubGlobal('navigator', { mediaDevices: { getUserMedia } });
+  vi.stubGlobal('AudioContext', FakeAudioContext);
+  return { processor };
+}
 
+describe('录音操作生命周期', () => {
   it('getUserMedia 等待期间拒绝重复 start，并在释放后停止轨道', async () => {
     let resolveMedia: ((stream: MediaStream) => void) | undefined;
     const getUserMedia = vi.fn(() => new Promise<MediaStream>((resolve) => {
@@ -149,6 +160,144 @@ describe('录音操作生命周期', () => {
     resolveMedia?.({ getTracks: () => [{ stop }] } as unknown as MediaStream);
     await starting;
     expect(stop).toHaveBeenCalledTimes(1);
+    expect(dictation.recording.value).toBe(false);
+  });
+});
+
+/**
+ * stop() 的识别回调链：录音结束到 onText/onError 之间有三条出口，此前零覆盖——
+ * 1) 识别成功 → onText 带去空白文本、error 清空；
+ * 2) 录音 <400ms → 误触，不浪费一次识别调用，走「录音太短」提示；
+ * 3) 识别接口失败 → onError 带后端文案，busy 必须复位（否则按钮永久禁用）。
+ *
+ * 桩法与 useSpeech.spec 同路子：不 mock 模块，stub 全局 fetch 走真 recognizeSpeech；
+ * 另外 node 没有 FileReader（Blob→data URL 那步是浏览器 API），补一个最小实现。
+ */
+describe('stop() 识别回调链', () => {
+  /** node 环境没有全局 FileReader：桩一个能把 Blob 转成 data URL 的最小实现 */
+  function installFileReader(): void {
+    class FakeFileReader {
+      result: string | null = null;
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      onabort: (() => void) | null = null;
+      private aborted = false;
+
+      readAsDataURL(blob: Blob): void {
+        void blob.arrayBuffer().then(
+          (buffer) => {
+            if (this.aborted) return;
+            const base64 = Buffer.from(buffer).toString('base64');
+            this.result = `data:${blob.type || 'application/octet-stream'};base64,${base64}`;
+            this.onload?.();
+          },
+          () => {
+            if (this.aborted) return;
+            this.onerror?.();
+          },
+        );
+      }
+
+      abort(): void {
+        this.aborted = true;
+        this.onabort?.();
+      }
+    }
+    vi.stubGlobal('FileReader', FakeFileReader);
+  }
+
+  /** 起一套能录音的假环境：必须先 stub 浏览器三件套，useDictation 才会判定「支持」 */
+  function startableDictation(options: DictationOptions = {}) {
+    const getUserMedia = vi.fn(() =>
+      Promise.resolve({ getTracks: () => [{ stop: vi.fn() }] } as unknown as MediaStream),
+    );
+    const { processor } = installBrowser(getUserMedia);
+    return { dictation: useDictation(options), processor };
+  }
+
+  /** 喂一段 PCM：不喂的话 pcm 长度为 0，stop() 走「没有采到声音」而不是识别 */
+  function feedAudio(processor: {
+    onaudioprocess: ((event: { inputBuffer: { getChannelData: (channel: number) => Float32Array } }) => void) | null;
+  }): void {
+    processor.onaudioprocess?.({ inputBuffer: { getChannelData: () => new Float32Array(320).fill(0.1) } });
+  }
+
+  it('识别成功：onText 拿到去空白文本，错误清空、busy 复位、确实打到识别接口', async () => {
+    installFileReader();
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(JSON.stringify({ text: '  叶片有裂纹  ', seconds: 1.4 }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1_000);
+    restoreNow = () => now.mockRestore();
+    const onText = vi.fn();
+    const onError = vi.fn();
+    const { dictation, processor } = startableDictation({ onText, onError });
+
+    await dictation.start();
+    expect(dictation.recording.value).toBe(true);
+    feedAudio(processor);
+    now.mockReturnValue(1_500); // 录音 500ms，稳过 400ms 的有效门槛
+    await dictation.stop();
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(onText).toHaveBeenCalledTimes(1);
+    expect(onText).toHaveBeenCalledWith('叶片有裂纹');
+    expect(dictation.error.value).toBe('');
+    expect(dictation.busy.value).toBe(false);
+    expect(dictation.recording.value).toBe(false);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/api/speech/recognize');
+  });
+
+  it('录音太短（误触）：不打识别接口，走 onError 的既有提示', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const onText = vi.fn();
+    const onError = vi.fn();
+    const { dictation } = startableDictation({ onText, onError });
+
+    await dictation.start();
+    // 不推进时钟：紧挨着 stop，真实时长远小于 400ms
+    await dictation.stop();
+
+    expect(fetchMock, '误触不该浪费一次识别调用').not.toHaveBeenCalled();
+    expect(onText).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith('录音太短');
+    expect(dictation.error.value).toBe('录音太短');
+    expect(dictation.busy.value).toBe(false);
+    expect(dictation.recording.value).toBe(false);
+  });
+
+  it('识别接口失败：onError 收到后端文案，busy 复位（按钮不会永久禁用）', async () => {
+    installFileReader();
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ message: '语音识别服务不可用' }), {
+          status: 502,
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1_000);
+    restoreNow = () => now.mockRestore();
+    const onText = vi.fn();
+    const onError = vi.fn();
+    const { dictation, processor } = startableDictation({ onText, onError });
+
+    await dictation.start();
+    feedAudio(processor);
+    now.mockReturnValue(1_500); // 录音 500ms，稳过 400ms 的有效门槛
+    await dictation.stop();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(onText).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith('语音识别服务不可用');
+    expect(dictation.error.value).toBe('语音识别服务不可用');
+    expect(dictation.busy.value).toBe(false);
     expect(dictation.recording.value).toBe(false);
   });
 });

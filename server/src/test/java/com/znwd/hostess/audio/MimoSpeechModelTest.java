@@ -35,9 +35,12 @@ class MimoSpeechModelTest {
     private final AtomicReference<String> lastBody = new AtomicReference<>("");
     private final AtomicReference<String> lastAuth = new AtomicReference<>("");
     private final AtomicInteger hits = new AtomicInteger();
+    /** 重定向目标被访问的次数：非 0 就说明 HttpClient 跟随了 30x（Authorization 会被一并送出去） */
+    private final AtomicInteger redirectHits = new AtomicInteger();
     /** 前 N 次调用故意失败（用来验重试），失败状态码由 failStatus 决定 */
     private final AtomicInteger failFirst = new AtomicInteger();
     private volatile int failStatus = 503;
+    private volatile String location;
     private volatile String response = "{}";
 
     @BeforeEach
@@ -52,13 +55,27 @@ class MimoSpeechModelTest {
             byte[] body = (status == 200 ? response : "{\"error\":{\"message\":\"busy\"}}")
                     .getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("content-type", "application/json");
+            if (location != null) {
+                exchange.getResponseHeaders().add("location", location);
+            }
             exchange.sendResponseHeaders(status, body.length);
             try (OutputStream out = exchange.getResponseBody()) {
                 out.write(body);
             }
         });
+        server.createContext("/v1/redirect-target", exchange -> {
+            redirectHits.incrementAndGet();
+            exchange.getRequestBody().readAllBytes();
+            byte[] bytes = "{}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, bytes.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(bytes);
+            }
+        });
         server.start();
         baseUrl = "http://127.0.0.1:" + server.getAddress().getPort() + "/v1";
+        redirectHits.set(0);
+        location = null;
     }
 
     @AfterEach
@@ -178,6 +195,25 @@ class MimoSpeechModelTest {
         SpeechException error = assertThrows(SpeechException.class, () -> model(2).synthesize("你好"));
         assertEquals(401, error.status());
         assertEquals(1, hits.get(), "4xx 重试只是白等，还会拖长前端等待");
+    }
+
+    /**
+     * 302 必须当失败上报、且绝不跟随：请求带静态 Authorization，JDK 一旦跟随就会把
+     * 该头送给 Location 目标（网关被劫持/误配 = 密钥外带）。
+     */
+    @Test
+    void http302响应报错且不跟随重定向() {
+        failStatus = 302;
+        failFirst.set(1);
+        location = baseUrl + "/redirect-target";
+
+        SpeechException error = assertThrows(SpeechException.class, () -> model(2).synthesize("你好"));
+
+        assertEquals(302, error.status(), "3xx 要带状态码进错误");
+        assertFalse(error.retryable(), "跟随已关闭，重发同样的 30x 毫无意义");
+        assertTrue(error.getMessage().contains("302"), error.getMessage());
+        assertEquals(1, hits.get());
+        assertEquals(0, redirectHits.get(), "重定向目标不应被访问（否则 Authorization 已外送）");
     }
 
     @Test

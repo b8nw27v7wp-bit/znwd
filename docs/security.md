@@ -27,7 +27,7 @@
 - **管理面完整**：8 个受保护接口（`/api/stats`、`/api/admin/{uncovered,feedback-stats,diagnostics,synonyms}`、`/api/knowledge/reload`、`PUT /api/admin/synonyms`、`/api/knowledge/list`）全部过 `AdminGuard`；口令比对用 `MessageDigest.isEqual` 常量时间。`/api/knowledge/list` 历史上漏了守卫，现已补齐（`tools/security.py` 的 `ADMIN_PATHS` 盯着它 fail-closed）。
 - **日志隐私**：默认 `LOG_MESSAGE_MODE=hash`，落盘的是 `hash#长度#前 20 字`，不是整段提问；需要排查时显式改 preview。
 - **异常不外泄**：统一错误信封 `{error,message,requestId}`，5xx 固定文案「服务内部错误」，堆栈只进服务端日志。
-- **Actuator 面最小**：只暴露 `health,info`（`management.endpoints.web.exposure.include`）。
+- **Actuator 面最小**：暴露 `health,info,prometheus`（`management.endpoints.web.exposure.include`，实配见 `application.yml`）。其中 `prometheus` **无鉴权**：默认只监听 `127.0.0.1` 时同机抓取安全；跨机或 `HOST=0.0.0.0` 必须由反代限源（IP 白名单），否则从 include 里去掉 `prometheus` 关闭暴露（口径同 `docs/architecture.md`、`docs/deployment.md`）。
 - **启动就绪可判定**：`GET /api/health` 始终返回 HTTP 200，但知识快照加载完成前 `ok=false`、`ready=false`；部署探活与自动化必须解析 JSON，不能只看端口或状态码。需要落库的流程还应同时确认 `storageAvailable=true`。
 - **出网适配器有白名单**：`tools/offline-check.py` 的 O04 只允许 `llm/OpenAiCompatChatModel`、`embedding/OpenAiCompatEmbeddingProvider`、`audio/MimoSpeechModel` 三个后端文件发起网络连接；其它 Java 文件出现 HTTP/Socket 调用即失败。`AUDIO_PROVIDER=none` 默认不触发语音出网。
 - **检索回归有门禁**：CI 用 `--baseline=docs/eval/baseline-java.json` 逐例守住 top1 路径、top1/top3、闸门指标与漏答数；`MIN_VECTOR_SCORE` 默认 `0.75`，启用语义路时 `--gate-check` 另守域外最高余弦不得越线。

@@ -24,7 +24,7 @@ public class Retriever {
     private static final Pattern LATIN_DOC = Pattern.compile("[a-z0-9]{2,}");
 
     private final ScoringOptions opts;
-    private volatile Index index = new Index(List.of(), Map.of(), 1, Synonyms.snapshot());
+    private volatile Index index = new Index(List.of(), Map.of(), 1, Synonyms.snapshot(), List.of());
 
     public Retriever() {
         this(ScoringOptions.defaults());
@@ -41,13 +41,18 @@ public class Retriever {
     public synchronized void replace(List<KnowledgeChunk> next, Synonyms.Version synonyms) {
         List<KnowledgeChunk> chunks = next == null ? List.of() : List.copyOf(next);
         Map<String, Double> nextIdf = buildIdf(chunks);
+        // 正文分词在建索引期预算一次：检索期每个查询都要给每个 chunk 打分，
+        // 现场分词（全文 bigram 化）是问答热路径上最贵的一步，缓存后检索只读不算。
+        List<Map<String, Integer>> nextBodyFreqs = new ArrayList<>(chunks.size());
         double total = 0;
         for (KnowledgeChunk chunk : chunks) {
-            total += docTokens(chunk.text()).size();
+            Map<String, Integer> freq = docTokens(chunk.text());
+            nextBodyFreqs.add(freq);
+            total += freq.size();
         }
         double nextAvgLen = chunks.isEmpty() ? 1 : total / chunks.size();
         index = new Index(chunks, nextIdf, nextAvgLen,
-                synonyms == null ? Synonyms.snapshot() : synonyms);
+                synonyms == null ? Synonyms.snapshot() : synonyms, nextBodyFreqs);
     }
 
     public List<KnowledgeChunk> list() {
@@ -76,13 +81,16 @@ public class Retriever {
         if (tokens.isEmpty() || current.chunks().isEmpty() || topK <= 0) {
             return List.of();
         }
+        List<KnowledgeChunk> chunks = current.chunks();
+        List<Map<String, Integer>> bodyFreqs = current.bodyFreqs();
         List<RetrievedChunk> scored = new ArrayList<>();
-        for (KnowledgeChunk chunk : current.chunks()) {
+        for (int i = 0; i < chunks.size(); i++) {
+            KnowledgeChunk chunk = chunks.get(i);
             Scored title = scoreText(tokens, current.idf(), chunk.title(), opts.titleBoost(), opts, null);
             Scored zone = scoreText(tokens, current.idf(),
                     chunk.zone() + " " + chunk.zoneTitle() + " " + String.join(" ", chunk.tags()),
                     opts.zoneBoost(), opts, null);
-            Map<String, Integer> bodyFreq = docTokens(chunk.text());
+            Map<String, Integer> bodyFreq = bodyFreqs.get(i);
             Scored body = scoreText(tokens, current.idf(), chunk.text(), opts.bodyBoost(), opts, bodyFreq);
             double lenNorm = opts.lengthB() > 0
                     ? Math.max(0.3, 1 + opts.lengthB() * (bodyFreq.size() / current.avgLen() - 1))
@@ -236,11 +244,20 @@ public class Retriever {
     private record Scored(double score, List<String> matched, double gateScore) {
     }
 
+    /**
+     * @param bodyFreqs 与 {@code chunks} 等长、同序的正文分词表（建索引期预算，检索期只读）；
+     *                   与 idf/avgLen 一起随快照原子换代，换代瞬间读到的永远是同一套
+     */
     private record Index(List<KnowledgeChunk> chunks, Map<String, Double> idf, double avgLen,
-                         Synonyms.Version synonyms) {
+                         Synonyms.Version synonyms, List<Map<String, Integer>> bodyFreqs) {
         private Index {
             chunks = List.copyOf(chunks);
             idf = Map.copyOf(idf);
+            bodyFreqs = List.copyOf(bodyFreqs);
+            if (bodyFreqs.size() != chunks.size()) {
+                throw new IllegalStateException("正文分词表与语料长度不一致："
+                        + bodyFreqs.size() + " != " + chunks.size());
+            }
         }
     }
 }

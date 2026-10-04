@@ -100,7 +100,9 @@ describe('问答状态机', () => {
     expect(chat.feedback.value[answer!.id]).toBe('up');
   });
 
-  it('流式失败时保留已收到的半句并标注错误', async () => {
+  // 名字要说准：这条是 fetch 当场抛错、**一个 delta 都没收到**，所以走兜底文案——
+  // 「保留半句」是下面「真·中途断流」那条的事，别再张冠李戴。
+  it('fetch 失败且零 delta：重问后仍失败，兜底文案 + 错误标注', async () => {
     stubFetch({
       '/api/chat/stream': () => {
         throw new Error('网络中断');
@@ -367,5 +369,170 @@ describe('会话归属令牌', () => {
     expect(headers['x-session-token'], '删会话必须带上令牌，否则服务端 404、上下文没清掉').toBe('tok-abc123');
     expect(chat.sessionToken.value, '旧令牌只对旧会话有效，换会话后必须丢掉').toBe('');
     expect(sessionStorage.getItem('znwd.sessionToken')).toBeNull();
+  });
+});
+
+/**
+ * P1-4：零 delta 的失败自动重问一次。
+ *
+ * 连接僵死/inactivity 这类故障「重开一条流多半就好」，而展厅访客不会主动点重试。
+ * 三道防双发闸：已有 delta（content 非空）、已重问过、总超时（再等 180s 没有意义）。
+ * 重试仍失败才把错误亮给用户；第一次的失败不记技术问题（只有终态才记）。
+ */
+describe('零 delta 自动重问', () => {
+  const META = 'event:meta\ndata:{"mode":"rag","provider":"mock","retrieval":"keyword","noHit":false,"cached":false,"sources":[]}\n\n';
+  const OK_STREAM = () =>
+    sse(
+      META,
+      'event:delta\ndata:{"text":"不停机。"}\n\n',
+      'event:done\ndata:{"mode":"rag","provider":"mock","retrieval":"keyword","noHit":false,"cached":false,"sources":[],"answer":"不停机。","latencyMs":42}\n\n',
+    );
+
+  it('零 delta 的失败自动重问一次，第二次成功才上屏', async () => {
+    let calls = 0;
+    stubFetch({
+      '/api/chat/stream': () => {
+        calls += 1;
+        if (calls === 1) throw new Error('网络中断');
+        return OK_STREAM();
+      },
+    });
+    const chat = useChat();
+    await chat.ask('问一句');
+    expect(calls, '首发失败要自动重问一次').toBe(2);
+    expect(chat.messages.value[1]?.content).toBe('不停机。');
+    expect(chat.messages.value[1]?.error).toBeUndefined();
+    expect(chat.errors.value, '第一次失败不算终态，不该记技术问题').toHaveLength(0);
+    expect(chat.streaming.value).toBe(false);
+  });
+
+  it('已收到 delta 后失败不重问（保留半句，直接标注错误）', async () => {
+    let calls = 0;
+    stubFetch({
+      '/api/chat/stream': () => {
+        calls += 1;
+        return sse(META, 'event:delta\ndata:{"text":"半句"}\n\n'); // done 前 EOF
+      },
+    });
+    const chat = useChat();
+    await chat.ask('问一句');
+    expect(calls, '已有 delta 再重问会把半句答成两遍').toBe(1);
+    const answer = chat.messages.value[1];
+    expect(answer?.content).toBe('半句');
+    expect(answer?.error).toBe('SSE 流在 done 前结束');
+    expect(answer?.pending).toBe(false);
+    expect(chat.streaming.value).toBe(false);
+  });
+
+  /**
+   * 真·中途断流：和上面那条「done 前 EOF」不同，这里是流**已经吐出字**之后
+   * read 直接 reject（连接被掐断）——半句必须留在屏上、错误要标注、
+   * 按重试三道闸（已有 delta）一次都不能重问。
+   */
+  it('真·中途断流：已吐两个 delta 后连接中断，保留半句且不自动重问', async () => {
+    let calls = 0;
+    const encoder = new TextEncoder();
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    let step = 0;
+    stubFetch({
+      '/api/chat/stream': () => {
+        calls += 1;
+        // 桩一个假 Response：第一次 read 吐 meta+两个 delta，第二次 read 直接失败
+        return {
+          ok: true,
+          body: {
+            getReader: () => ({
+              read: () => {
+                step += 1;
+                if (step === 1) {
+                  return Promise.resolve({
+                    done: false,
+                    value: encoder.encode(
+                      META +
+                        'event:delta\ndata:{"text":"不需要"}\n\n' +
+                        'event:delta\ndata:{"text":"停"}\n\n',
+                    ),
+                  });
+                }
+                return Promise.reject(new Error('network connection lost'));
+              },
+              cancel,
+            }),
+          },
+        } as unknown as Response;
+      },
+    });
+
+    const chat = useChat();
+    await chat.ask('问一句');
+
+    expect(calls, '已有 delta 再重问会把半句答成两遍').toBe(1);
+    const answer = chat.messages.value[1];
+    expect(answer?.content, '断流前收到的两个 delta 要留在屏上').toBe('不需要停');
+    expect(answer?.error).toBe('network connection lost');
+    expect(answer?.pending).toBe(false);
+    expect(chat.error.value).toBe('network connection lost');
+    expect(chat.errors.value, '终态失败要记一条技术问题').toHaveLength(1);
+    expect(chat.streaming.value).toBe(false);
+    expect(cancel, '失败路径必须取消 reader').toHaveBeenCalledTimes(1);
+  });
+
+  it('重问仍失败才把错误亮给用户，且只记一条技术问题', async () => {
+    let calls = 0;
+    stubFetch({
+      '/api/chat/stream': () => {
+        calls += 1;
+        throw new Error('网络中断');
+      },
+    });
+    const chat = useChat();
+    await chat.ask('问一句');
+    expect(calls, '至多重问一次').toBe(2);
+    const answer = chat.messages.value[1];
+    expect(answer?.content).toBe('这条问题暂时没能回答，请再试一次。');
+    expect(answer?.error).toBe('网络中断');
+    expect(chat.error.value).toBe('网络中断');
+    expect(chat.errors.value, '两次失败只记一条（不翻倍刷运营视图）').toHaveLength(1);
+  });
+
+  it('总超时（180s）不重问：心跳压着活性、到上限才失败，只发一次请求', async () => {
+    vi.useFakeTimers();
+    let calls = 0;
+    const encoder = new TextEncoder();
+    stubFetch({
+      '/api/chat/stream': () => {
+        calls += 1;
+        // 挂死但每 15s 心跳：活性计时永不触发，只有 180s 总上限能结束它
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(encoder.encode(':ping\n\n'));
+              const beat = () => {
+                try {
+                  controller.enqueue(encoder.encode(':ping\n\n'));
+                } catch {
+                  return;
+                }
+                setTimeout(beat, 15_000);
+              };
+              setTimeout(beat, 15_000);
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'text/event-stream' } },
+        );
+      },
+    });
+    const chat = useChat();
+    const asking = chat.ask('问一句');
+    // 排干微任务：让首只 read 起跑（消费已入队的 :ping、刷新活性），心跳循环挂上假钟
+    for (let i = 0; i < 50; i += 1) await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(180_000);
+    await vi.advanceTimersByTimeAsync(0);
+    await asking;
+    expect(calls, '总超时重问只会把失败再拖 180s').toBe(1);
+    expect(chat.messages.value[1]?.error).toBe('流式回答超时');
+    expect(chat.errors.value).toHaveLength(1);
+    expect(chat.streaming.value).toBe(false);
+    vi.useRealTimers();
   });
 });

@@ -336,8 +336,6 @@ export function useSpeech(options: SpeechOptions = {}) {
       }
       audio = element;
       let settled = false;
-      let watchdog: ReturnType<typeof setTimeout>;
-      let finish: () => void;
       const done = (error?: Error) => {
         if (settled) return;
         settled = true;
@@ -358,11 +356,14 @@ export function useSpeech(options: SpeechOptions = {}) {
         if (error) reject(error);
         else resolve();
       };
-      finish = () => done();
+      // finish/watchdog 的声明直接落在赋值处（prefer-const）：done 只会在这两处初始化之后
+      // 才被调用（onended/onerror/play().catch 全是异步回调，中间没有同步调用点），
+      // 不存在 TDZ 读取，行为与原来「先 let 后赋」一致。
+      const finish = () => done();
       finishPlay = finish;
       element.onended = () => done();
       element.onerror = () => done(new Error('audio-play-failed'));
-      watchdog = setTimeout(() => {
+      const watchdog = setTimeout(() => {
         if (element.ended) done();
         else done(new Error('audio-play-timeout'));
       }, PLAYBACK_WATCHDOG_MS);

@@ -25,7 +25,7 @@
 
 资源与测试：`resources/{application.yml,schema.sql,openapi.json,META-INF/spring.factories}`；`db/init.sql`（建库建账号）；`eval/retrieval-cases.json`（评测用例）；`src/test/java/.../{knowledge,http,analytics,eval,cli}`（单测 + 三个 CLI 工具：`eval`、`calibrate`、`ingest`）。
 
-前端源码根 `web/src/`：`App.vue`（页面状态与布局）、`api.ts`（契约、SSE 与语音请求）、`format.ts`（回答排版：粗体/列表/分段，不产出 HTML）、`composables/useChat.ts`（问答状态机）、`composables/useSpeech.ts`（服务端 TTS 优先、浏览器合成降级）、`composables/useDictation.ts`（录音、重采样与 WAV 编码）、`storage.ts`、`components/{SourcePanel,AdminPanel,KnowledgePanel,DiagnosticsPanel,StageDiagram,AvatarPortrait,AvatarFigure}.vue`（其中 `KnowledgePanel`/`DiagnosticsPanel`/`StageDiagram` 各有对应的 `.spec.ts` 单测）、`styles.css`。
+前端源码根 `web/src/`：`App.vue`（页面状态与布局）、`api/`（契约、SSE 与语音请求；入口 `api/index.ts`，按 `types`/`http`/`stream`/`admin`/`speech` 拆文件，对外 import 路径不变）、`format.ts`（回答排版：粗体/列表/分段，不产出 HTML）、`composables/useChat.ts`（问答状态机）、`composables/useSpeech.ts`（服务端 TTS 优先、浏览器合成降级）、`composables/useDictation.ts`（录音、重采样与 WAV 编码）、`storage.ts`、`components/{SourcePanel,AdminPanel,KnowledgePanel,DiagnosticsPanel,StageDiagram,AvatarPortrait,AvatarFigure}.vue`（其中 `KnowledgePanel`/`DiagnosticsPanel`/`StageDiagram` 各有对应的 `.spec.ts` 单测）、`styles.css`。
 
 ## 2. 一次问答的时序
 
@@ -125,7 +125,7 @@ MySQL 表（`resources/schema.sql`，全部 `CREATE TABLE IF NOT EXISTS`）：
 | 文件 | 职责 |
 | --- | --- |
 | `App.vue` | 页面状态与布局：左 25% 讲解面板（上半虚拟形象、下半问答），右侧/下方另有讲解图 `StageDiagram`；闲置 3 分钟自动回到欢迎态；`avatarState`（等首字=thinking / 出字=speaking / 其余=idle） |
-| `api.ts` | 契约类型与调用；SSE 用 `fetch` 流式读取 + 逐帧解析（`EventSource` 只能 GET，提问要放 body）；跨 chunk 半帧重组；封装 TTS/ASR 请求；中文/TS 类型与后端字段一一对应 |
+| `api/`（入口 `index.ts`；`types`/`http`/`stream`/`admin`/`speech` 分文件） | 契约类型与调用；SSE 用 `fetch` 流式读取 + 逐帧解析（`EventSource` 只能 GET，提问要放 body）；跨 chunk 半帧重组；封装 TTS/ASR 请求；中文/TS 类型与后端字段一一对应 |
 | `composables/useChat.ts` | 问答状态机：发送、流式增量、失败不抹掉已收到的半句、来源、推荐问题、反馈 |
 | `composables/useSpeech.ts` | 语音播报：服务端 MiMo TTS 优先，失败当场退回浏览器合成；只读回答、流式结束整段读、长文按句切片、开关落 localStorage |
 | `composables/useDictation.ts` | 语音提问：采集 16kHz 单声道 PCM、重采样、拼 WAV，再调用服务端 ASR |

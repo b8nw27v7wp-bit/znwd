@@ -328,7 +328,7 @@ python tools/db-check.py
 | TC-DEP-03 | `offline-check.py --runtime`（服务在跑） | 运行期自洽：`embeddingReady/mode/degradedReason` 不矛盾；mock 模式下无任何外呼 | P0 | offline `--runtime` |
 | TC-DEP-04 | 阈值同步核查：改 `MIN_RELEVANCE_SCORE` 或 `MIN_VECTOR_SCORE` | `.env` / `application.yml` / `HybridRetriever` 默认常量 / CI workflow **四处同步**；`docs/.env.example` 注释同步 | P0 | 手工（改动时执行）+ calibrate 交叉 |
 | TC-DEP-05 | push 到 GitHub | CI backend + frontend 全绿（mvn test → eval → calibrate → smoke → security 三实例 → db-check ∥ build → vitest → offline-check）；**只在 push 后生效，本地绿不能替代** | P0 | CI |
-| TC-DEP-06 | Nginx/反代后面跑 smoke（`proxy_buffering off`、`X-Accel-Buffering` 透传） | SSE 不被缓冲、`meta` 首帧及时、长流不 502；`TRUST_FORWARDED_FOR` 未开时限流仍按真实源 IP | P1 | 手工（`docs/archive/2026-09-24-code-review-handoff.md` 标注「真实反代未验证」——发布前必补） |
+| TC-DEP-06 | Nginx/反代后面跑 smoke（`proxy_buffering off`、`X-Accel-Buffering` 透传） | SSE 不被缓冲、`meta` 首帧及时、长流不 502；限流键默认取 `remoteAddr`（`ClientIp.java`），同机反代下**未开 `TRUST_FORWARDED_FOR` 时全部客户端共用反代 IP 一个桶**（易整站 429，不是按各访客分桶）；要按访客各自地址分桶，需反代**先剥离**客户端自带的 `X-Forwarded-For` 再设 `TRUST_FORWARDED_FOR=true` | P1 | 手工（**原期望与实现不符，已按 `ClientIp` 改写**；`docs/archive/2026-09-24-code-review-handoff.md` 标注「真实反代未验证」——未验证，发布前必补） |
 | TC-DEP-07 | 展厅现场网络：外网完全不通时启动 | mock 档（默认）全功能可用；配了云模型时按降级路径回落，页面无外网请求 | P1 | 手工 + offline O07 |
 | TC-DEP-08 | `server/.env`、密钥、`server/indexes/`、`web/dist/` 不入库 | `git status` 干净、仓库历史无明文口令 | P0 | 手工核查 + offline O05 侧面 |
 

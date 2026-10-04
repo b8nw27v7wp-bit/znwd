@@ -427,7 +427,7 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 ## 契约冻结
 
 - 路径、响应字段名、SSE 事件序列（`meta`→`delta`→`done`）与 `noHit`/`sources` 语义**必须与重构前的 Node 版一致**：前端、评测脚本、一体机部署脚本都按这套写，悄悄改字段比服务起不来更难查。
-- 唯一已知差异（刻意的修正）：`/api/suggestions` 的 `items` 是**字符串数组**；前端曾按对象取 `question`，那会让大屏出现空白推荐按钮，现已在 `web/src/api.ts` 按字符串对齐。
+- 唯一已知差异（刻意的修正）：`/api/suggestions` 的 `items` 是**字符串数组**；前端曾按对象取 `question`，那会让大屏出现空白推荐按钮，现已在 `web/src/api/` 按字符串对齐。
 - 新增能力（`/api/admin/diagnostics`、`/api/admin/synonyms`、`/api/health/summary`、`/api/knowledge/list` 的 `synonyms` 字段、`/api/speech/*` 两个语音接口与 `health.speech`/`health.speechReady`）均为纯增量，不动老字段。
 - 改完接口跑 `python tools/smoke.py`（契约检查：带 `ADMIN_TOKEN`、语音启用时满跑 100 项——`/api/knowledge/list` 与 `/api/admin/*` 一样要口令。语音段按 `speechReady` 分别校验「真出 WAV」与「503 可判定」两条路径）。
 - 改检索后跑 `exec:java@eval --no-write --baseline=docs/eval/baseline-java.json`；CI 用同一基线逐例守住 top1 路径、top1/top3、闸门指标与漏答数，另以 `calibrate --gate-check` 守域外不越线。
