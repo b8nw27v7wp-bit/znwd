@@ -203,6 +203,22 @@ DEPLOY STEPS
        powershell -ExecutionPolicy Bypass -File tools\windows\install-autostart.ps1 -Remove
      (-AtStartup needs an elevated PowerShell window.)
 
+  7) Or automate steps 3-6 with the bundled deploy script:
+       powershell -ExecutionPolicy Bypass -File tools\windows\deploy-znwd.ps1 `
+         -DbPassword <db password> -RootPassword <mysql root password>
+     It runs init.sql, appends the managed block to server\.env, starts
+     the server and only reports success when /api/health says ok, ready AND
+     storageAvailable=true (and the jar version matches). Optional switches:
+       -Port <port>          server port (default 8787)
+       -DbPort <port>        MySQL port (default 3306)
+       -EmbedApiKey <key>    turn on semantic retrieval (default: keyword only)
+       -AudioProvider mimo   turn on server-side speech (TTS/ASR)
+       -SkipInitDb / -NoStart / -SkipStorageCheck / -SetAutostart
+
+  LLM_EXTRA_BODY is JSON with double quotes: pass it via the environment
+  variable ZNWD_LLM_EXTRA_BODY, not on the command line (PowerShell strips
+  the quotes and the .env entry becomes invalid JSON).
+
 OTHER SCRIPTS
   tools\windows\stop-znwd.cmd     stop the server listening on the port
   tools\windows\status-znwd.cmd   show port, java processes, /api/health
@@ -211,6 +227,8 @@ PORT
   Default 8787. Override with the ZNWD_PORT environment variable or
   with the first argument, for example:
     start-znwd.cmd --port 8788
+  NOTE: when the port is not 8787, pass the same --port to stop-znwd.cmd
+  and status-znwd.cmd (or set ZNWD_PORT), otherwise they look at 8787.
 
 NOTE
   The jar serves the built frontend automatically: when
