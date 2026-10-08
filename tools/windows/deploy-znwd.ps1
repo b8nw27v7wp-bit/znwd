@@ -28,7 +28,28 @@
     管理接口口令。缺省自动生成 32 位随机串。
 
 .PARAMETER Port
-    服务端口，默认 8787。
+    服务端口，默认 8787。不是 8787 时，停/查服务必须带 --port（脚本会提示）。
+
+.PARAMETER DbPort
+    MySQL 端口，默认 3306。目标机上已有别的 MySQL 实例（不在 3306）时必须显式指定，
+    否则 init.sql 连不上、应用也会按错误端口连库。
+
+.PARAMETER EmbedProvider / EmbedBaseUrl / EmbedApiKey / EmbedModel / EmbedDims
+    语义检索（向量召回）。EMBED_PROVIDER=openai_compat 且给了 EmbedApiKey 才算真打开；
+    不配就是 EMBED_PROVIDER=bag：只按关键词检索（闸门与排序照常，语义兜底关闭）。
+    EmbedDims 缺省 0 = 不写进 .env，由首次响应推断维度（bge-m3 = 1024）。
+
+.PARAMETER AudioProvider / AudioVoice / AudioBaseUrl / AudioApiKey
+    服务端语音（TTS/ASR）。AUDIO_PROVIDER=mimo 时打开；AudioBaseUrl/AudioApiKey 留空
+    即复用 LLM_*（MiMo 的语音与对话同网关同 key）。AudioVoice 缺省「冰糖」。
+
+.PARAMETER LlmExtraBody / ZNWD_LLM_EXTRA_BODY
+    JSON 片段（MiMo 需要 {"thinking":{"type":"disabled"}}）。注意：从命令行传含双引号的 JSON 会被
+    PowerShell 剥掉引号，写进 .env 就成了非法 JSON。请用环境变量 ZNWD_LLM_EXTRA_BODY 传，
+    或部署后手改 server\.env。（一键部署.ps1 已自动改用环境变量；MiMo 网关还会自动填好。）
+
+.PARAMETER SkipStorageCheck
+    跳过「storageAvailable 必须为 true」这条上线判据（只在刻意不配本机 MySQL 的演示机上用）。
 
 .PARAMETER SkipInitDb
     跳过执行 init.sql（库已经建过时用）。
@@ -64,7 +85,13 @@ param(
     [string]$EmbedApiKey,
     [string]$EmbedModel,
     [string]$AudioProvider,
+    [string]$AudioVoice,
+    [string]$AudioBaseUrl,
+    [string]$AudioApiKey,
+    [int]$EmbedDims = 0,
+    [int]$DbPort = 3306,
     [int]$Port = 8787,
+    [switch]$SkipStorageCheck,
     [switch]$SkipInitDb,
     [switch]$NoStart,
     [switch]$SetAutostart,
@@ -72,6 +99,11 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# LLM_EXTRA_BODY 兜底：含双引号的 JSON 走命令行会被 PowerShell 剥掉引号（实测
+# {thinking:{type:disabled}} —— MiMo 的思考模式因此没关掉，一次问答多烧 600+ reasoning token、
+# 慢到 23 秒）。环境变量跨进程无损，一键部署脚本用它传值。
+if (-not $LlmExtraBody -and $env:ZNWD_LLM_EXTRA_BODY) { $LlmExtraBody = $env:ZNWD_LLM_EXTRA_BODY }
 
 function Info($m) { Write-Host "[INFO] $m" -ForegroundColor Cyan }
 function Ok($m)   { Write-Host "[ OK ] $m" -ForegroundColor Green }
@@ -107,12 +139,15 @@ function Find-AppRoot([string]$start) {
 
 function Find-MysqlExe {
     $patterns = @(
-        (Join-Path $env:ProgramFiles 'MySQL\MySQL Server *\bin\mysql.exe'),
-        (Join-Path $env:ProgramW6432 'MySQL\MySQL Server *\bin\mysql.exe'),
-        'D:\MySQL\MySQL Server *\bin\mysql.exe',
-        'E:\MySQL\MySQL Server *\bin\mysql.exe',
+        (Join-Path $env:ProgramFiles 'MySQL\MySQL Server*\bin\mysql.exe'),
+        (Join-Path $env:ProgramW6432 'MySQL\MySQL Server*\bin\mysql.exe'),
+        'D:\MySQL\MySQL Server*\bin\mysql.exe',
+        'E:\MySQL\MySQL Server*\bin\mysql.exe',
         'C:\MySQL\*\bin\mysql.exe'
     )
+    # Pattern note: keep the star glued to Server ("MySQL Server*"): it matches both
+    # the MSI default dir "MySQL Server 8.4" and a manual unzip "MySQL Server9.7".
+    # A space before the star misses the latter (verified on a real machine).
     $found = @()
     foreach ($p in $patterns) {
         if ($p -and ($p -notmatch '^\\')) {
@@ -172,7 +207,12 @@ elseif ($env:JAVA_HOME -and (Test-Path -LiteralPath (Join-Path $env:JAVA_HOME 'b
     $javaCmd = Join-Path $env:JAVA_HOME 'bin\java.exe'
 }
 if (-not $javaCmd) { Die "未找到 java。请先安装 JDK 21+ 并配好 PATH 或 JAVA_HOME。" }
-$verText = (& $javaCmd -version 2>&1 | Out-String)
+# java -version 把版本号写到 stderr；在 $ErrorActionPreference='Stop' 下，PowerShell 5.1 会把
+# 原生命令的 stderr 当成终止性错误（NativeCommandError），脚本会恰好在这里中断——实测部署走到
+# 这一行就退出、后面的建库/启动全都没跑。这里临时放宽 EAP，拿完输出再恢复。
+$eapJava = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+try { $verText = (& $javaCmd -version 2>&1 | Out-String) } finally { $ErrorActionPreference = $eapJava }
 $major = 0
 if ($verText -match 'version "(\d+)(?:\.(\d+))?') {
     $major = [int]$Matches[1]
@@ -223,6 +263,23 @@ if (-not $SkipInitDb) {
     if (-not $MysqlExe) { Die '找不到 mysql.exe。请用 -MysqlExe 指定完整路径。' }
     Info "使用 mysql 客户端: $MysqlExe"
 
+    # 先确认库端口真的通：早失败、报清原因（比 mysql 自己抛 Access denied 好查）
+    $dbReady = $false
+    for ($i = 0; $i -lt 15; $i++) {
+        try {
+            $probe = New-Object System.Net.Sockets.TcpClient
+            $iar = $probe.BeginConnect('127.0.0.1', $DbPort, $null, $null)
+            if ($iar.AsyncWaitHandle.WaitOne(1000) -and $probe.Connected) { $dbReady = $true }
+            $probe.Close()
+        } catch { }
+        if ($dbReady) { break }
+        Start-Sleep -Seconds 2
+    }
+    if (-not $dbReady) {
+        Die "连不上 MySQL 127.0.0.1:$DbPort（等了 30 秒）。检查 MySQL 服务是否在跑，以及端口是否正确（不是 3306 就用 -DbPort 指定）。"
+    }
+    Ok "MySQL 端口可达：127.0.0.1:$DbPort"
+
     $initSqlPath = Join-Path $AppDir 'server\db\init.sql'
     if (-not (Test-Path -LiteralPath $initSqlPath)) { Die "缺少 $initSqlPath" }
 
@@ -230,7 +287,9 @@ if (-not $SkipInitDb) {
     $sqlText = $sqlText.Replace('CHANGE_ME_znwd', $DbPassword)
 
     if (-not $RootPassword) {
-        if ($NonInteractive) { Die '非交互模式执行 init.sql 必须提供 -RootPassword。' }
+        if ($NonInteractive) {
+            Die "非交互模式执行 init.sql 必须知道 MySQL root 口令：传 -RootPassword，或让安装目录下有上次部署生成的「部署结果.txt」（里面记着 MYSQL_ROOT_PASSWORD）。库已经建好时也可以用 -SkipInitDb 跳过这一步。"
+        }
         $RootPassword = Read-Secret "MySQL $RootUser 口令（用于执行 init.sql）"
     }
 
@@ -240,9 +299,12 @@ if (-not $SkipInitDb) {
     $oldPwd = $env:MYSQL_PWD
     $env:MYSQL_PWD = $RootPassword
     try {
-        Info '正在执行 init.sql（建库 + 建账号）...'
-        Get-Content -Raw -LiteralPath $tmpSql | & $MysqlExe --protocol=TCP -h 127.0.0.1 -P 3306 -u $RootUser --default-character-set=utf8mb4
-        if ($LASTEXITCODE -ne 0) { Die "init.sql 执行失败（退出码 $LASTEXITCODE）。请检查 root 账号/口令与 MySQL 是否在跑。" }
+        Info "正在执行 init.sql（建库 + 建账号，目标 127.0.0.1:$DbPort）..."
+        # 用 cmd 的文件重定向把 SQL 原样喂给客户端。不要改成 Get-Content -Raw | mysql 那种管道：
+        # PowerShell 会按控制台编码把文本重新编码，UTF-8 中文一旦出现在语句里就会被改写
+        # （实测 400 字节样本过管道后只剩 270 字节，注释全被打乱；语句里的中文会直接报语法错）。
+        & cmd.exe /c "`"$MysqlExe`" --protocol=TCP -h 127.0.0.1 -P $DbPort -u $RootUser --default-character-set=utf8mb4 < `"$tmpSql`""
+        if ($LASTEXITCODE -ne 0) { Die "init.sql 执行失败（退出码 $LASTEXITCODE）。检查 root 账号/口令、MySQL 是否在跑、端口 $DbPort 是否正确。" }
         Ok '建库完成（库 znwd + 账号 znwd@localhost）'
     } finally {
         if ($null -eq $oldPwd) { Remove-Item Env:\MYSQL_PWD -ErrorAction SilentlyContinue } else { $env:MYSQL_PWD = $oldPwd }
@@ -272,7 +334,7 @@ $lines = New-Object System.Collections.Generic.List[string]
 $lines.Add($begin)
 $lines.Add("# 由 deploy-znwd.ps1 写入于 $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')")
 $lines.Add('DB_HOST=127.0.0.1')
-$lines.Add('DB_PORT=3306')
+$lines.Add("DB_PORT=$DbPort")
 $lines.Add('DB_NAME=znwd')
 $lines.Add('DB_USER=znwd')
 $lines.Add("DB_PASSWORD=$DbPassword")
@@ -288,12 +350,20 @@ if ($EmbedProvider) { $lines.Add("EMBED_PROVIDER=$EmbedProvider") }
 if ($EmbedBaseUrl)  { $lines.Add("EMBED_BASE_URL=$EmbedBaseUrl") }
 if ($EmbedApiKey)   { $lines.Add("EMBED_API_KEY=$EmbedApiKey") }
 if ($EmbedModel)    { $lines.Add("EMBED_MODEL=$EmbedModel") }
+if ($EmbedDims -gt 0) { $lines.Add("EMBED_DIMS=$EmbedDims") }
 if ($AudioProvider) { $lines.Add("AUDIO_PROVIDER=$AudioProvider") }
+if ($AudioVoice)    { $lines.Add("AUDIO_VOICE=$AudioVoice") }
+if ($AudioBaseUrl)  { $lines.Add("AUDIO_BASE_URL=$AudioBaseUrl") }
+if ($AudioApiKey)   { $lines.Add("AUDIO_API_KEY=$AudioApiKey") }
 $lines.Add($end)
 
 $newContent = $content + "`r`n`r`n" + ($lines -join "`r`n") + "`r`n"
 [System.IO.File]::WriteAllText($envPath, $newContent, (New-Object System.Text.UTF8Encoding($false)))
 Ok "已写入配置: $envPath"
+if ($Port -ne 8787) {
+    Warn "服务端口不是默认 8787：停/查服务必须带端口 —— tools\windows\stop-znwd.cmd --port $Port（status 同理），或先 set ZNWD_PORT=$Port 再执行。"
+}
+if ($DbPort -ne 3306) { Info "数据库端口已按 $DbPort 写入 .env 的 DB_PORT。" }
 
 # ---- 5. 启动 + 验收 -----------------------------------------------------
 if ($NoStart) {
@@ -315,6 +385,7 @@ if ($NoStart) {
 
     Info '等待健康检查（最多 120 秒）...'
     $health = $null
+    $lastPartial = $null
     $deadline = (Get-Date).AddSeconds(120)
     while ((Get-Date) -lt $deadline) {
         Start-Sleep -Seconds 3
@@ -322,7 +393,12 @@ if ($NoStart) {
             $raw = & curl.exe -s --max-time 5 "http://127.0.0.1:$Port/api/health" 2>$null
             if ($raw) {
                 $j = $raw | ConvertFrom-Json
-                if ($j.ok -and $j.ready) { $health = $j; break }
+                # 光看 ok+ready 不够：Tomcat 在「知识库发布 + 数据库探活」之前就已经在监听，
+                # 端口一活健康接口就 200，此刻 storageAvailable 还是 false（实测会拿到这个中间态）。
+                # 一体机的上线判据包含 storageAvailable=true，所以一起等。
+                $isReady = if ($SkipStorageCheck) { $j.ok -and $j.ready } else { $j.ok -and $j.ready -and $j.storageAvailable }
+                if ($isReady) { $health = $j; break }
+                if ($j.ok -and $j.ready) { $lastPartial = $j }
             }
         } catch { }
     }
@@ -349,6 +425,12 @@ if ($NoStart) {
         }
     } else {
         # 部署超时不能报成功：下面第 7 节会打「部署完成」，这里必须先掐断
+        # 区分两种情况：服务起来了但库没连上 / 干脆没起来
+        if ($lastPartial) {
+            Die ("120 秒内服务已经起来（ok/ready=true）但 storageAvailable=false —— 数据库没连上。查这三处：MySQL 服务是否在跑；" +
+                 ".env 的 DB_HOST/DB_PORT/DB_PASSWORD 是否与 init.sql 里的一致（本次按端口 $DbPort 写入）；库是否已建（init.sql 是否跑过）。" +
+                 "确实不打算配本机库的演示机，用 -SkipStorageCheck 跳过这项判据。")
+        }
         Die '120 秒内未通过健康检查，部署失败（不打「部署完成」）。查看日志 server\run.out.log，或运行 status-znwd.cmd 排查。'
     }
 }
@@ -377,5 +459,10 @@ Write-Host ("  运营视图 : http://127.0.0.1:{0}/?admin=1" -f $Port)
 Write-Host ("  健康检查 : curl.exe -s http://127.0.0.1:{0}/api/health" -f $Port)
 if ($health) { Write-Host ("  服务版本 : {0}（/api/health 实报）" -f $health.version) }
 Write-Host ("  ADMIN_TOKEN: {0}" -f $AdminToken)
-Write-Host '  启停/状态: tools\windows\start-znwd.cmd / stop-znwd.cmd / status-znwd.cmd'
+if ($Port -ne 8787) {
+    Write-Host ("  启停/状态: tools\windows\stop-znwd.cmd --port {0} / status-znwd.cmd --port {0}（端口非默认，必须带 --port）" -f $Port)
+} else {
+    Write-Host '  启停/状态: tools\windows\start-znwd.cmd / stop-znwd.cmd / status-znwd.cmd'
+}
+Write-Host ("  数据库    : 127.0.0.1:{0} / znwd" -f $DbPort)
 Write-Host ''
