@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MAX_SPEAK_CHARS, PLAYBACK_WATCHDOG_MS, SPEAK_CHUNK_CHARS, sanitizeForSpeech, splitForSpeech, useSpeech } from './useSpeech';
+import { MAX_SPEAK_CHARS, lastSentenceEnd, PLAYBACK_WATCHDOG_MS, SPEAK_CHUNK_CHARS, sanitizeForSpeech, splitForSpeech, useSpeech } from './useSpeech';
 
 /**
  * 语音播报测试：node 环境没有 window/speechSynthesis，全部用假实现顶替。
@@ -589,5 +589,178 @@ describe('服务端 TTS 播报', () => {
     resolveFetch?.(new Response(new Blob(['wav']), { status: 200 }));
     await tick();
     expect(env.audios.length).toBe(0);
+  });
+});
+
+describe('流式增量朗读', () => {
+  it('lastSentenceEnd：取最后一个句末标点，没有则 -1', () => {
+    expect(lastSentenceEnd('你好。世界！')).toBe(5); // 最后一个，不是第一个
+    expect(lastSentenceEnd('问号？')).toBe(2); // 标点是最后一个字符
+    expect(lastSentenceEnd('没有标点')).toBe(-1);
+    expect(lastSentenceEnd('')).toBe(-1);
+  });
+
+  it('半句不发声；攒到第一个完整句立刻开播（流还没结束）', async () => {
+    const env = stubServer();
+    const speech = useSpeech();
+    speech.setServerReady(true);
+
+    speech.beginAnswer();
+    speech.feedAnswer('这半句还');
+    await tick();
+    expect(env.fetchMock, '没有句末标点不送合成').not.toHaveBeenCalled();
+    expect(speech.speaking.value).toBe(false);
+
+    speech.feedAnswer('这半句还没说完。');
+    await vi.waitFor(() => expect(env.audios.length).toBe(1));
+    expect(speech.speaking.value).toBe(true);
+    expect(JSON.parse(env.bodies[0]!)).toEqual({ text: '这半句还没说完。' });
+    // 没调 endAnswer——流还开着，朗读已在进行
+    speech.stop();
+  });
+
+  it('endAnswer 冲刷没有标点的尾巴，随后循环排空回到 idle', async () => {
+    const env = stubServer();
+    const speech = useSpeech();
+    speech.setServerReady(true);
+
+    speech.beginAnswer();
+    speech.feedAnswer('第一句完整。尾巴没有标点');
+    await vi.waitFor(() => expect(env.audios.length).toBe(1));
+
+    speech.endAnswer('第一句完整。尾巴没有标点');
+    await vi.waitFor(() => expect(env.bodies.length).toBe(2));
+    expect(env.bodies[1]).toContain('尾巴没有标点');
+
+    env.audios[0]!.onended?.(); // 第一句播完，循环才会去播尾巴
+    await vi.waitFor(() => expect(env.audios.length).toBe(2));
+    env.audios[1]!.onended?.();
+    await vi.waitFor(() => expect(speech.speaking.value).toBe(false));
+  });
+
+  it('总预算封顶：多次 feed 累计朗读不超过 MAX_SPEAK_CHARS', async () => {
+    const engine = stubEngine();
+    const speech = useSpeech();
+    let text = '';
+    speech.beginAnswer();
+    for (let i = 0; i < 8; i++) {
+      text += '甲'.repeat(80) + '。'; // 每轮 +81 字，8 轮 648 字 > 600
+      speech.feedAnswer(text);
+    }
+    speech.endAnswer(text);
+
+    const spoken = engine.spoken.join('');
+    expect(spoken.length).toBeLessThanOrEqual(MAX_SPEAK_CHARS);
+    expect(spoken.length, '预算内应读满').toBeGreaterThanOrEqual(MAX_SPEAK_CHARS - 81);
+  });
+
+  it('stop() 之后残余的 feed/end 全部 no-op（停读后不会再出声）', async () => {
+    const engine = stubEngine();
+    const speech = useSpeech();
+
+    speech.beginAnswer();
+    speech.feedAnswer('第一句。');
+    speech.stop();
+    speech.feedAnswer('第二句。');
+    speech.endAnswer('第二句。');
+
+    expect(engine.spoken).toEqual([]);
+    expect(speech.speaking.value).toBe(false);
+  });
+
+  it('beginAnswer 复位游标：新一答的全文不被上一答的游标吃掉', async () => {
+    const engine = stubEngine();
+    const speech = useSpeech();
+
+    speech.beginAnswer();
+    speech.feedAnswer('第一答。');
+    speech.endAnswer('第一答。');
+    expect(engine.spoken).toEqual(['第一答。']);
+
+    speech.beginAnswer();
+    speech.feedAnswer('第二答。');
+    speech.endAnswer('第二答。');
+    expect(engine.spoken).toEqual(['第一答。', '第二答。']);
+  });
+
+  it('流中服务端失败：先不硬读，endAnswer 时用浏览器引擎补读余下', async () => {
+    const env = stubServer({ withSynth: true });
+    const speech = useSpeech();
+    speech.setServerReady(true);
+    env.fetchMock.mockImplementation(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { text: string };
+      if (body.text.includes('乙')) {
+        return {
+          ok: false,
+          status: 503,
+          json: async () => ({ message: '第二段合成失败' }),
+        } as unknown as Response;
+      }
+      return { ok: true, status: 200, blob: async () => new Blob(['wav'], { type: 'audio/wav' }) } as unknown as Response;
+    });
+
+    speech.beginAnswer();
+    speech.feedAnswer('甲句甲句。');
+    await vi.waitFor(() => expect(env.audios.length).toBe(1));
+    env.audios[0]!.onended?.();
+
+    speech.feedAnswer('甲句甲句。乙句乙句。');
+    await vi.waitFor(() => expect(speech.serverReady.value).toBe(false));
+    expect(speech.speaking.value, '流没结束：降级缓冲不提前放播').toBe(false);
+    expect(speech.lastError.value).toContain('第二段合成失败');
+
+    speech.endAnswer('甲句甲句。乙句乙句。');
+    await vi.waitFor(() => expect(env.engine!.spoken.join('')).toContain('乙句'));
+    expect(speech.speaking.value).toBe(true);
+    speech.stop();
+  });
+
+  it('浏览器引擎：流式期间只缓冲不出声，endAnswer 一次性读出', async () => {
+    const engine = stubEngine();
+    const speech = useSpeech(); // 无 serverReady → 浏览器引擎
+
+    speech.beginAnswer();
+    speech.feedAnswer('第一句。');
+    speech.feedAnswer('第一句。第二句。');
+    expect(engine.spoken, '浏览器是降级路径，保持一次性放播').toEqual([]);
+    expect(speech.speaking.value).toBe(false);
+
+    speech.endAnswer('第一句。第二句。');
+    expect(engine.spoken.join('')).toContain('第一句');
+    expect(engine.spoken.join('')).toContain('第二句');
+    expect(speech.speaking.value).toBe(true);
+    speech.stop();
+  });
+
+  it('朗读开关关闭时整答不读：服务端引擎在 enqueue 也要被总闸拦住', async () => {
+    const env = stubServer();
+    const speech = useSpeech();
+    speech.setServerReady(true);
+    speech.toggle(); // 关（默认开，toggle 后 enabled=false）
+
+    speech.beginAnswer();
+    speech.feedAnswer('第一句。');
+    speech.endAnswer('第一句。'); // feed 被拦、游标停在 0：end 的全文提取是这条 bug 的入口
+    await tick();
+
+    expect(env.fetchMock, '开关关闭一个合成请求都不该发').not.toHaveBeenCalled();
+    expect(speech.speaking.value).toBe(false);
+  });
+
+  it('朗读开关关→开：只停播放不关 feed 通道，回答余下的部分照旧会读', async () => {
+    const engine = stubEngine();
+    const speech = useSpeech();
+
+    speech.beginAnswer();
+    speech.feedAnswer('第一句。');
+    speech.toggle(); // 关：闭嘴，但本答通道保持打开
+    speech.feedAnswer('第一句。第二句。'); // 关着：no-op，游标不推进
+    speech.toggle(); // 开
+    speech.feedAnswer('第一句。第二句。'); // 从旧游标追上，第二句不丢
+    speech.endAnswer('第一句。第二句。');
+
+    expect(engine.spoken.join('')).toContain('第一句');
+    expect(engine.spoken.join('')).toContain('第二句');
+    speech.stop();
   });
 });

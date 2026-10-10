@@ -20,6 +20,7 @@
 | [security-testing.md](./security-testing.md) | 边界与安全测试用例：编号、输入、期望、实测结果，以及明确接受的风险 |
 | [test-cases.md](./test-cases.md) | 全幅度测试用例：按功能域分组的用例设计、优先级、自动化归属与覆盖缺口 |
 | [loadtesting.md](./loadtesting.md) | 并发/压测：场景与判据、429 语义、本地与 CI 命令、基线、长跑 |
+| [voice-realtime-plan.md](./voice-realtime-plan.md) | 全双工实时语音（第 3 档）规划：路线对比、分期、基建清单、风险与验收 |
 | [eval/](./eval/) | 评测基线与历史报告（json） |
 | [archive/](./archive/) | 历史快照：Node 时代 `old-node-*` 与 Java 重写期间的交接/审核/计划 `2026-09-*`（仅存档，不代表现状，索引见 [archive/README.md](./archive/README.md)） |
 | [compose/spec/](./compose/spec/) | 早期功能 Spec（历史记录） |

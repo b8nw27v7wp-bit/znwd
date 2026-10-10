@@ -143,18 +143,31 @@ const renderedAnswers = computed<Record<string, Block[]>>(() => {
   return out;
 });
 
-// 语音播报：新问题一来先闭嘴，流式结束后整段读（失败/取消的那条不读）
+// 语音播报：开流先闭嘴上一条并准备本答，回答攒够一句就播，流式结束冲刷尾巴；
+// 失败/取消的那条不读——改调 stop()，已经响起来的部分也一并闭嘴
 watch(
   () => chat.streaming.value,
   (now, before) => {
     if (now) {
-      speech.stop();
+      speech.beginAnswer();
       return;
     }
     if (!before) return;
     const last = chat.messages.value[chat.messages.value.length - 1];
-    if (!last || last.role !== 'assistant' || last.error) return;
-    speech.speak(last.content);
+    if (!last || last.role !== 'assistant' || last.error) speech.stop();
+    else speech.endAnswer(last.content);
+  },
+);
+
+// 流式期间回答在长：把当前全文喂给播报（内部按游标只取新完成的句子，半句不出声）
+watch(
+  () => {
+    if (!chat.streaming.value) return '';
+    const last = chat.messages.value[chat.messages.value.length - 1];
+    return last && last.role === 'assistant' ? last.content : '';
+  },
+  (content) => {
+    if (content) speech.feedAnswer(content);
   },
 );
 
@@ -195,7 +208,8 @@ function submit(): void {
 }
 
 /**
- * 麦克风按钮：按一下开始录，再按一下结束并识别。
+ * 麦克风按钮：按一下进入聆听（说完停顿 VAD_SILENCE_MS 自动结束并识别，当前 1 秒），
+ * 识别前再按一下立即结束。
  *
  * <p>开始前先停掉播报——展厅里喇叭和麦克风在同一台机器上，讲解声会被录进去变成提问的一部分。
  */
@@ -209,6 +223,17 @@ function toggleDictation(): void {
     void dictation.start();
   }
 }
+
+/** 录音中按是否已检出人声区分文案：还没说话是「聆听中」，说过了是「结束」 */
+const micLabel = computed(() => {
+  if (!dictation.recording.value) return '语音提问';
+  return dictation.speechDetected.value ? '结束录音并识别' : '聆听中，说完停顿一下自动结束';
+});
+
+const micTitle = computed(() => {
+  if (!dictation.recording.value) return '点一下开始说话';
+  return dictation.speechDetected.value ? '点一下结束' : '也可点一下立即结束';
+});
 
 /** 运营视图里的播报来源：排查「声音不对/没声音」时第一眼要看它 */
 const speechEngineLabel = computed(() => {
@@ -260,7 +285,7 @@ function assistantSourceLabel(mode?: string, provider?: string): string {
       <div class="console">
         <header class="head">
           <div>
-            <h1>展厅虚拟讲解员</h1>
+            <h1>晴晴</h1>
             <span class="sub">光伏清洁 · 风场检测 · 服务与合作</span>
           </div>
           <div class="head-actions">
@@ -414,7 +439,7 @@ function assistantSourceLabel(mode?: string, provider?: string): string {
             ></textarea>
             <button v-if="chat.streaming.value" class="send ghost" @click="chat.cancel()">停</button>
             <button v-else class="send" aria-label="发送" :disabled="chat.resetting.value || !draft.trim()" @click="submit()">↑</button>
-            <!-- 语音提问：按一下开始、再按一下结束并识别；不支持的机器上整颗按钮不出现 -->
+            <!-- 语音提问：点一下进入聆听，说完停顿（VAD_SILENCE_MS，当前 1 秒）自动识别；识别前再点一下立即结束。不支持的机器上整颗按钮不出现 -->
             <button
               v-if="dictation.supported"
               type="button"
@@ -422,8 +447,8 @@ function assistantSourceLabel(mode?: string, provider?: string): string {
               :class="{ on: dictation.recording.value }"
               :disabled="dictation.busy.value || dictation.pending.value || chat.streaming.value"
               :aria-pressed="dictation.recording.value"
-              :aria-label="dictation.recording.value ? '结束录音并识别' : '语音提问'"
-              :title="dictation.recording.value ? '点一下结束' : '点一下开始说话'"
+              :aria-label="micLabel"
+              :title="micTitle"
               @click="toggleDictation()"
             >
               <span v-if="dictation.recording.value" class="mic-time">

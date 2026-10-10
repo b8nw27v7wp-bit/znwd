@@ -7,12 +7,15 @@ import { readStorage, writeStorage } from '../storage';
  * 不可用或报错时当场退回浏览器内置播报。
  *
  * 展厅场景的取舍：
- * 1) **只读回答、不读提问**，且在流式结束后整段读——边流边读会把半句切成碎音。
+ * 1) **只读回答、不读提问**，且**边流式边读**：回答攒够一个完整句子就合成开播（beginAnswer/
+ *    feedAnswer/endAnswer 增量接口），不再等整段流结束——首句开口能提前 2~3 秒。
+ *    没有句末标点的半句绝不出声，避免把半句切成碎音。
  * 2) **开关落 localStorage**（默认开）：展厅机器就是靠它讲解，重启后保持上次的选择。
  * 3) **长文按句切片排队**：切点选在句末（≤120 字）。这既是绕开 Chrome 超长 utterance 静默的老办法，
  *    也是服务端 TTS 的请求单位——播第 N 句时已经在取第 N+1 句，首句延迟就只有一次合成的时间。
  * 4) **两级引擎，绝不哑掉**：服务端不通就降级到浏览器合成器（下面那套 resume 补丁治的正是
  *    浏览器合成的老毛病），运营在 ?admin=1 里能看到这一轮到底是谁发的声。
+ *    浏览器引擎是降级路径，保持一次性放播（endAnswer 时整缓冲读出），流式提前开口只做在服务端引擎上。
  */
 
 /** 朗读开关的存储键 */
@@ -101,6 +104,22 @@ export function splitForSpeech(text: string, chunk = SPEAK_CHUNK_CHARS): string[
   }
   flush();
   return out;
+}
+
+/** 句末标点集（与 splitForSpeech 的切分口径一致） */
+const SENTENCE_ENDS = '。！？；!?;';
+
+/**
+ * 最后一个句末标点的下标，没有则返回 -1。
+ *
+ * <p>流式朗读用它判断「这句话说完了没有」：只有取到完整句（含标点）才允许合成开播，
+ * 半句绝不出声。纯函数，便于单测。
+ */
+export function lastSentenceEnd(text: string): number {
+  for (let i = text.length - 1; i >= 0; i--) {
+    if (SENTENCE_ENDS.includes(text[i])) return i;
+  }
+  return -1;
 }
 
 type SpeechWindow = Window & {
@@ -203,6 +222,27 @@ export function useSpeech(options: SpeechOptions = {}) {
   /** 当前播放的收尾回调：stop() 调它把挂着的 promise 放掉，否则循环永远等下去 */
   let finishPlay: (() => void) | null = null;
 
+  // ---- 每答状态（beginAnswer 复位；stop() 置 answerActive=false 让残余 feed 全部失效）----
+  /** 本答进行中：feed/end 只在此期间生效，停读/换问题后由 stop() 关掉 */
+  let answerActive = false;
+  /** 已提取进播报的字符游标：feedAnswer 只取 fullText 里游标之后的新内容 */
+  let consumed = 0;
+  /** 本答已排队的字符数，受 MAX_SPEAK_CHARS 总预算约束 */
+  let spokenChars = 0;
+  /** 本答引擎（首次入队时定）：server = 流式预取循环；browser = 缓冲到 endAnswer 一次性读 */
+  let answerEngine: 'server' | 'browser' | null = null;
+  /** 服务端引擎的待播队列（文本已按句切好） */
+  let queue: string[] = [];
+  /** 队头两条的取音频槽位：fetch0 对应 queue[0]，fetch1 对应 queue[1]（预取与播放并行的关键） */
+  let fetch0: Promise<Blob> | null = null;
+  let fetch1: Promise<Blob> | null = null;
+  /** 正在播放的那一条文本：失败降级时它还没出队，要一并交给浏览器引擎补读 */
+  let inFlight: string | null = null;
+  /** 浏览器引擎缓冲 / 服务端降级后的待补读内容，endAnswer（或降级撞上已收尾）时一次性读出 */
+  let pendingBrowserParts: string[] = [];
+  /** 循环在「队列空且未关闭」时挂在这里，feed/end/stop 唤醒 */
+  let queueWaiter: (() => void) | null = null;
+
   function readEnabled(): boolean {
     return readStorage('local', ENABLED_KEY) !== '0';
   }
@@ -214,9 +254,20 @@ export function useSpeech(options: SpeechOptions = {}) {
     }
   }
 
-  /** 停掉当前朗读（换问题、开新对话、闲置复位、组件卸载都要调） */
-  function stop(): void {
+  /**
+   * 停掉当前播放，**但不关本答的 feed 通道**（朗读开关关闭与 stop() 共用）。
+   *
+   * <p>槽位与 inFlight 绑着即将被 abort 的请求，必须一并清理：否则朗读开关拨回后，
+   * 新循环会复用这些已死的 Promise，第一句就进降级路径；inFlight 里没播完的那条
+   * 退回队头，恢复后从它继续读。
+   */
+  function haltPlayback(): void {
     generation += 1;
+    wakeQueue(); // 唤醒挂在空队列上的循环，让它在 generation 校验处退场
+    if (inFlight) queue.unshift(inFlight);
+    inFlight = null;
+    fetch0 = null;
+    fetch1 = null;
     clearTimer();
     if (playbackWatchdog !== undefined) {
       clearTimeout(playbackWatchdog);
@@ -244,53 +295,206 @@ export function useSpeech(options: SpeechOptions = {}) {
     }
   }
 
+  /** 停掉当前朗读并关闭本答 feed 通道（换问题、开新对话、闲置复位、停读、组件卸载都要调） */
+  function stop(): void {
+    haltPlayback();
+    // 关掉本答的 feed 通道：停读之后残余的 feedAnswer/endAnswer 全部 no-op
+    answerActive = false;
+  }
+
   if (getCurrentInstance()) onUnmounted(stop);
 
   /**
-   * 读一段回答：同一时刻只读一条，长文自动切片排队。
+   * 整段读（一次性接口）：洗一遍、整段入队、随即收尾。
    *
-   * <p>引擎选择只有一处：服务端标了可用就走服务端（音色统一），否则走浏览器内置。
-   * 服务端在播放中途挂掉时由 {@link speakServer} 自己降级，这里不再重复判断。
+   * <p>三道入口守卫（enabled、引擎可用、文本非空）都在 beginAnswer 的 stop() **之前**，
+   * 保证「空文本/未启用不打断当前播报」的既有语义；引擎判断直接复用 resolveEngine()，
+   * 不再维护第二份可用性规则。正文只在这里 sanitize 一次——不再经 feed 的游标提取，
+   * 免得同一段文本跑两遍清洗正则。
    */
   function speak(text: string): void {
-    if (!enabled.value) return;
-    if (!serverReady.value && !synth) return;
+    if (!enabled.value || !resolveEngine()) return;
     const clean = sanitizeForSpeech(text).slice(0, MAX_SPEAK_CHARS);
     if (!clean) return;
-
     const parts = splitForSpeech(clean);
     if (!parts.length) return;
-    stop();
-    speaking.value = true;
-    lastError.value = ''; // 这一轮开始前先清掉上一轮的失败标记
-
-    if (serverReady.value) {
-      ttsController = new AbortController();
-      void speakServer(parts, ttsController);
-    } else speakBrowser(parts);
+    beginAnswer();
+    enqueue(parts);
+    endAnswer(''); // 正文已整段入队，这里只负责关队列（没有尾巴可取）
   }
 
   /**
-   * 服务端播报：一句一段音频，播第 N 句时已经在取第 N+1 句。
+   * 流式朗读的第一步：停掉上一条播报并复位本答状态。
    *
-   * <p>预取是关键——串行「取一句播一句」会让每句之间都空等一次合成（30 字约 1 秒），
-   * 听感上像结巴；这里在第 N 句开播前就把第 N+1 句的请求发出去。
+   * <p>顺序有讲究——stop() 会置 answerActive=false，必须先 stop 再重新打开，
+   * 否则本答的 feed 从一开始就全是 no-op。
    */
-  async function speakServer(parts: string[], requestController: AbortController): Promise<void> {
+  function beginAnswer(): void {
+    stop();
+    answerActive = true;
+    consumed = 0;
+    spokenChars = 0;
+    answerEngine = null;
+    queue = [];
+    fetch0 = null;
+    fetch1 = null;
+    inFlight = null;
+    pendingBrowserParts = [];
+  }
+
+  /**
+   * 流式朗读的第二步：每次回答变长都把**完整句子**送进来（fullText 是当前全文，不是增量）。
+   *
+   * <p>游标只推进到「最后一个句末标点」，没有完整句就什么都不做——半句绝不出声。
+   */
+  function feedAnswer(fullText: string): void {
+    if (!answerActive || !enabled.value) return;
+    const parts = takeCompleted(fullText, false);
+    if (parts) enqueue(parts);
+  }
+
+  /**
+   * 流式朗读的收尾：冲刷没有标点的尾巴（这段不要求句末标点），关闭队列并放播浏览器缓冲。
+   *
+   * <p>失败/取消的回答不会走到这里——调用方（App 的 watch）对 error 回答改调 stop()，
+   * 保持「错误回答不读」的既有语义。
+   */
+  function endAnswer(finalText: string): void {
+    if (!answerActive) return;
+    const parts = takeCompleted(finalText, true);
+    answerActive = false;
+    if (parts) enqueue(parts);
+    wakeQueue(); // 循环排空后自行退场；没有循环（浏览器引擎/未入队）时是 no-op
+    flushBrowser();
+  }
+
+  /**
+   * 从 fullText 游标处提取可读片段：flush=false 只取到最后一个句末标点，flush=true 取全部。
+   *
+   * <p>sanitize 与 600 字总预算都在这里落地；预算耗尽时把游标一次性推到末尾，
+   * 后续 feed 不再重复做无用的切分。
+   */
+  function takeCompleted(fullText: string, flush: boolean): string[] | null {
+    if (spokenChars >= MAX_SPEAK_CHARS) {
+      consumed = fullText.length;
+      return null;
+    }
+    const pending = fullText.slice(Math.min(consumed, fullText.length));
+    if (!pending) return null;
+    let take: string;
+    if (flush) {
+      take = pending;
+      consumed = fullText.length;
+    } else {
+      const end = lastSentenceEnd(pending);
+      if (end < 0) return null;
+      take = pending.slice(0, end + 1);
+      consumed += end + 1;
+    }
+    const clean = sanitizeForSpeech(take).slice(0, MAX_SPEAK_CHARS - spokenChars);
+    if (!clean) return null;
+    spokenChars += clean.length;
+    const parts = splitForSpeech(clean);
+    return parts.length ? parts : null;
+  }
+
+  /** 本答引擎只定一次：服务端可用就走服务端（音色统一），否则浏览器内置，都没有则整答不读 */
+  function resolveEngine(): 'server' | 'browser' | null {
+    if (serverReady.value) return 'server';
+    if (synth) return 'browser';
+    return null;
+  }
+
+  function enqueue(parts: string[]): void {
+    // 朗读开关的总闸：feed/speak 各自拦过一次，endAnswer 的收尾提取也在这里兜住——
+    // 少了这道，开关关闭时 feed 全部落空、endAnswer 却会把游标停在 0 的全文送进来
+    if (!enabled.value) return;
+    if (!answerEngine) {
+      const picked = resolveEngine();
+      if (!picked) return;
+      answerEngine = picked;
+      lastError.value = ''; // 这一轮开始前先清掉上一轮的失败标记
+      if (picked === 'server') speaking.value = true;
+    }
+    if (answerEngine === 'server') {
+      queue.push(...parts);
+      if (ttsController) {
+        ensurePrefetch(ttsController.signal);
+        wakeQueue();
+      } else {
+        ttsController = new AbortController();
+        void runQueue(ttsController);
+      }
+    } else {
+      pendingBrowserParts.push(...parts);
+    }
+  }
+
+  /** 浏览器缓冲放播（endAnswer / 降级撞上已收尾时）：一次性读出，onend 语义与旧版一致 */
+  function flushBrowser(): void {
+    if (!pendingBrowserParts.length) return;
+    const parts = pendingBrowserParts;
+    pendingBrowserParts = [];
+    if (!enabled.value || !synth) return;
+    speaking.value = true;
+    speakBrowser(parts);
+  }
+
+  function wakeQueue(): void {
+    const waiter = queueWaiter;
+    queueWaiter = null;
+    waiter?.();
+  }
+
+  function waitQueue(): Promise<void> {
+    return new Promise<void>((resolve) => {
+      queueWaiter = resolve;
+    });
+  }
+
+  /**
+   * 补齐队头两条的取音频槽位：fetch0 ← queue[0]，fetch1 ← queue[1]。
+   *
+   * <p>两个调用点缺一不可——循环每轮开头调它，feedAnswer 入队后也调它：
+   * 播放第 N 句期间（循环被 playBlob 卡住）到达的第 N+1 句，靠 feed 这一侧触发预取，
+   * 才能让「取下一句」与「播这一句」真正并行（旧版 parts 是静态数组，循环里一次排完，
+   * 没有这个问题；动态队列必须两边都催）。幂等：槽位非空不动。
+   */
+  function ensurePrefetch(signal: AbortSignal): void {
+    if (!fetch0 && queue.length >= 1) fetch0 = prefetch(queue[0], signal);
+    if (!fetch1 && queue.length >= 2) fetch1 = prefetch(queue[1], signal);
+  }
+
+  /**
+   * 服务端播报循环：动态队列版的「播第 N 句时已在取第 N+1 句」。
+   *
+   * <p>与旧版 speakServer 的差异只在数据源——从静态 parts 数组换成 queue，
+   * 空队列且本答仍开着（answerActive）时挂在 waitQueue 上等 feed/end/stop 唤醒；
+   * generation/预取/降级语义原样继承。
+   */
+  async function runQueue(requestController: AbortController): Promise<void> {
     const mine = generation;
-    let pending: Promise<Blob> | null = null;
-    let unplayedIndex = 0;
     try {
-      for (let i = 0; i < parts.length; i++) {
-        unplayedIndex = i;
-        const current = pending ?? prefetch(parts[i], requestController.signal);
-        pending = i + 1 < parts.length ? prefetch(parts[i + 1], requestController.signal) : null;
+      for (;;) {
+        if (mine !== generation) return;
+        ensurePrefetch(requestController.signal);
+        if (!fetch0) {
+          if (!answerActive) break;
+          await waitQueue();
+          continue;
+        }
+        const current = fetch0;
+        fetch0 = null;
+        inFlight = queue.shift() ?? null;
+        fetch0 = fetch1; // 槽位旋转：原 queue[1] 现在是队头
+        fetch1 = null;
         const blob = await current;
         if (mine !== generation) return;
         await playBlob(blob);
         if (mine !== generation) return;
-        unplayedIndex = i + 1;
+        inFlight = null;
       }
+      if (mine === generation) speaking.value = false;
     } catch (e) {
       if (mine !== generation) return;
       const reason = e instanceof Error ? e.message : 'server-speech-failed';
@@ -300,14 +504,20 @@ export function useSpeech(options: SpeechOptions = {}) {
       lastError.value = reason;
       options.onError?.(reason);
       if (mine !== generation) return;
-      const remaining = parts.slice(unplayedIndex);
-      if (synth && remaining.length) speakBrowser(remaining);
-      else speaking.value = false;
-      return;
+      // 未播的尾巴（含当前失败的这条）转入浏览器缓冲：答还没结束就等 endAnswer 一起补读，
+      // 已收尾（失败发生在收尾段）就当场读——与旧版「降级立刻播剩余」的终点一致
+      if (inFlight) pendingBrowserParts.push(inFlight);
+      pendingBrowserParts.push(...queue);
+      inFlight = null;
+      queue = [];
+      fetch0 = null;
+      fetch1 = null;
+      answerEngine = 'browser';
+      speaking.value = false;
+      if (!answerActive) flushBrowser();
     } finally {
       if (ttsController === requestController) ttsController = null;
     }
-    if (mine === generation) speaking.value = false;
   }
 
   function prefetch(part: string, signal: AbortSignal): Promise<Blob> {
@@ -458,11 +668,17 @@ export function useSpeech(options: SpeechOptions = {}) {
     }
   }
 
-  /** 切换朗读开关并持久化；关掉时立即闭嘴 */
+  /**
+   * 切换朗读开关并持久化；关掉时立即闭嘴。
+   *
+   * <p>关闭走 haltPlayback 而不是 stop()：只停播放、**不关本答 feed 通道**——
+   * 拨回来之后流还在继续时，feed/end 恢复工作，回答余下的部分照旧会读
+   * （旧版 speak-at-end 按当时的 enabled 决定，同样是「拨回就照读」）。
+   */
   function toggle(): void {
     enabled.value = !enabled.value;
     writeStorage('local', ENABLED_KEY, enabled.value ? '1' : '0');
-    if (!enabled.value) stop();
+    if (!enabled.value) haltPlayback();
   }
 
   /**
@@ -492,6 +708,9 @@ export function useSpeech(options: SpeechOptions = {}) {
     engineKind,
     setServerReady,
     speak,
+    beginAnswer,
+    feedAnswer,
+    endAnswer,
     stop,
     toggle,
     unlock,

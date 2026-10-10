@@ -2,7 +2,8 @@ import { getCurrentInstance, onUnmounted, ref } from 'vue';
 import { recognizeSpeech } from '../api';
 
 /**
- * 语音提问：按住/点一下说话，松开/再点即识别成文字。
+ * 语音提问：点一下开麦进入聆听，VAD 检出人声后停顿 VAD_SILENCE_MS（当前 1 秒）自动结束并识别；
+ * 识别前再点一下 = 立即手动结束（原有兜底路径）。
  *
  * 采集与编码全在前端做，理由有三个：
  * 1) **接口只收 wav/mp3**：MediaRecorder 在 Chrome 默认吐 webm/opus，直接被 ASR 拒；
@@ -21,6 +22,59 @@ export const TARGET_SAMPLE_RATE = 16_000;
 export const MAX_RECORD_MS = 20_000;
 /** 短于这个长度的录音按「误触」处理，不浪费一次识别调用 */
 const MIN_RECORD_MS = 400;
+
+/** 判定「有人说话」的 RMS 下限：人声经开降噪后通常 0.03~0.15，导出供展厅现场调参 */
+export const VAD_SPEECH_RMS = 0.02;
+/** 判定「有动静」（非纯静音）的下限：低于它的一律当无声，用于无语音超时 */
+export const VAD_SILENCE_RMS = 0.01;
+/**
+ * 说完到收尾的静音时长。按**时长**而不是块数累计——4096 帧块的时长取决于设备实际采样率
+ * （浏览器常锁 44.1/48kHz，此时一块只有 ~85ms），按块数算会在快采样率设备上把
+ * 「停顿 1 秒」变成 340ms，句中换气就截断。导出供展厅现场调参。
+ */
+export const VAD_SILENCE_MS = 1_000;
+/** 开麦后一直没动静的放弃时长：没人说话就收回麦克风，而不是一直挂着 */
+export const VAD_NO_SPEECH_MS = 6_000;
+
+export type VadState = {
+  /** 已听到过 ≥VAD_SPEECH_RMS 的人声：自动收尾的前置条件 */
+  speechSeen: boolean;
+  /** 已听到过 ≥VAD_SILENCE_RMS 的动静（粘滞）：无语音超时只在「全程无声」时才开火 */
+  audible: boolean;
+  /** 距上一次人声（≥VAD_SPEECH_RMS）累计的非人声时长（毫秒） */
+  silentMs: number;
+};
+
+/** 初始 VAD 状态；invalidate/start 都要回到它，漏一处按钮文案就会和真实状态脱钩 */
+export function initialVad(): VadState {
+  return { speechSeen: false, audible: false, silentMs: 0 };
+}
+
+/** 单个 PCM 块的均方根。全零返回 0；空块不参与判定（除零保护） */
+export function chunkRms(chunk: Float32Array): number {
+  if (!chunk.length) return 0;
+  let sum = 0;
+  for (let i = 0; i < chunk.length; i++) sum += chunk[i] * chunk[i];
+  return Math.sqrt(sum / chunk.length);
+}
+
+/**
+ * VAD 状态推进（纯函数，便于单测）。chunkMs = 本块时长，由调用方按真实采样率算。
+ *
+ * - RMS ≥ 说话阈值：置 speechSeen/audible 并清零静音时长（一句话重新开始算）；
+ * - 其余（含两阈值之间的滞回带）：按 chunkMs 累计静音——**带内也算静音**：
+ *   停在带内的环境音若只「保持状态」，静音时长会被冻结、永远凑不满收尾条件，
+ *   录音只能挂到 20s 上限；带内只防误触发说话（speechSeen 仍要求 ≥说话阈值），
+ *   不再兼做「静音豁免」。audible 单独记录，保证轻声说话者不被无语音超时误杀。
+ */
+export function vadStep(state: VadState, rms: number, chunkMs: number): VadState {
+  if (rms >= VAD_SPEECH_RMS) return { speechSeen: true, audible: true, silentMs: 0 };
+  return {
+    speechSeen: state.speechSeen,
+    audible: state.audible || rms >= VAD_SILENCE_RMS,
+    silentMs: state.silentMs + Math.max(0, chunkMs),
+  };
+}
 
 export type DictationOptions = {
   /** 识别成功回文本（调用方决定是填进输入框还是直接提问） */
@@ -112,6 +166,8 @@ export function useDictation(options: DictationOptions = {}) {
   const busy = ref(false);
   /** 已录时长（毫秒）：按钮上显示，让说话的人知道还在录 */
   const elapsedMs = ref(0);
+  /** 本轮是否已检出人声：区分「聆听中」与「说完了」两种文案，也参与无语音超时判定 */
+  const speechDetected = ref(false);
   /** 最近一次失败原因（空串 = 没失败过） */
   const error = ref('');
 
@@ -120,6 +176,7 @@ export function useDictation(options: DictationOptions = {}) {
   let processor: ScriptProcessorNode | null = null;
   let source: MediaStreamAudioSourceNode | null = null;
   let chunks: Float32Array[] = [];
+  let vad: VadState = initialVad();
   let contextRate = TARGET_SAMPLE_RATE;
   let startedAt = 0;
   let ticker: number | undefined;
@@ -166,7 +223,9 @@ export function useDictation(options: DictationOptions = {}) {
     recording.value = false;
     busy.value = false;
     elapsedMs.value = 0;
+    speechDetected.value = false;
     chunks = [];
+    vad = initialVad();
     recognitionController?.abort();
     recognitionController = null;
     release();
@@ -198,9 +257,17 @@ export function useDictation(options: DictationOptions = {}) {
       source = ctx.createMediaStreamSource(acquired);
       processor = ctx.createScriptProcessor(4096, 1, 1);
       chunks = [];
+      vad = initialVad();
       processor.onaudioprocess = (event) => {
         if (disposed || generation !== operationGeneration || !recording.value) return;
-        chunks.push(new Float32Array(event.inputBuffer.getChannelData(0)));
+        const chunk = new Float32Array(event.inputBuffer.getChannelData(0));
+        chunks.push(chunk);
+        // 按块的真实时长累计（contextRate 是设备实际采样率，不保证 16k）
+        const chunkMs = (chunk.length / contextRate) * 1000;
+        vad = vadStep(vad, chunkRms(chunk), chunkMs);
+        if (!speechDetected.value && vad.speechSeen) speechDetected.value = true;
+        // 说完自动收尾：手动点按（stop/cancel）与这条路径汇合于同一 stop()，不会打架
+        if (vad.speechSeen && vad.silentMs >= VAD_SILENCE_MS) void stop();
       };
       source.connect(processor);
       // 某些实现里不接 destination 就不会触发 onaudioprocess；输出为静音，不会真的放出来
@@ -224,6 +291,7 @@ export function useDictation(options: DictationOptions = {}) {
       return;
     }
     recording.value = true;
+    speechDetected.value = false;
     startedAt = performance.now();
     elapsedMs.value = 0;
     ticker = window.setInterval(() => {
@@ -232,7 +300,19 @@ export function useDictation(options: DictationOptions = {}) {
         return;
       }
       elapsedMs.value = performance.now() - startedAt;
-      if (elapsedMs.value >= MAX_RECORD_MS) void stop();
+      // 无语音超时先判：tick 被节流合并到 20s 之后时，纯静音也该走「没有听到声音」
+      // 这条免识别路径，而不是掉进 MAX 分支白跑一次识别。
+      // 用 audible 而不是 speechDetected：轻声（带内）说话者不置 speechSeen 但 audible，
+      // 不该在 6 秒被掐掉；全程真正无声才收回麦克风。
+      if (!vad.audible && elapsedMs.value >= VAD_NO_SPEECH_MS) {
+        error.value = '没有听到声音';
+        options.onError?.(error.value);
+        invalidate();
+        return;
+      }
+      if (elapsedMs.value >= MAX_RECORD_MS) {
+        void stop();
+      }
     }, 100);
   }
 
@@ -304,5 +384,5 @@ export function useDictation(options: DictationOptions = {}) {
 
   if (getCurrentInstance()) onUnmounted(dispose);
 
-  return { supported, recording, pending, busy, elapsedMs, error, start, stop, cancel, dispose };
+  return { supported, recording, pending, busy, elapsedMs, speechDetected, error, start, stop, cancel, dispose };
 }

@@ -346,6 +346,21 @@ describe('展厅页面：界面入口与语音播报接线', () => {
     wrapper.unmount();
   });
 
+  it('回答失败（流中断）时一个字都不读：增量喂入在错误路径要被 stop 收口', async () => {
+    const { spoken } = installSpeech();
+    stubFetch(true, true); // streamFails：两次尝试都断，走 catch 的错误文案
+    const wrapper = mount(App);
+    await flushPromises();
+
+    await wrapper.find('textarea').setValue('叶片检测要停机吗？');
+    await wrapper.find('textarea').trigger('keydown', { key: 'Enter' });
+    await vi.waitFor(() => expect(wrapper.text()).toContain('这条问题暂时没能回答'));
+    await flushPromises();
+
+    expect(spoken).toEqual([]);
+    wrapper.unmount();
+  });
+
   it('关掉朗读开关后不再朗读，且选择落 localStorage', async () => {
     const { spoken } = installSpeech();
     const wrapper = mountWithAdmin();
@@ -695,7 +710,7 @@ describe('缺口用例补全', () => {
 
     // 页面正常渲染，不白屏
     expect(wrapper.find('textarea').exists()).toBe(true);
-    expect(wrapper.text()).toContain('展厅虚拟讲解员');
+    expect(wrapper.text()).toContain('晴晴');
 
     // 打开运营视图，存储状态为「未知（后端未响应）」
     const admin = mountWithAdmin();
