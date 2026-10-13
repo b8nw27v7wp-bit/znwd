@@ -27,21 +27,21 @@ cd server && ../tools/mvn -B test        # 等价于 mvn -B test
 | 目的 | 命令（工作目录） | 预期输出 |
 | --- | --- | --- |
 | 起后端 | `cd server && ../tools/mvn spring-boot:run` | `Tomcat started on port 8787` / `Started HostessApplication`；随后轮询 `/api/health`，等 `ok=true`、`ready=true` 再跑接口检查 |
-| 单测 | `cd server && ../tools/mvn -B test` | `Tests run: 167, Failures: 0, Errors: 0` |
+| 单测 | `cd server && ../tools/mvn -B test` | `Tests run: 222, Failures: 0, Errors: 0` |
 | 检索评测 | `cd server && ../tools/mvn -B test-compile exec:java@eval -Dexec.args="--no-write --baseline=docs/eval/baseline-java.json"` | 逐例对比已提交基线：top1/top3、闸门指标、漏答数与每条 `top1Path` 都不得退化；当前基线为 145 条计分用例、top1/top3 均 `1.0`、闸门漏答 `0` |
 | 阈值标定 | `cd server && ../tools/mvn -B test-compile exec:java@calibrate` | 在域最弱 8 条、域外降序、区间与建议、**语义兜底标定**（域外最高余弦 vs 待救用例）；**区间判据与闸门口径不一致，先读 `docs/eval.md` 的说明**；`--grid` 再加 36 组参数网格；`--gate-check` 判两条线（关键词域外越线退出码 3、语义余弦越线退出码 4，CI 用的就是这条）；报告落 `docs/eval/calibration-*.json` |
 | 资料入库 | `cd server && ../tools/mvn -B -q test-compile exec:java@ingest -Dexec.args="--src ./inbox --zone <展区id>"`（`--dry-run` 先看目标路径） | `完成：N/M 入库`；扫描件 PDF 与 `.doc` 明确报错；用法见 `docs/knowledge.md` §8 |
 | 接口冒烟 | `python tools/smoke.py`（需服务在跑，`BASE=http://…` 可改目标；管理块要 `ADMIN_TOKEN`） | `通过 100 项，失败 0 项`（带 `ADMIN_TOKEN`、语音启用；分档口径见 §7） |
 | 并发压测 | `python tools/loadtest.py`（需服务在跑；非流式/SSE/只读并发 + 客户端中断，`--duration` 可长跑） | mock 短跑（24+12）`通过 5 项，失败 0 项`；429 单列计数不算失败，口径与基线见 `docs/loadtesting.md` |
 | 问答内容验收 | `python tools/acceptance.py`（需服务 + 真模型在跑；`TAGS=fix,fact` 可只跑一组） | `通过 40 项，失败 0 项`（内容层：该答的答对、该拒的拒、资料里没有的不许编；CI 跑不了，要真模型） |
-| 边界与安全 | `python tools/security.py`（同上；非回环越权与误配置组见 `docs/security-testing.md`） | 主实例 `91 通过 / 0 失败 / 7 跳过`（缺第二/误配置/开发态实例）；四实例全跑 `99 通过 / 0 失败 / 0 跳过` |
+| 边界与安全 | `python tools/security.py`（同上；非回环越权与误配置组见 `docs/security-testing.md`） | 主实例 `104 通过 / 0 失败 / 7 跳过`（缺第二/误配置/开发态实例）；四实例全跑 `112 通过 / 0 失败 / 0 跳过`（**推算值，本轮只起了主实例**） |
 | 库层核查 | `python tools/db-check.py`（需本机 mysql 客户端：`MYSQL_BIN` 或候选路径 `D:/mysql-cli/mysql-8.4.0-winx64/bin/mysql.exe`；缺客户端整组 SKIP） | `通过 19 项，失败 0 项` |
 | 本地化不变量 | `python tools/offline-check.py`（`--runtime` 追加运行期核查） | O04 后端出网白名单只含 LLM、embedding、MiMo 语音三个适配器；其它网络调用即失败 |
 | 前端 dev | `cd web && npm install && npm run dev` | `VITE v6 ready`，`:5173`，`/api` 代理到 8787 |
 | 前端构建 | `cd web && npm run build` | `vue-tsc -b` 类型检查 + `vite build`，产物 `web/dist` |
-| 前端单测 | `cd web && npm test` | `164 passed`（12 个测试文件，含 jsdom 下的组件接线测试） |
+| 前端单测 | `cd web && npm test` | `257 passed`（13 个测试文件，含 jsdom 下的组件接线测试） |
 | 前端 lint | `cd web && npm run lint` | ESLint 门禁（`web/eslint.config.mjs`，只看 `src` 下 `.ts/.vue`）**0 error**；风格类规则有意不开（仓库无 prettier） |
-| 前端覆盖率 | `cd web && npm run test:coverage` | 同一批 164 项单测 + coverage 阈值门禁（阈值取实测下调 1–2 点，落在 `vite.config.ts`） |
+| 前端覆盖率 | `cd web && npm run test:coverage` | 同一批 257 项单测 + coverage 阈值门禁（阈值取实测下调 1–2 点，落在 `vite.config.ts`） |
 | 打包后端 | `cd server && ../tools/mvn -B -DskipTests package` | `server/target/hostess-server.jar` |
 
 表里 `python tools/...` 的命令在 Windows 上改用 **`py -3 tools/...`**（本机 `python` 命令不可用；虚拟环境里用其 `python`）。
@@ -105,13 +105,13 @@ MySQL 首次使用：把 `server/db/init.sql` 里两处 `CHANGE_ME_znwd` 改成�
 
 | 检查项 | 命令 | 结果 |
 | --- | --- | --- |
-| 后端单测 | `mvn -B test` | 167 项，0 失败/错误/跳过 |
-| 前端单测 | `npm test` | 164 项 / 12 个文件（2026-10-04 复核；上表其余行仍为 09-29 复跑口径） |
+| 后端单测 | `mvn -B test` | 224 项，0 失败/错误/跳过（2026-10-12 复核） |
+| 前端单测 | `npm test` | 257 项 / 13 个文件（2026-10-12 复核；上表其余行仍为 09-29 复跑口径） |
 | 前端 lint | `npm run lint` | 0 error / 0 warn（ESLint 平坦配置，见 `web/eslint.config.mjs`） |
-| 前端覆盖率 | `npm run test:coverage` | 过阈值；实测 Stmts 88.14 / Branch 75.08 / Funcs 90.32 / Lines 91.67 |
+| 前端覆盖率 | `npm run test:coverage` | 过阈值；实测 Stmts 90.94 / Branch 80.73 / Funcs 91.82 / Lines 94.22（2026-10-12 复核） |
 | 前端构建 | `npm run build`（vue-tsc+vite） | 通过 |
 | 接口冒烟 | `python tools/smoke.py`（带 `ADMIN_TOKEN`、语音启用） | 100 通过 / 0 失败 / 0 跳过 |
-| 边界安全 | `python tools/security.py` | 主实例 91 通过 / 0 失败 / 7 跳过（S16–S18、S16c、M01–M03 需另起 `SECOND_BASE`/`MISCONFIG_BASE`/`DEV_RELAXED_BASE` 三个实例）；四个实例全跑时 99 通过 / 0 失败 / 0 跳过 |
+| 边界安全 | `python tools/security.py` | 主实例 104 通过 / 0 失败 / 7 跳过（2026-10-12 复跑；S16–S18、S16c、M01–M03 需另起 `SECOND_BASE`/`MISCONFIG_BASE`/`DEV_RELAXED_BASE` 三个实例，本轮未起）；四个实例全跑时按新增 10 项推算为 112 通过 / 0 失败 / 0 跳过（**非实测**，其余实例的 8 项未跑） |
 | 库层 | `python tools/db-check.py` | 19 通过 / 0 失败 / 0 跳过 |
 | 离线不变量 | `python tools/offline-check.py --runtime` | 7 通过 / 0 失败 / 1 跳过（O07 仅在 `LLM_PROVIDER=mock` 下有判据） |
 | 内容验收 | `python tools/acceptance.py` | 40 通过 / 0 失败 |
@@ -125,10 +125,10 @@ MySQL 首次使用：把 `server/db/init.sql` 里两处 `CHANGE_ME_znwd` 改成�
 并发/压测不在上面的全量复跑表里（要额外的实例与限流窗口，结果随模型与限流档位浮动）：mock 短跑 `py -3 tools/loadtest.py --n 24 --streams 12 --rounds 1`、长跑（`--duration 7200`，对应 TC-PERF-07）与 429 语义见 `docs/loadtesting.md`。
 
 ```bash
-cd server && ../tools/mvn -B test                     # 167 项：检索/HTTP/统计会话/同义词/诊断文案/配置接线/管理口令/降级写路径与裁剪/资料入库/请求体上限/来源面板规则/落库截断/限流键取值/语音/问答接口契约
+cd server && ../tools/mvn -B test                     # 224 项：检索/HTTP/统计会话/同义词/诊断文案/配置接线/管理口令/降级写路径与裁剪/资料入库/请求体上限/来源面板规则/落库截断/限流键取值/语音/问答接口契约
 cd web && npm run lint                                 # ESLint 门禁：src 下 .ts/.vue，0 error（风格类规则不开，取舍见 web/eslint.config.mjs）
-cd web && npm test                                     # 164 项（12 个文件）：SSE 解析、问答状态机、朗读与听写、回答排版、展区下拉、界面入口与播报接线、运营视图、对话主流程、来源面板、讲解图、检索诊断与知识面板（jsdom）
-cd web && npm run test:coverage                        # 同一批单测 + 覆盖率阈值门禁（阈值落在 vite.config.ts：86.5/73.5/88.5/90，实测 88.14/75.08/90.32/91.67）
+cd web && npm test                                     # 257 项（13 个文件）：SSE 解析、问答状态机、朗读与听写、回答排版、展区下拉、界面入口与播报接线、运营视图、对话主流程、来源面板、讲解图、检索诊断与知识面板（jsdom）
+cd web && npm run test:coverage                        # 同一批单测 + 覆盖率阈值门禁（阈值落在 vite.config.ts：86.5/73.5/88.5/90，实测 90.94/80.73/91.82/94.22）
 python tools/smoke.py                                  # 100 项契约（需服务在跑，带 ADMIN_TOKEN、语音启用；分档口径见下）
 ```
 

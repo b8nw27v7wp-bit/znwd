@@ -194,17 +194,17 @@ curl -s http://127.0.0.1:8787/api/health
 ## 校验命令
 
 ```bash
-cd server && ../tools/mvn -B test                                        # 后端单测（177 项）
+cd server && ../tools/mvn -B test                                        # 后端单测（224 项）
 cd server && ../tools/mvn -B test-compile exec:java@eval -Dexec.args="--no-write --baseline=docs/eval/baseline-java.json"   # 检索评测 + 已提交基线门禁
 cd server && ../tools/mvn -B test-compile exec:java@calibrate            # 阈值标定（改语料/同义词后必跑）
 cd server && ../tools/mvn -B -q test-compile exec:java@ingest -Dexec.args="--src ./inbox --zone <展区id>"   # 资料入库（PDF/Word/txt）
 python tools/smoke.py                                                    # 接口契约冒烟（需服务在跑；带 ADMIN_TOKEN 满跑 100 项）
-python tools/security.py                                                 # 边界与安全（主实例 94/0/7；另起实例跑满）
+python tools/security.py                                                 # 边界与安全（主实例 104/0/7；另起实例跑满）
 python tools/db-check.py                                                 # 库层脱敏与最小权限（需 mysql 客户端）
 python tools/offline-check.py --runtime                                  # 本地化不变量（除 LLM/embedding/语音外一律本地）
 python tools/acceptance.py                                               # 问答内容验收（需真模型在跑，43 项）
 python tools/loadtest.py --n 8 --streams 4                               # 并发/压测（多路问答+SSE+只读+中断；429 单列）
-cd web && npm run build && npm run lint && npm run test:coverage   # 前端类型检查+构建、ESLint 门禁、单测+覆盖率门禁（164 项）
+cd web && npm run build && npm run lint && npm run test:coverage   # 前端类型检查+构建、ESLint 门禁、单测+覆盖率门禁（257 项）
 ```
 
 Windows 上本机 `python` 命令不可用：把 `python tools/xxx.py` 改成 `py -3 tools/xxx.py`（虚拟环境里则用其 `python`）。

@@ -21,7 +21,7 @@ import AvatarFigure from './AvatarFigure.vue';
  * 换形象：替换 public/avatar-guide.png 即可。要眨眼/口型那种真动作得换 Live2D/3D 模型。
  */
 const props = withDefaults(
-  defineProps<{ state?: 'idle' | 'speaking' | 'thinking'; src?: string }>(),
+  defineProps<{ state?: 'idle' | 'speaking' | 'thinking' | 'listening'; src?: string }>(),
   { state: 'idle', src: '/avatar-guide.png' },
 );
 
@@ -82,8 +82,10 @@ const failed = ref(false);
   );
 }
 
-/* 空闲：极慢的呼吸起伏，避免"立牌"感 */
+/* 空闲：极慢的呼吸起伏，避免"立牌"感。
+   聆听中沿用同一档：常开聆听是展厅的常态，单给它一档更快的动画等于把「有人说话」的信号稀释掉 */
 .portrait--idle,
+.portrait--listening,
 .portrait--thinking {
   animation: portrait-breathe 6.4s ease-in-out infinite;
 }

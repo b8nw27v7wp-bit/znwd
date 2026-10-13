@@ -164,3 +164,8 @@ znwd:
     tts-cache-max-bytes: ${AUDIO_TTS_CACHE_MAX_BYTES:524288}
     # 合成接口独立限流（次/分钟）：一次提问要合成多句，配额比 /api/chat 宽
     synth-rate-per-min: ${AUDIO_SYNTH_RATE_PER_MIN:60}
+    # 识别接口独立限流（次/分钟）：常开聆听一次讲话就要按 2 秒切片连打多次，
+    # 与 /api/chat 共桶会把访客真正的提问饿死；120 ≈ 每说话人 30 次/分 + 收尾 + 突发余量
+    asr-rate-per-min: ${AUDIO_ASR_RATE_PER_MIN:120}
+    # 声学遥测上报（POST /api/speech/metrics）独立限流（次/分钟）：名义 15 秒一批 = 4/min
+    metrics-rate-per-min: ${AUDIO_METRICS_RATE_PER_MIN:30}

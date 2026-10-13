@@ -828,6 +828,51 @@ else:
     leak_scan("Y06b 识别响应不含密钥片段", _b4 if isinstance(_b4, str) else "")
 
 # ─────────────────────────────────────────────────────────────────────────────
+print("\n== N 组：声学遥测（POST /api/speech/metrics，纯增量）")
+# ─────────────────────────────────────────────────────────────────────────────
+# 这个端点的取舍与别的写接口都不一样，值得单独一组：
+# ① 刻意**没有管理口令**（运营面板没打开时数据同样要落库），也刻意**不跟着 AUDIO_PROVIDER=none
+#    一起关**（「前端根本开不了麦」本身就是要看到的结论）；
+# ② 于是它的安全边界只剩三道：字段白名单、数值合法性、路径自带的体积闸门——外加一份独立配额。
+#    缺任何一道，这个无鉴权写接口就成了堆内存与污染运营统计的靶子。
+_s, _b, _ = request("POST", "/api/speech/metrics",
+                    payload={"utterances": 3, "noiseFloorSum": 0.12, "noiseSamples": 4})
+check("N01 合法遥测 → 200 {ok:true}（语音未启用时也必须可用）",
+      _s == 200 and (as_json(_b) or {}).get("ok") is True, f"{_s} {_b[:120]}")
+
+_s, _b, _ = request("POST", "/api/speech/metrics", payload={"utterence": 1})
+check("N02 未知字段 → 400 信封（拼错的字段名不许被静默忽略）",
+      _s == 400 and envelope_ok(_b), f"{_s} {_b[:120]}")
+
+for _i, _payload in enumerate([{"utterances": "3"}, {"utterances": -1},
+                               {"utterances": True}, {"utterances": 99999999}], start=3):
+    _s, _b, _ = request("POST", "/api/speech/metrics", payload=_payload)
+    check(f"N{_i:02d} 遥测 {_payload} → 400 信封（非数值/负数/超上限）",
+          _s == 400 and envelope_ok(_b), f"{_s} {_b[:120]}")
+
+_s, _b, _ = request("POST", "/api/speech/metrics", raw_body=b"[1,2,3]")
+check("N07 遥测 body 是数组 → 400 信封", _s == 400 and envelope_ok(_b), f"{_s} {_b[:120]}")
+
+_s, _b, _ = request("POST", "/api/speech/metrics",
+                    raw_body=json.dumps({"utterances": 1, "pad": "x" * (2 * 1024 * 1024)}).encode("utf-8"))
+check("N08 遥测 2MB+ body → 413 信封（沿用 /api/speech/* 的体积闸门）",
+      _s == 413 and envelope_ok(_b), f"{_s} {_b[:120]}")
+
+# 自带配额：打满它，接口自己必须开始 429
+_n_codes = [request("POST", "/api/speech/metrics", payload={"utterances": 1})[0] for _ in range(35)]
+check("N09 遥测高频上报触发 429（无鉴权写接口必须自带配额）", 429 in _n_codes,
+      f"状态码分布：{ {c: _n_codes.count(c) for c in sorted(set(_n_codes))} }")
+
+# 桶与桶互不占用**不在这里验**：那要依赖「另一个桶此刻还有余量」，而 chat 桶是 60 秒滑动窗口，
+# 前面几组用掉多少没有任何保证——写在这里迟早会变成一条假红（实现是对的、套件却红）。
+# 它由服务器单测确定性覆盖：AudioRateLimiterTest「五个桶是五份独立状态」「打满提问桶不影响识别桶」。
+# 这里只钉 429 自身的契约：与其它桶同一形状，且带重试提示。
+_s, _b, _ = request("POST", "/api/speech/metrics", payload={"utterances": 1})
+check("N10 遥测 429 走统一信封并给出重试提示（与其它桶同一形状）",
+      _s == 429 and envelope_ok(_b) and bool((as_json(_b) or {}).get("retryAfterSec")),
+      f"{_s} {_b[:120]}")
+
+# ─────────────────────────────────────────────────────────────────────────────
 print("\n== F 组：限流（放最后，会打满窗口）")
 # ─────────────────────────────────────────────────────────────────────────────
 codes = []

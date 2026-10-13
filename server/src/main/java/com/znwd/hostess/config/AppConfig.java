@@ -77,6 +77,21 @@ public class AppConfig {
         return new RateLimiter(props.audioSynthRatePerMin(), 60_000L);
     }
 
+    /**
+     * 语音识别的独立配额：常开聆听下一次讲话就会连打多次 recognize，
+     * 与 /api/chat 同桶会互相饿死——识别与提问各算各的，提问仍由 chatRateLimiter 把关。
+     */
+    @Bean
+    public RateLimiter asrRateLimiter(AppProperties props) {
+        return new RateLimiter(props.audioAsrRatePerMin(), 60_000L);
+    }
+
+    /** 声学遥测上报的独立配额：无鉴权的写接口，与识别/合成各算各的 */
+    @Bean
+    public RateLimiter speechMetricsRateLimiter(AppProperties props) {
+        return new RateLimiter(props.audioMetricsRatePerMin(), 60_000L);
+    }
+
     /** 合成结果缓存：展厅高频重复的讲解句命中即省一次外部调用（键含音色，换音色不会串音） */
     @Bean
     public LruCache<byte[]> speechSynthCache(AppProperties props) {

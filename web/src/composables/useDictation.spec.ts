@@ -1,15 +1,18 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { chunkRms, encodeWav, joinPartials, resample, TARGET_SAMPLE_RATE } from './audioPcm';
+import { SEGMENT_FIRST_MS, SEGMENT_MS } from './useSegmentStream';
 import {
-  chunkRms,
-  encodeWav,
-  resample,
-  TARGET_SAMPLE_RATE,
+  BARGEIN_HOLD_MS,
   dictationSupported,
+  TRUNCATION_WINDOW_MS,
   useDictation,
-  vadStep,
+  VAD_ADAPT_MAX_RMS,
   VAD_NO_SPEECH_MS,
   VAD_SILENCE_MS,
+  VAD_SPEECH_RMS,
+  vadStep,
   type DictationOptions,
+  type DictationMetric,
 } from './useDictation';
 
 /** 把 WAV 头读回来断言：这些字段错一个，服务端就会把它当成非 WAV 拒掉 */
@@ -314,6 +317,869 @@ describe('stop() 识别回调链', () => {
     expect(dictation.error.value).toBe('语音识别服务不可用');
     expect(dictation.busy.value).toBe(false);
     expect(dictation.recording.value).toBe(false);
+  });
+});
+
+/**
+ * 常开聆听（第 3 档）：麦克风常开、说话即开始一句、说话中分段送识别。
+ *
+ * 与上面那组用例的差别只在「谁决定麦克风开着」——采集、VAD、编码这三段代码是共用的，
+ * 所以这里不重复验 VAD 纯函数，只验状态机与分段管线。
+ */
+describe('常开聆听', () => {
+  /** 起一套常开聆听环境：`arm()` 之后停在聆听态（点按模式要 start() 才开麦） */
+  function alwaysDictation(options: DictationOptions = {}, sampleRate = TARGET_SAMPLE_RATE) {
+    const stop = vi.fn();
+    const getUserMedia = vi.fn(
+      () => Promise.resolve({ getTracks: () => [{ stop }] } as unknown as MediaStream),
+    );
+    const { processor } = installBrowser(getUserMedia, sampleRate);
+    const dictation = useDictation(options);
+    dictation.setAlwaysOn(true);
+    return { dictation, processor, getUserMedia, stop };
+  }
+
+  /** 喂一个「像人声」的 4096 帧块（16k 下 256ms）：常开聆听靠它开始一句并累积分段 */
+  function feedSpeech(processor: {
+    onaudioprocess: ((event: { inputBuffer: { getChannelData: (channel: number) => Float32Array } }) => void) | null;
+  }): void {
+    processor.onaudioprocess?.({ inputBuffer: { getChannelData: () => new Float32Array(4096).fill(0.1) } });
+  }
+
+  /**
+   * 喂一个小块（1024 帧 @16k = 64ms）。
+   *
+   * <p>插话判据按**持续时长**算（BARGEIN_HOLD_MS），用 256ms 的大块一次就够长了，
+   * 测不出「一记爆音不该算插话」——那一半判据只有小块喂得出来。
+   */
+  const SMALL_MS = (1024 / TARGET_SAMPLE_RATE) * 1000;
+  /** 凑够 BARGEIN_HOLD_MS 需要几个小块（64ms 一块 → 2 块 = 128ms） */
+  const BARGEIN_BLOCKS = Math.ceil(BARGEIN_HOLD_MS / SMALL_MS);
+
+  function feedSmall(
+    processor: {
+      onaudioprocess: ((event: { inputBuffer: { getChannelData: (channel: number) => Float32Array } }) => void) | null;
+    },
+    fill: number,
+    frames = 1024,
+  ): void {
+    processor.onaudioprocess?.({ inputBuffer: { getChannelData: () => new Float32Array(frames).fill(fill) } });
+  }
+
+  /**
+   * 攒够**首段**门槛需要的块数（2.8 秒 ÷ 256ms ≈ 11 块）。
+   *
+   * <p>首段比后续段长是 §5 S5 的修法：门槛从起句开始算，而静音尾巴也算在里面——
+   * 1.5 秒的短句到 2 秒就攒满发出去了，而那正是 VAD 马上要收尾的时刻。
+   */
+  const FIRST_SEGMENT_CHUNKS = Math.ceil((SEGMENT_FIRST_MS / 1000) * TARGET_SAMPLE_RATE / 4096);
+  /** 首段之后每一片的块数（2 秒 ÷ 256ms ≈ 8 块，最后一块多出 768 个样本） */
+  const SEGMENT_CHUNKS = Math.ceil((SEGMENT_MS / 1000) * TARGET_SAMPLE_RATE / 4096);
+
+  /** 识别接口回固定文本的环境 */
+  function stubRecognize(text: string | (() => Promise<Response>)) {
+    installFileReader();
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => {
+      if (typeof text === 'function') return text();
+      return new Response(JSON.stringify({ text, seconds: 2 }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  }
+
+  it('arm 只开一次麦克风，句子之间不释放（常开的全部意义就在这里）', async () => {
+    stubRecognize('叶片有裂纹');
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1_000);
+    restoreNow = () => now.mockRestore();
+    const onText = vi.fn();
+    const { dictation, processor, getUserMedia, stop } = alwaysDictation({ onText });
+
+    await dictation.arm();
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    expect(dictation.armed.value).toBe(true);
+    expect(dictation.listening.value, '麦克风开着且没人说话 = 聆听中').toBe(true);
+
+    // 第一句：一个块就检出人声 → 开始录；4 个静音块 = 1024ms → 自动收尾
+    feedSpeech(processor);
+    expect(dictation.recording.value, '检出人声就该开始这一句').toBe(true);
+    now.mockReturnValue(3_000);
+    for (let i = 0; i < 4; i++) feedSilence(processor);
+    await vi.waitFor(() => expect(onText).toHaveBeenCalledTimes(1));
+
+    expect(stop, '句子结束不该收麦').not.toHaveBeenCalled();
+    expect(getUserMedia, '第二句不需要再开一次麦').toHaveBeenCalledTimes(1);
+    expect(dictation.armed.value).toBe(true);
+    expect(dictation.listening.value).toBe(true);
+
+    // 第二句照样能起（VAD 与缓冲都回到干净状态）
+    feedSpeech(processor);
+    expect(dictation.recording.value).toBe(true);
+
+    dictation.dispose();
+    expect(stop, 'dispose 才收麦').toHaveBeenCalledTimes(1);
+    expect(dictation.armed.value).toBe(false);
+  });
+
+  it('说话中每 SEGMENT_MS 送一段识别，文本拼成预览（终稿仍走整段）', async () => {
+    const fetchMock = stubRecognize('叶片有');
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1_000);
+    restoreNow = () => now.mockRestore();
+    const onPartial = vi.fn();
+    const onText = vi.fn();
+    const onMetrics = vi.fn();
+    const { dictation, processor } = alwaysDictation({ onPartial, onText, onMetrics });
+
+    await dictation.arm();
+    // 首段门槛是 SEGMENT_FIRST_MS（§5 S5），不到它不发
+    for (let i = 0; i < FIRST_SEGMENT_CHUNKS - 1; i++) feedSpeech(processor);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(fetchMock, '不够一个切片的长度就不该发').not.toHaveBeenCalled();
+
+    feedSpeech(processor); // 攒满首段门槛 → 送第一段
+    await vi.waitFor(() => expect(onPartial).toHaveBeenCalledWith('叶片有'));
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/api/speech/recognize');
+    expect(onMetrics).toHaveBeenCalledWith({
+      kind: 'segment',
+      latencyMs: expect.any(Number),
+      // §5 S8：ASR 按音频秒计费，这一段有多少秒必须跟着一起报
+      audioMs: expect.any(Number),
+    });
+    expect(onText, '预览不是终稿').not.toHaveBeenCalled();
+
+    dictation.dispose();
+  });
+
+  it('短句不白发一段分段：整句走终稿就够了（§5 S5）', async () => {
+    // 说明为什么是「攒不够」而不是「发了被丢」——今天的状态是白花一次 ASR 调用，
+    // 而且预览与终稿几乎同时落地，输入框里的字会闪一下
+    const fetchMock = stubRecognize('叶片有裂纹');
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1_000);
+    restoreNow = () => now.mockRestore();
+    const onPartial = vi.fn();
+    const onText = vi.fn();
+    const { dictation, processor } = alwaysDictation({ onPartial, onText });
+
+    await dictation.arm();
+    // 说话 1.5 秒（6 块）后停：到 t≈2.5s 就自动收尾，而旧门槛（2 秒）会在 t≈2.05s 抢先发一段
+    for (let i = 0; i < 6; i++) feedSpeech(processor);
+    now.mockReturnValue(2_500);
+    for (let i = 0; i < 4; i++) feedSilence(processor); // 攒满 1 秒静音 → 自动收尾
+
+    await vi.waitFor(() => expect(onText).toHaveBeenCalledWith('叶片有裂纹'));
+    expect(fetchMock, '短句只该走终稿那一次识别').toHaveBeenCalledTimes(1);
+    expect(onPartial, '整段走终稿，没有分段预览').not.toHaveBeenCalled();
+
+    dictation.dispose();
+  });
+
+  it('切片里大半是停顿就先不发，攒到下一片再判（§5 S5 的另一半）', async () => {
+    // 停顿用 0.015 而不是 0.005：真实展厅的底噪就在这一档，它**高于**「有动静」地板(0.01)、
+    // 低于说话阈值——旧口径（按「有动静」算占比）下这些块全算人声，这条过滤等于没写
+    const fetchMock = stubRecognize('叶片有裂纹');
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1_000);
+    restoreNow = () => now.mockRestore();
+    const onPartial = vi.fn();
+    const { dictation, processor } = alwaysDictation({ onPartial });
+
+    await dictation.arm();
+    // 「说一句停一下」的人：说话块之间夹着接近收尾阈值的停顿。
+    // 停顿连续不超过 3 块（768ms < VAD_SILENCE_MS），否则这一句直接收尾、轮到终稿了
+    const statementThenPause = () => {
+      feedSpeech(processor);
+      for (let i = 0; i < 3; i++) feedSilence(processor, 0.015);
+    };
+    statementThenPause();
+    statementThenPause();
+    feedSpeech(processor);
+    for (let i = 0; i < 2; i++) feedSilence(processor, 0.015); // 到这里攒满首段门槛（11 块）
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(fetchMock, '只有三成是语音的切片，送去识别只能换回几个字').not.toHaveBeenCalled();
+
+    // 后面连着说话，占比过线，门槛顺延一片之后照样会切
+    for (let i = 0; i < SEGMENT_CHUNKS; i++) feedSpeech(processor);
+    await vi.waitFor(() => expect(onPartial).toHaveBeenCalledWith('叶片有裂纹'));
+    dictation.dispose();
+  });
+
+  it('取消之后迟到的分段结果不再改写预览', async () => {
+    let release: ((response: Response) => void) | undefined;
+    const fetchMock = stubRecognize(
+      () => new Promise<Response>((resolve) => {
+        release = resolve;
+      }),
+    );
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1_000);
+    restoreNow = () => now.mockRestore();
+    const onPartial = vi.fn();
+    const { dictation, processor } = alwaysDictation({ onPartial });
+
+    await dictation.arm();
+    for (let i = 0; i < FIRST_SEGMENT_CHUNKS; i++) feedSpeech(processor);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    dictation.cancel(); // 在途请求被 abort，语句号也换了
+    release?.(new Response(JSON.stringify({ text: '两秒前的旧话', seconds: 2 }), { status: 200 }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(onPartial, '过期的分段结果一个字都不该上屏').not.toHaveBeenCalledWith('两秒前的旧话');
+    expect(dictation.armed.value).toBe(false);
+  });
+
+  it('分段失败静默计数，不打扰参观者（终稿还在后面）', async () => {
+    const fetchMock = stubRecognize(async () => new Response('{"error":"rate_limited"}', { status: 429 }));
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1_000);
+    restoreNow = () => now.mockRestore();
+    const onPartial = vi.fn();
+    const onError = vi.fn();
+    const onMetrics = vi.fn();
+    const { dictation, processor } = alwaysDictation({ onPartial, onError, onMetrics });
+
+    await dictation.arm();
+    for (let i = 0; i < FIRST_SEGMENT_CHUNKS; i++) feedSpeech(processor);
+    await vi.waitFor(() =>
+      expect(onMetrics).toHaveBeenCalledWith({ kind: 'segmentFailure', audioMs: expect.any(Number) }));
+
+    expect(onError, '一段预览失败不该在展厅大屏上刷错误').not.toHaveBeenCalled();
+    expect(onPartial).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    dictation.dispose();
+  });
+
+  it('抑制期间语句与底噪照旧冻结，但会把回声采下来（P3a-1）', async () => {
+    const fetchMock = stubRecognize('不该被叫到');
+    const onMetrics = vi.fn();
+    const onPartial = vi.fn();
+    const onError = vi.fn();
+    const { dictation, processor } = alwaysDictation({ onMetrics, onPartial, onError });
+
+    await dictation.arm();
+    feedSpeech(processor);
+    expect(dictation.recording.value).toBe(true);
+
+    dictation.setSuppressed(true);
+    expect(onMetrics).toHaveBeenCalledWith({ kind: 'suppressedAbandon' });
+    expect(onPartial, '预览要被清掉').toHaveBeenCalledWith(null);
+    expect(dictation.recording.value, '正在说的这句被放弃').toBe(false);
+    expect(dictation.armed.value, '抑制不收麦（避免权限抖动）').toBe(true);
+    expect(onError).not.toHaveBeenCalled();
+
+    // 抑制期间喂进来的喇叭声：既不能起句、也不能进底噪，只能记成回声样本——
+    // 那正是「自己的喇叭在麦克风里到底多响」唯一的来源（旧实现一律冻结，这组数根本采不到）
+    const before = onMetrics.mock.calls.length;
+    const kinds = () => onMetrics.mock.calls.slice(before).map((c) => (c[0] as DictationMetric).kind);
+    for (let i = 0; i < SEGMENT_CHUNKS + 4; i++) feedSpeech(processor);
+    expect(kinds()).toHaveLength(SEGMENT_CHUNKS + 4);
+    expect(kinds().every((kind) => kind === 'echo'), '抑制期间只该产生回声样本').toBe(true);
+    expect(dictation.recording.value).toBe(false);
+    expect(fetchMock, '抑制期间不该送分段').not.toHaveBeenCalled();
+
+    dictation.setSuppressed(false);
+    feedSpeech(processor);
+    expect(dictation.recording.value, '解除抑制后重新开始听').toBe(true);
+
+    dictation.dispose();
+  });
+
+  it('抑制期间低于插话门限的声音保持抑制：不判插话，也不污染底噪', async () => {
+    // 0.03 高于常量地板（按今天的判据就是「说话」），但低于插话门限（阈值的 2 倍）：
+    // 这正是「自己的喇叭声漏进麦克风」的典型量级，它必须**什么都不触发**
+    stubRecognize('不该被叫到');
+    const onMetrics = vi.fn();
+    const onBargeIn = vi.fn();
+    const { dictation, processor } = alwaysDictation({ onMetrics, onBargeIn });
+
+    await dictation.arm();
+    dictation.setBargeIn(true);
+    dictation.setSuppressed(true);
+    for (let i = 0; i < 8; i++) feedSmall(processor, 0.03);
+
+    const events = onMetrics.mock.calls.map((c) => c[0] as DictationMetric);
+    expect(events.filter((e) => e.kind === 'noise'), '回声不该进底噪').toHaveLength(0);
+    expect(events.filter((e) => e.kind === 'bargeIn')).toHaveLength(0);
+    expect(onBargeIn).not.toHaveBeenCalled();
+    expect(dictation.recording.value).toBe(false);
+    // 而且它照样被记进「越过说话阈值」那一列——运营据此才知道门限该抬到哪儿
+    expect(events.filter((e) => e.kind === 'echo' && e.over)).toHaveLength(8);
+    expect(events.filter((e) => e.kind === 'echo' && e.farOver)).toHaveLength(0);
+
+    dictation.dispose();
+  });
+
+  it('插话判决：越限声音要持续够久才算，一记爆音不算（P3a-2）', async () => {
+    // 判据是「持续」而不是峰值：关门声、话筒被碰到都是一记，只有真人说话会连着好几块都越限
+    stubRecognize('叶片有裂纹');
+    const onMetrics = vi.fn();
+    const onBargeIn = vi.fn();
+    const { dictation, processor } = alwaysDictation({ onMetrics, onBargeIn });
+
+    await dictation.arm();
+    dictation.setBargeIn(true);
+    dictation.setSuppressed(true);
+
+    for (let i = 0; i < BARGEIN_BLOCKS - 1; i++) feedSmall(processor, 0.2); // 64ms × 1 = 短于 BARGEIN_HOLD_MS
+    expect(onMetrics).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'echo', over: true, farOver: true }),
+    );
+    expect(onBargeIn, '一记爆音不是插话').not.toHaveBeenCalled();
+    expect(dictation.recording.value).toBe(false);
+
+    feedSmall(processor, 0.2); // 攒够 BARGEIN_HOLD_MS（64ms × 2 = 128ms）
+    expect(onMetrics).toHaveBeenCalledWith({ kind: 'bargeIn' });
+    expect(onBargeIn).toHaveBeenCalledTimes(1);
+    expect(dictation.recording.value, '判成插话就该当场开始录这一句').toBe(true);
+
+    dictation.dispose();
+  });
+
+  it('慢采样率（256ms 块）上，一记爆音同样不算插话', async () => {
+    // 「持续超过 BARGEIN_HOLD_MS」只看时长是不够的：块长按设备在 85ms~256ms 之间，
+    // 而 AudioContext 老实给出 16kHz 时一块就是 256ms —— 那一块就越过了 120ms 的门槛，
+    // 判据退化成峰值检测，关门声就能把回答掐掉。所以另加 BARGEIN_MIN_BLOCKS 一起卡。
+    stubRecognize('叶片有裂纹');
+    const onMetrics = vi.fn();
+    const onBargeIn = vi.fn();
+    const { dictation, processor } = alwaysDictation({ onMetrics, onBargeIn });
+
+    await dictation.arm();
+    dictation.setBargeIn(true);
+    dictation.setSuppressed(true);
+
+    feedSmall(processor, 0.2, 4096); // 一记（256ms 一块）
+    expect(onMetrics).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'echo', over: true, farOver: true }),
+    );
+    expect(onBargeIn, '一记爆音不是插话').not.toHaveBeenCalled();
+    expect(dictation.recording.value).toBe(false);
+
+    feedSmall(processor, 0.2, 4096); // 连着两块：真人插话会持续好几块
+    expect(onBargeIn).toHaveBeenCalledTimes(1);
+    expect(dictation.recording.value).toBe(true);
+    dictation.dispose();
+  });
+
+  it('插话判决关着时只量不判（缺省形态）', async () => {
+    stubRecognize('叶片有裂纹');
+    const onMetrics = vi.fn();
+    const onBargeIn = vi.fn();
+    const { dictation, processor } = alwaysDictation({ onMetrics, onBargeIn });
+
+    await dictation.arm();
+    dictation.setSuppressed(true); // 不调 setBargeIn：缺省就是关
+    for (let i = 0; i < 10; i++) feedSmall(processor, 0.2);
+
+    expect(onBargeIn).not.toHaveBeenCalled();
+    expect(onMetrics.mock.calls.map((c) => (c[0] as DictationMetric).kind)).not.toContain('bargeIn');
+    expect(dictation.recording.value).toBe(false);
+    // 回声样本照记：门限要按它定，关了判决也不该把这份数据一起关掉
+    expect(onMetrics.mock.calls.filter((c) => (c[0] as DictationMetric).kind === 'echo')).toHaveLength(10);
+
+    dictation.dispose();
+  });
+
+  it('判出插话后，越限的那几块被接成新一句的开头（不削掉半个字）', async () => {
+    stubRecognize('等一下');
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1_000);
+    restoreNow = () => now.mockRestore();
+    const onBargeIn = vi.fn();
+    const onText = vi.fn();
+    const { dictation, processor } = alwaysDictation({ onBargeIn, onText });
+
+    await dictation.arm();
+    dictation.setBargeIn(true);
+    dictation.setSuppressed(true);
+    // 判出插话那几块 + 之后正常采集的一块
+    for (let i = 0; i < BARGEIN_BLOCKS + 1; i++) feedSmall(processor, 0.2);
+    expect(dictation.recording.value).toBe(true);
+
+    // 插话的这几块必须进 VAD：只塞 PCM 的话「哼一声就停」要挂到 20 秒上限才收尾
+    now.mockReturnValue(3_000);
+    for (let i = 0; i < 4; i++) feedSilence(processor);
+    await vi.waitFor(() => expect(onText).toHaveBeenCalledTimes(1));
+    expect(dictation.recording.value).toBe(false);
+    dictation.dispose();
+  });
+
+  it('底噪只在「不像人声」的块上采样（说话声不该拉高底噪）', async () => {
+    stubRecognize('叶片有裂纹');
+    const onMetrics = vi.fn();
+    const { dictation, processor } = alwaysDictation({ onMetrics });
+
+    await dictation.arm();
+    feedSpeech(processor);
+    expect(onMetrics.mock.calls.filter((c) => (c[0] as { kind: string }).kind === 'noise')).toHaveLength(0);
+
+    feedSilence(processor, 0.005);
+    const noise = onMetrics.mock.calls.map((c) => c[0] as { kind: string; rms?: number }).find((e) => e.kind === 'noise');
+    // Float32Array 存不下 0.005 的十进制表示，只能按近似断言
+    expect(noise?.rms).toBeCloseTo(0.005, 6);
+
+    dictation.dispose();
+  });
+
+  it('整段识别回空只清预览与计数，不报错（环境噪声误触发）', async () => {
+    stubRecognize('   ');
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1_000);
+    restoreNow = () => now.mockRestore();
+    const onText = vi.fn();
+    const onError = vi.fn();
+    const onPartial = vi.fn();
+    const onMetrics = vi.fn();
+    const { dictation, processor } = alwaysDictation({ onText, onError, onPartial, onMetrics });
+
+    await dictation.arm();
+    feedSpeech(processor);
+    now.mockReturnValue(3_000);
+    for (let i = 0; i < 4; i++) feedSilence(processor);
+
+    await vi.waitFor(() => expect(onMetrics).toHaveBeenCalledWith({ kind: 'falseTrigger' }));
+    expect(onError, '常开模式下没人说话是常态，不能一直刷「没有听清」').not.toHaveBeenCalled();
+    expect(onText).not.toHaveBeenCalled();
+    expect(onPartial).toHaveBeenCalledWith(null);
+    expect(dictation.error.value).toBe('');
+    expect(dictation.listening.value, '误触发之后继续聆听').toBe(true);
+
+    dictation.dispose();
+  });
+
+  it('点按模式的空识别仍然报错（明确的操作要有明确的反馈）', async () => {
+    stubRecognize('');
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1_000);
+    restoreNow = () => now.mockRestore();
+    const onError = vi.fn();
+    const { dictation, processor } = startableDictation({ onError });
+
+    await dictation.start();
+    feedAudio(processor);
+    now.mockReturnValue(1_500);
+    await dictation.stop();
+
+    expect(onError).toHaveBeenCalledWith('没有听清，请再说一次');
+    expect(dictation.recording.value).toBe(false);
+  });
+
+  it('关掉常开：放弃当前语句、放开麦克风并清掉预览', async () => {
+    stubRecognize('叶片有裂纹');
+    const onPartial = vi.fn();
+    const { dictation, processor, stop } = alwaysDictation({ onPartial });
+
+    await dictation.arm();
+    feedSpeech(processor);
+    expect(dictation.recording.value).toBe(true);
+
+    dictation.setAlwaysOn(false);
+    expect(dictation.armed.value).toBe(false);
+    expect(dictation.recording.value).toBe(false);
+    expect(onPartial).toHaveBeenCalledWith(null);
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('排队中的第二句终稿还在飞时，busy 不会被第一句清掉', async () => {
+    // 终稿是排队的（finalChain）：先落地的那一句只能代表自己结束，
+    // 按「单次调用结束」清 busy 会让按钮的「…」提前消失、:disabled 提前解除
+    const pending: Array<(response: Response) => void> = [];
+    installFileReader();
+    vi.stubGlobal('fetch', vi.fn((_input: RequestInfo | URL) => new Promise<Response>((resolve) => {
+      pending.push(resolve);
+    })));
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1_000);
+    restoreNow = () => now.mockRestore();
+    const onText = vi.fn();
+    const { dictation, processor } = alwaysDictation({ onText });
+
+    await dictation.arm();
+    feedSpeech(processor);
+    now.mockReturnValue(2_000);
+    for (let i = 0; i < 4; i++) feedSilence(processor);
+    await vi.waitFor(() => expect(pending.length).toBe(1));
+    expect(dictation.busy.value).toBe(true);
+
+    // 第二句在第一句的终稿仍在飞的时候起、结束 → 它的终稿排队
+    now.mockReturnValue(3_000);
+    feedSpeech(processor);
+    now.mockReturnValue(5_000);
+    for (let i = 0; i < 4; i++) feedSilence(processor);
+    await vi.waitFor(() => expect(dictation.recording.value).toBe(false));
+
+    pending[0]?.(new Response(JSON.stringify({ text: '第一句', seconds: 1 }), { status: 200 }));
+    // 等第二句的请求真的发出去——那说明第一句的 finally 已经跑过了
+    await vi.waitFor(() => expect(pending.length).toBe(2));
+    expect(dictation.busy.value, '第二句的终稿仍在飞').toBe(true);
+
+    pending[1]?.(new Response(JSON.stringify({ text: '第二句', seconds: 1 }), { status: 200 }));
+    await vi.waitFor(() => expect(dictation.busy.value).toBe(false));
+    expect(onText).toHaveBeenCalledTimes(2);
+    dictation.dispose();
+  });
+
+  it('被取消后排队的终稿不再发识别请求', async () => {
+    // 过期判定必须在**发请求之前**：wait 之后才判的话，一段已经没有去处的录音
+    // 照样会白白付一次 ASR 调用（结果回来也只会被丢弃）
+    const pending: Array<(response: Response) => void> = [];
+    installFileReader();
+    const fetchMock = vi.fn((_input: RequestInfo | URL) => new Promise<Response>((resolve) => {
+      pending.push(resolve);
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1_000);
+    restoreNow = () => now.mockRestore();
+    const { dictation, processor } = alwaysDictation({ onText: vi.fn() });
+
+    await dictation.arm();
+    feedSpeech(processor);
+    now.mockReturnValue(2_000);
+    for (let i = 0; i < 4; i++) feedSilence(processor);
+    await vi.waitFor(() => expect(pending.length).toBe(1));
+
+    // 第二句结束、终稿排队，此时运营把常开聆听关掉
+    now.mockReturnValue(3_000);
+    feedSpeech(processor);
+    now.mockReturnValue(5_000);
+    for (let i = 0; i < 4; i++) feedSilence(processor);
+    await vi.waitFor(() => expect(dictation.recording.value).toBe(false));
+    dictation.setAlwaysOn(false);
+
+    pending[0]?.(new Response(JSON.stringify({ text: '第一句', seconds: 1 }), { status: 200 }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(fetchMock, '作废的终稿不该再打一次识别接口').toHaveBeenCalledTimes(1);
+  });
+
+  it('插话判错（终稿回空）另记一笔：门限敢不敢开低就看这个数', async () => {
+    // 打断判错的代价是「把回答掐了、又没有新问题」。它同时也是一次空识别，
+    // 所以既计 falseTriggers（总数）又计 bargeInRejected（子集），与「语句数 = 各种结束原因之和」同一套口径
+    stubRecognize('   ');
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1_000);
+    restoreNow = () => now.mockRestore();
+    const onMetrics = vi.fn();
+    const { dictation, processor } = alwaysDictation({ onMetrics });
+
+    await dictation.arm();
+    dictation.setBargeIn(true);
+    dictation.setSuppressed(true);
+    for (let i = 0; i < BARGEIN_BLOCKS; i++) feedSmall(processor, 0.2); // → 判出插话
+    now.mockReturnValue(3_000);
+    for (let i = 0; i < 4; i++) feedSilence(processor);
+
+    await vi.waitFor(() => expect(onMetrics).toHaveBeenCalledWith({ kind: 'bargeInRejected' }));
+    expect(onMetrics).toHaveBeenCalledWith({ kind: 'falseTrigger' });
+    dictation.dispose();
+  });
+
+  it('点按起句的语句结束后照样收麦（即使常开开关是开着的）', async () => {
+    // 常开开关开着、但自动 arm 没成功（典型：speechReady=false 被门禁挡住）时，
+    // 参观者手点麦克风走的是点按路径。若按「当前开关」判断，这一句之后麦克风就不关了，
+    // 页面会在这台没有语音服务的机器上悄悄进入常开聆听，之后每阵噪声都打一次 ASR 拿 503
+    const stop = vi.fn();
+    const getUserMedia = vi.fn(
+      () => Promise.resolve({ getTracks: () => [{ stop }] } as unknown as MediaStream),
+    );
+    const { processor } = installBrowser(getUserMedia);
+    const dictation = useDictation({ onText: vi.fn() });
+    dictation.setAlwaysOn(true);
+    expect(dictation.armed.value, '先确认 arming 跟这里的场景无关').toBe(false);
+
+    installFileReader();
+    vi.stubGlobal('fetch', vi.fn(async () =>
+      new Response(JSON.stringify({ text: '叶片有裂纹', seconds: 1 }), { status: 200 })));
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1_000);
+    restoreNow = () => now.mockRestore();
+
+    await dictation.start();
+    expect(dictation.armed.value).toBe(true);
+    feedSpeech(processor);
+    now.mockReturnValue(1_800);
+    await dictation.stop();
+
+    expect(dictation.armed.value, '点按起句结束就该收麦').toBe(false);
+    expect(dictation.listening.value).toBe(false);
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(dictation.recording.value).toBe(false);
+  });
+
+  it('开麦被拒只报一次错，后续手势重试不再刷运营视图', async () => {
+    // arm 成功前每次手势都会重试（权限弹窗要求用户激活）：被拒的机器上就是每次点屏幕
+    // 都失败一次。同一条错反复灌进 chat.errors（上限 20 条）会把真正的故障挤出去
+    const getUserMedia = vi.fn(() => Promise.reject(new Error('Permission denied')));
+    installBrowser(getUserMedia);
+    const onError = vi.fn();
+    const dictation = useDictation({ onError });
+    dictation.setAlwaysOn(true);
+
+    await dictation.arm();
+    await dictation.arm();
+    await dictation.arm();
+
+    expect(getUserMedia, '每次都要真的重试').toHaveBeenCalledTimes(3);
+    expect(onError, '但同一个原因只报一次').toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledWith('Permission denied');
+    expect(dictation.error.value, '错误本身仍留在状态里').toBe('Permission denied');
+    dictation.dispose();
+  });
+
+  it('常开模式下不再有「开麦后没人说话」的超时收回', async () => {
+    // 点按模式下 6 秒无声会收回麦克风；常开聆听没有「录音开始」这个概念，
+    // 对应的动作是继续听下去——否则参观者站在屏幕前想一会儿就被收走了话筒
+    vi.useFakeTimers();
+    stubRecognize('叶片有裂纹');
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1_000);
+    restoreNow = () => now.mockRestore();
+    const onError = vi.fn();
+    // fake timers 必须先于 installBrowser：window.setInterval 在 stub 时从 globalThis 抓取
+    const { dictation, processor } = alwaysDictation({ onError });
+
+    await dictation.arm();
+    now.mockReturnValue(1_000 + VAD_NO_SPEECH_MS * 5);
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(dictation.armed.value, '麦克风必须还开着').toBe(true);
+    processor.onaudioprocess = null;
+    dictation.dispose();
+  });
+
+  /**
+   * 底噪自适应（§5 S1）：采了必须真的用上。
+   *
+   * <p>修的正是「采了不用」——底噪一直在上报，而 `VAD_SPEECH_RMS` 到用的时候仍是常量，
+   * 于是展厅底噪一上来，每一阵空调声都当成有人说话。
+   */
+  describe('底噪自适应', () => {
+    it('底噪抬上来之后阈值跟着抬，但一步都不越过上界（不许把参观者挡在外面）', async () => {
+      // 这条是「宁可误触发也不能聋」的回归：底噪 0.019（低于常量地板、本身不该起句）持续存在时，
+      // 阈值会从 0.02 抬到 0.019×1.5 ≈ 0.028，**但正常说话（0.04）必须进得来**。
+      // 旧口径（系数 3、上限 0.08）下这里阈值是 0.057，0.04 的说话永远起不了句——
+      // 表现是「麦克风没反应」，而且底噪上报样本同时掉到 0，运营看不出阈值已经顶死。
+      const onMetrics = vi.fn();
+      const { dictation, processor } = alwaysDictation({ onMetrics });
+
+      await dictation.arm();
+      for (let i = 0; i < 400; i++) feedSilence(processor, 0.019);
+      expect(dictation.recording.value, '底噪本身不该起句').toBe(false);
+
+      feedSmall(processor, 0.04, 4096);
+      expect(dictation.recording.value, '正常说话（0.04）必须起得了句').toBe(true);
+
+      const thresholds = onMetrics.mock.calls
+        .map((c) => (c[0] as DictationMetric))
+        .filter((e): e is { kind: 'threshold'; rms: number } => e.kind === 'threshold')
+        .map((e) => e.rms);
+      expect(Math.max(...thresholds), '自适应确实在干活').toBeGreaterThan(VAD_SPEECH_RMS);
+      expect(Math.max(...thresholds), '但一步都没越过上界').toBeLessThanOrEqual(VAD_ADAPT_MAX_RMS);
+      dictation.dispose();
+    });
+
+    it('安静环境下阈值不会掉到常量以下（常量地板是下限）', async () => {
+      const onMetrics = vi.fn();
+      const { dictation, processor } = alwaysDictation({ onMetrics });
+
+      await dictation.arm();
+      for (let i = 0; i < 100; i++) feedSilence(processor, 0.002);
+      // 底噪极低：阈值必须仍是 VAD_SPEECH_RMS，而不是跟着往下压（压下去就开始误触发）
+      const thresholds = onMetrics.mock.calls
+        .map((c) => (c[0] as DictationMetric))
+        .filter((e): e is { kind: 'threshold'; rms: number } => e.kind === 'threshold');
+      expect(thresholds.length).toBeGreaterThan(0);
+      expect(Math.min(...thresholds.map((e) => e.rms))).toBe(VAD_SPEECH_RMS);
+
+      // 常量口算得到的那一档仍然算人声
+      feedSmall(processor, VAD_SPEECH_RMS * 1.05);
+      expect(dictation.recording.value).toBe(true);
+      dictation.dispose();
+    });
+
+    it('vadStep 的阈值可以外传：同一块在两个阈值下判决不同', () => {
+      const loud = VAD_SPEECH_RMS * 1.5; // 0.03：常量口径下算人声，抬到上界就不算
+      const init = () => ({ speechSeen: false, audible: false, silentMs: 0 });
+      expect(vadStep(init(), loud, 256).speechSeen, '常量口径下算人声').toBe(true);
+      expect(
+        vadStep(init(), loud, 256, VAD_ADAPT_MAX_RMS).speechSeen,
+        '阈值抬到上界之后同一块就不算了',
+      ).toBe(false);
+    });
+  });
+
+  /**
+   * 疑似漏断（§5 S3）：P1 要的三组现场数据里唯一还没出口的那组。
+   *
+   * <p>「一句话被静音阈值截成两句」在计数上看不出来：语句数只多了一条，
+   * 与「参观者换了个人接着说」在数据上长得一模一样。区别在**时间**——被截断的两段挨得极近。
+   */
+  describe('疑似漏断', () => {
+    it('自动收尾后窗口内又起一句：记一次', async () => {
+      stubRecognize('叶片有裂纹');
+      const now = vi.spyOn(performance, 'now').mockReturnValue(1_000);
+      restoreNow = () => now.mockRestore();
+      const onText = vi.fn();
+      const onMetrics = vi.fn();
+      const { dictation, processor } = alwaysDictation({ onText, onMetrics });
+
+      await dictation.arm();
+      feedSpeech(processor);
+      now.mockReturnValue(2_000);
+      for (let i = 0; i < 4; i++) feedSilence(processor);
+      await vi.waitFor(() => expect(onText).toHaveBeenCalledTimes(1));
+
+      const truncations = () =>
+        onMetrics.mock.calls.filter((c) => (c[0] as DictationMetric).kind === 'truncationSuspected').length;
+      expect(truncations(), '这一句是正常的停顿结束').toBe(0);
+
+      now.mockReturnValue(2_000 + TRUNCATION_WINDOW_MS - 1);
+      feedSpeech(processor);
+      expect(truncations(), '收尾判决后 1.5 秒内又起一句 = 上一句多半被截断了').toBe(1);
+
+      now.mockReturnValue(2_000 + TRUNCATION_WINDOW_MS + 1_500); // 先让这一句够长，再收尾
+      for (let i = 0; i < 4; i++) feedSilence(processor);
+      await vi.waitFor(() => expect(onText).toHaveBeenCalledTimes(2));
+      now.mockReturnValue(2_000 + TRUNCATION_WINDOW_MS * 10);
+      feedSpeech(processor);
+      expect(truncations(), '窗口之外的下一句就是下一位参观者').toBe(1);
+
+      dictation.dispose();
+    });
+
+    it('上一句的终稿是空的（噪声误触发）不算漏断', async () => {
+      // 嘈杂展厅里噪声触发也会「自动收尾后马上又起一句」，按时间判会把漏断率顶到接近 100%，
+      // 而运营会据此把 VAD_SILENCE_MS 越调越长——上一句根本没识出文字，就不是被截断的话
+      stubRecognize('   ');
+      const now = vi.spyOn(performance, 'now').mockReturnValue(1_000);
+      restoreNow = () => now.mockRestore();
+      const onMetrics = vi.fn();
+      const { dictation, processor } = alwaysDictation({ onMetrics });
+
+      await dictation.arm();
+      feedSpeech(processor);
+      now.mockReturnValue(2_000);
+      for (let i = 0; i < 4; i++) feedSilence(processor);
+      await vi.waitFor(() => expect(onMetrics).toHaveBeenCalledWith({ kind: 'falseTrigger' }));
+
+      now.mockReturnValue(2_000 + TRUNCATION_WINDOW_MS - 1);
+      feedSpeech(processor);
+      expect(
+        onMetrics.mock.calls.filter((c) => (c[0] as DictationMetric).kind === 'truncationSuspected'),
+        '上一句回空 = 那阵动静不是话，谈不上被截断',
+      ).toHaveLength(0);
+      dictation.dispose();
+    });
+
+    it('插话起的那一句不算漏断（主动打断与静音阈值无关）', async () => {
+      stubRecognize('叶片有裂纹');
+      const now = vi.spyOn(performance, 'now').mockReturnValue(1_000);
+      restoreNow = () => now.mockRestore();
+      const onMetrics = vi.fn();
+      const { dictation, processor } = alwaysDictation({ onMetrics });
+
+      await dictation.arm();
+      feedSpeech(processor);
+      now.mockReturnValue(2_000);
+      for (let i = 0; i < 4; i++) feedSilence(processor);
+      await vi.waitFor(() => expect(onMetrics).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'final' })));
+
+      // 落在窗口内、上一句也确实识出了文字，唯一挡下这次计数的就是「这句是插话起的」
+      now.mockReturnValue(2_000 + 100);
+      dictation.setBargeIn(true);
+      dictation.setSuppressed(true);
+      feedSmall(processor, 0.2, 4096);
+      feedSmall(processor, 0.2, 4096);
+
+      expect(onMetrics).toHaveBeenCalledWith({ kind: 'bargeIn' });
+      expect(
+        onMetrics.mock.calls.filter((c) => (c[0] as DictationMetric).kind === 'truncationSuspected'),
+      ).toHaveLength(0);
+      dictation.dispose();
+    });
+  });
+
+  /**
+   * 终稿延迟与音频秒数（§5 S4 / S8）：P2 的三段基线里，第一段就靠它。
+   *
+   * <p>拆成三段上报是刻意的（§4 P2 修订 1）：只有一个「说完→首音」的总数，超标了也不知道
+   * 该优化 VAD 的停顿阈值、识别往返，还是合成的首包。
+   */
+  describe('终稿延迟与音频秒数', () => {
+    it('说完→收尾、说完→终稿、服务端耗时与音频秒数各自上报', async () => {
+      installFileReader();
+      const fetchMock = vi.fn(async () =>
+        new Response(JSON.stringify({ text: '叶片有裂纹', seconds: 1.28, elapsedMs: 700 }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }));
+      vi.stubGlobal('fetch', fetchMock);
+      const now = vi.spyOn(performance, 'now').mockReturnValue(1_000);
+      restoreNow = () => now.mockRestore();
+      const onText = vi.fn();
+      const onMetrics = vi.fn();
+      const { dictation, processor } = alwaysDictation({ onText, onMetrics });
+
+      await dictation.arm();
+      feedSpeech(processor); // 最后一块人声 = 1_000，「说完」从这一刻算
+      now.mockReturnValue(2_500); // 停顿 1.5 秒 → 收尾判决
+      for (let i = 0; i < 4; i++) feedSilence(processor);
+      now.mockReturnValue(3_000); // 识别往返 500ms
+      await vi.waitFor(() => expect(onText).toHaveBeenCalledTimes(1));
+
+      expect(onMetrics).toHaveBeenCalledWith({
+        kind: 'final',
+        endDelayMs: 1_500, // 说完 → 收尾判决
+        latencyMs: 2_000, // 说完 → 终稿文本
+        serverMs: 700, // 服务端自己量的那一段（两者之差就是浏览器侧开销）
+        audioMs: 1_280, // 1 块人声 + 4 块静音 = 5 × 256ms
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      dictation.dispose();
+    });
+
+    it('终稿失败不报延迟：超时那种会把均值带偏（与分段延迟同一口径）', async () => {
+      installFileReader();
+      vi.stubGlobal('fetch', vi.fn(async () => {
+        throw new Error('断网');
+      }));
+      const now = vi.spyOn(performance, 'now').mockReturnValue(1_000);
+      restoreNow = () => now.mockRestore();
+      const onError = vi.fn();
+      const onMetrics = vi.fn();
+      const { dictation, processor } = alwaysDictation({ onError, onMetrics });
+
+      await dictation.arm();
+      feedSpeech(processor);
+      now.mockReturnValue(3_000);
+      for (let i = 0; i < 4; i++) feedSilence(processor);
+      await vi.waitFor(() => expect(onError).toHaveBeenCalledWith('断网'));
+
+      expect(onMetrics.mock.calls.map((c) => (c[0] as DictationMetric).kind)).not.toContain('final');
+      dictation.dispose();
+    });
+  });
+});
+
+describe('joinPartials', () => {
+  it('两段中文之间不补空格（补了会把「叶片有 裂纹」摆到参观者面前）', () => {
+    expect(joinPartials(['叶片有', '裂纹需要检查'])).toBe('叶片有裂纹需要检查');
+  });
+
+  it('拉丁文本相邻时补空格，避免连成一个词', () => {
+    expect(joinPartials(['The machine', 'Please stand by'])).toBe('The machine Please stand by');
+  });
+
+  it('中英混排的边界补空格', () => {
+    expect(joinPartials(['展区是 PV-Clean', '它是自动清洗设备'])).toBe('展区是 PV-Clean 它是自动清洗设备');
+  });
+
+  it('边界已有标点时不再补空格', () => {
+    expect(joinPartials(['叶子。', '我们走吧'])).toBe('叶子。我们走吧');
+  });
+
+  it('每段先去掉首尾空白（识别结果常带前导空格，留着会让预览起伏）', () => {
+    expect(joinPartials(['  叶片有  ', ' 裂纹  '])).toBe('叶片有裂纹');
+  });
+
+  it('空段与纯空白段被跳过（识别回空的那一段不该在预览里留个空格）', () => {
+    expect(joinPartials(['', '   ', '叶片'])).toBe('叶片');
+    expect(joinPartials([])).toBe('');
   });
 });
 

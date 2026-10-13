@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.znwd.hostess.analytics.Analytics;
 import com.znwd.hostess.audio.DisabledSpeechModel;
 import com.znwd.hostess.audio.SpeechException;
 import com.znwd.hostess.audio.SpeechModel;
@@ -34,6 +35,9 @@ import com.znwd.hostess.http.RateLimiter;
  *
  * <p>合成按句调用（前端切片），因此这里有独立于问答的限流与一份结果缓存：展厅里同一句讲解词
  * 会被反复用到，命中缓存就把这次外部调用与首句延迟一起省掉。
+ *
+ * <p>第二条纯增量的路径是 {@code POST /api/speech/metrics}：底噪、VAD 判定、分段延迟这些量
+ * 只在前端看得见，靠它汇进 {@code /api/stats}，运营才有得看（第 3 档的声学实测报告）。
  */
 @RestController
 public class SpeechController {
@@ -49,20 +53,26 @@ public class SpeechController {
     private static final String UPSTREAM_FAILED_MESSAGE = "语音服务暂时不可用（详见服务端日志）";
 
     private final SpeechModel speech;
-    private final RateLimiter chatRateLimiter;
+    private final RateLimiter asrRateLimiter;
+    private final RateLimiter metricsRateLimiter;
     private final RateLimiter synthRateLimiter;
     private final LruCache<byte[]> synthCache;
+    private final Analytics analytics;
     private final AppProperties props;
 
     public SpeechController(SpeechModel speech,
-                            @Qualifier("chatRateLimiter") RateLimiter chatRateLimiter,
+                            @Qualifier("asrRateLimiter") RateLimiter asrRateLimiter,
+                            @Qualifier("speechMetricsRateLimiter") RateLimiter metricsRateLimiter,
                             @Qualifier("speechSynthRateLimiter") RateLimiter synthRateLimiter,
                             @Qualifier("speechSynthCache") LruCache<byte[]> synthCache,
+                            Analytics analytics,
                             AppProperties props) {
         this.speech = speech;
-        this.chatRateLimiter = chatRateLimiter;
+        this.asrRateLimiter = asrRateLimiter;
+        this.metricsRateLimiter = metricsRateLimiter;
         this.synthRateLimiter = synthRateLimiter;
         this.synthCache = synthCache;
+        this.analytics = analytics;
         this.props = props;
     }
 
@@ -127,8 +137,11 @@ public class SpeechController {
         }
         // 同 synthesize：先判入参形状，再看服务开不开（理由见上）
         requireEnabled();
-        // 识别与提问同配额：一次语音提问就是一次提问，不该绕开 /api/chat 的限流
-        limit(chatRateLimiter, request);
+        // 识别走自己的桶，与 /api/chat 的配额分立。旧版注释「一次语音提问就是一次提问」在点按式
+        // 录音下成立，常开聆听下不成立：滚动的分段识别一次讲话就要连打多次 recognize，与提问共桶会
+        // 瞬间把 30/min 打满、把真正的提问饿死。代价是识别不再受提问配额约束（识别本身很便宜、
+        // 且不落库），提问仍由 /api/chat 自己的桶把关。
+        limit(asrRateLimiter, request);
         long started = System.currentTimeMillis();
         SpeechModel.Recognition recognition;
         try {
@@ -151,6 +164,31 @@ public class SpeechController {
                 parsed.value().length, recognition.seconds(), recognition.text().length(),
                 out.get("elapsedMs"));
         return out;
+    }
+
+    /**
+     * 声学遥测：前端把本地只能观测到的量（底噪 RMS、VAD 判定、分段延迟）累加成**增量计数**批量送上来，
+     * 后端只管相加（口径统一在 {@code Analytics#recordSpeech}）。
+     *
+     * <p>两条刻意的「不挂」：
+     * <ul>
+     *   <li><b>不挂 {@link #requireEnabled()}</b>：{@code AUDIO_PROVIDER=none} 时识别不可用，
+     *       但「前端根本没能开麦/根本没配对」正是运营最需要看到的结论，跟着一起关掉等于把唯一的证据也删了；</li>
+     *   <li><b>不挂管理口令</b>：运营面板没打开时数据同样要落库，否则统计变成「只在有人看的时候才准」。
+     *       代价用限流 + 字段白名单 + 路径体积闸门兜住——它写的是没人读也不亏的计数器。</li>
+     * </ul>
+     */
+    @PostMapping("/api/speech/metrics")
+    public Map<String, Object> metrics(@RequestBody(required = false) Object body,
+                                       HttpServletRequest request) {
+        SpeechParser.Result<Map<String, Double>> parsed = SpeechParser.metrics(body);
+        if (!parsed.ok()) {
+            throw ApiException.validation(SpeechParser.message(parsed.reason(), props.audioMaxUploadBytes(),
+                    props.audioMaxChars()));
+        }
+        limit(metricsRateLimiter, request);
+        analytics.recordSpeech(parsed.value());
+        return Map.of("ok", true);
     }
 
     private byte[] synthesizeOrFail(String text) {

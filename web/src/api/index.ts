@@ -8,7 +8,7 @@
  *   GET  /api/health       运行状态（含 storageAvailable，数据库掉了要能看出来）
  *   POST /api/feedback     点赞/点踩
  *   DELETE /api/sessions/{id}  换人时清会话上下文（带 x-session-token）
- *   语音 POST /api/speech/{synthesize,recognize}
+ *   语音 POST /api/speech/{synthesize,recognize,metrics}（metrics = 声学遥测，无口令、无重试）
  *   管理面（stats/admin/knowledge）统一走 adminRequest，带 authorization 头
  *
  * 拆分后的模块（单向依赖：types ← http ← {stream, admin, speech}）：
@@ -74,4 +74,11 @@ export {
 
 export type { RecognitionResult } from './speech';
 
-export { recognizeSpeech, RECOGNITION_TIMEOUT_MS, synthesizeSpeech, SYNTH_TIMEOUT_MS } from './speech';
+export {
+  recognizeSpeech,
+  RECOGNITION_TIMEOUT_MS,
+  SEGMENT_RECOGNITION_TIMEOUT_MS,
+  sendSpeechMetrics,
+  synthesizeSpeech,
+  SYNTH_TIMEOUT_MS,
+} from './speech';

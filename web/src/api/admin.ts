@@ -65,6 +65,13 @@ export interface AdminStats {
   errors?: number;
   activeSessions?: number;
   tokens?: { prompt?: number; completion?: number; reasoning?: number; total?: number };
+  /**
+   * 声学遥测（前端上报的增量计数 + 服务端算好的均值）。
+   *
+   * <p>**没上报过就没有这个键**：面板据此决定显不显示整块声学行，否则没开常开聆听的部署上
+   * 会一直挂着一排 0，看着像功能没生效。
+   */
+  speech?: Record<string, number>;
   [key: string]: unknown;
 }
 

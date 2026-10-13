@@ -9,7 +9,12 @@
  *
  * 绘制顺序有讲究：后发的头发 → 头 → 耳朵 → 五官 → 刘海，这样耳朵不会被头发盖住。
  */
-const props = withDefaults(defineProps<{ state?: 'idle' | 'speaking' | 'thinking' }>(), {
+/**
+ * state 多了 'listening'（常开聆听、麦克风开着但没人说话）：刻意**不给它单独的样式**，
+ * 落到默认的呼吸/眨眼上即可——展厅大屏上「聆听中」和「空闲」的差别肉眼看不出来，
+ * 为它加动画只会让讲解员在没人说话时也一直动，反而像出了故障。
+ */
+const props = withDefaults(defineProps<{ state?: 'idle' | 'speaking' | 'thinking' | 'listening' }>(), {
   state: 'idle',
 });
 

@@ -30,7 +30,7 @@
 | 401 | `unauthorized` | 管理接口口令不对；或未配 `ADMIN_TOKEN` 且 `REQUIRE_ADMIN_TOKEN` 仍为默认 `true` |
 | 404 | `not_found` | 路由不存在（「接口不存在」）、会话不存在或已过期 |
 | 413 | `payload_too_large` | 请求体超限（`/api/speech/*` 为 2MB，其余 64KB）；或写请求没有 `Content-Length`（无法判定大小，一律按超限处理） |
-| 429 | `rate_limited` | 超出 `CHAT_RATE_PER_MIN`，额外带 `retryAfterSec` |
+| 429 | `rate_limited` | 超出该接口所在限流桶的配额（见 §限流），额外带 `retryAfterSec` |
 | 500 | `internal_error` | 未预期异常；对外固定「服务内部错误」 |
 | 502 | `speech_failed` | 语音上游（MiMo）报错或超时：前端应当降级到浏览器内置播报，别把它当网络抖动重试 |
 | 503 | `speech_unavailable` | 语音未启用（`AUDIO_PROVIDER=none`）或拿不到 base-url |
@@ -46,9 +46,17 @@
 
 ### 限流
 
-按客户端 IP 的**滑动窗口**计数，默认 30 次/分钟（`CHAT_RATE_PER_MIN`），作用于两个 chat 接口与 `POST /api/speech/recognize`——一次语音提问就是一次提问，不该绕开配额。默认使用连接对端 `remoteAddr`；仅 `TRUST_FORWARDED_FOR=true` 时才取 `x-forwarded-for` 的第一个地址。
+按客户端 IP 的**滑动窗口**计数，各接口各用各的桶，`429` 时额外带 `retryAfterSec`：
 
-`POST /api/speech/synthesize` 单独计数，默认 60 次/分钟（`AUDIO_SYNTH_RATE_PER_MIN`）：一次回答要按句合成多段，跟 chat 共用配额会被一条长回答吃光。
+| 桶 | 默认 | 环境变量 | 作用于 |
+| --- | --- | --- | --- |
+| 问答 | 30/分钟 | `CHAT_RATE_PER_MIN` | `POST /api/chat`、`POST /api/chat/stream` |
+| 反馈 | 10/分钟 | `FEEDBACK_RATE_PER_MIN` | `POST /api/feedback`（无鉴权、写的是运营统计，配额比问答严） |
+| 合成 | 60/分钟 | `AUDIO_SYNTH_RATE_PER_MIN` | `POST /api/speech/synthesize`——一次回答要按句合成多段，跟 chat 共用配额会被一条长回答吃光 |
+| 识别 | 120/分钟 | `AUDIO_ASR_RATE_PER_MIN` | `POST /api/speech/recognize`——**不与问答共用**：常开聆听下一次讲话要按 2 秒切片连打多次 `recognize`，共用会让访客真正的提问饿死 |
+| 遥测 | 30/分钟 | `AUDIO_METRICS_RATE_PER_MIN` | `POST /api/speech/metrics`（名义 15 秒一批 = 4/分钟，余量留给页面被节流后的集中补报） |
+
+默认使用连接对端 `remoteAddr`；仅 `TRUST_FORWARDED_FOR=true` 时才取 `x-forwarded-for` 的第一个地址。
 
 ```json
 { "error": "rate_limited", "message": "too many requests", "retryAfterSec": 12, "requestId": "…" }
@@ -185,6 +193,80 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 
 体积口径：16kHz/单声道/16bit ≈ 32KB/s，base64 后膨胀 4/3。前端录音上限 20 秒（约 640KB 原始、853KB base64），离 2MB 硬上限有一倍余量。
 
+### POST /api/speech/metrics — 声学遥测上报
+
+前端把**只在浏览器里看得见**的量（环境底噪、VAD 判定、分段与终稿耗时、播报期间的回声）累加成增量计数批量送上来，最终汇进 `GET /api/stats` 的 `speech` 段（见下）。常开聆听现场调阈值（`VAD_SPEECH_RMS` / `VAD_SILENCE_MS` / `BARGEIN_FACTOR`）就看这组数。
+
+```json
+{ "utterances": 3, "autoEnds": 2, "falseTriggers": 1, "suspectedTruncations": 1,
+  "noiseFloorSum": 0.14, "noiseSamples": 10, "thresholdSum": 0.2, "thresholdSamples": 10,
+  "segmentCalls": 4, "segmentFailures": 0, "segmentDropped": 1, "segmentAudioMs": 8000,
+  "partialLatencySumMs": 3300, "partialLatencyCount": 4,
+  "finalCalls": 3, "finalEndDelaySumMs": 3000, "finalLatencySumMs": 5400, "finalServerSumMs": 1650,
+  "finalAudioMs": 6000,
+  "firstSentenceCount": 3, "firstSentenceSumMs": 2100, "firstAudioCount": 3, "firstAudioSumMs": 1200,
+  "echoSamples": 40, "echoFloorSum": 1.2, "echoOverCount": 5, "echoFarOverCount": 1,
+  "bargeIns": 0, "bargeInRejected": 0 }
+```
+
+| 键 | 含义 |
+| --- | --- |
+| `utterances` | 语句数（= `autoEnds` + `manualEnds` + 超时结束，超时没有独立计数） |
+| `autoEnds` / `manualEnds` | 停顿自动收尾 / 点按手动结束 |
+| `noSpeechAborts` | 开麦后一直没人说话，超时收回（仅点按模式） |
+| `falseTriggers` | 整段识别回空——环境噪声被当成了说话 |
+| `suspectedTruncations` | **疑似被静音阈值截成两句**（漏断率）。三个条件齐了才计：自动收尾、该句终稿确实识出了文字（回空的是噪声误触发，不是被截断的话）、1.5 秒内又起了一句且那一句不是插话 |
+| `segmentCalls` / `segmentFailures` / `segmentDropped` | 分段识别调用（含失败）/ 失败 / 被并发上限挡下而丢弃 |
+| `segmentAudioMs` | 分段识别的音频时长之和（**计费口径**：ASR 按音频秒计费） |
+| `suppressedAbandons` | 播报期间撤回的语句 |
+| `noiseFloorSum` / `noiseSamples` | 底噪 RMS 之和与采样次数（均值由服务端算） |
+| `thresholdSum` / `thresholdSamples` | **当前生效的**说话阈值（自适应之后）之和与采样次数 |
+| `partialLatencySumMs` / `partialLatencyCount` | 分段识别耗时之和与成功次数 |
+| `finalCalls` | 整段识别返回次数（**失败不计**：超时那种会把均值带偏） |
+| `finalEndDelaySumMs` | 终稿三段之一：说完 → VAD 判出收尾 |
+| `finalLatencySumMs` | 终稿三段之一：说完 → 终稿文本（含上一项） |
+| `finalServerSumMs` | 服务端自己量的识别耗时（与上一项之差就是浏览器侧的开销） |
+| `finalAudioMs` | 整段识别的音频时长之和（计费口径） |
+| `firstSentenceSumMs` / `firstSentenceCount` | 提问发出 → 首句生成（语音终稿与打字提交都计入：量的是回答链路，与问题怎么进来的无关） |
+| `firstAudioSumMs` / `firstAudioCount` | 首句生成 → 首段音频开始播 |
+| `echoSamples` / `echoFloorSum` | 播报期间采到的块数与 RMS 之和（自己的喇叭在麦克风里有多响） |
+| `echoOverCount` / `echoFarOverCount` | 其中越过说话阈值 / 越过插话门限（阈值 × `BARGEIN_FACTOR`）的块数 |
+| `bargeIns` | 判出的插话次数 |
+| `bargeInRejected` | 插话判错的次数（`falseTriggers` 的**子集**：它同时也是一次空识别） |
+
+字段全部可选、都是**增量**（后端只做加法）；未知键、非数值、负数、绝对值超过 `1e6` 一律 `400`。空对象合法。
+
+成功：`200 { "ok": true }`。
+
+两条刻意的取舍：
+
+- **不需要语音启用**：`AUDIO_PROVIDER=none` 时识别不可用，但「前端根本没能开麦」正是运营最需要看到的结论，跟着一起关掉等于把唯一的证据也删了。
+- **不需要管理口令**：运营面板（`?admin=1`）没打开时数据同样要落库，否则统计变成「只在有人看的时候才准」。代价用字段白名单 + 数值校验 + 限流 + `/api/speech/*` 的体积闸门兜住——它写的是没人读也不亏的计数器。
+
+口径上的两个刻意选择：**只报「和」与「次数」，前端不自己算均值**（均值统一在服务端算，面板与接口直连两个入口读到的数必须一致）；**不报峰值/分位数**（那不是加法能算出来的，要它就得换上报协议）。
+
+### 声学遥测在 /api/stats 里的形状
+
+只在**有过上报**时才出现（没开常开聆听的部署上不该挂着一排 0）。原始计数照原样带出，另加服务端算好的派生值：
+
+```json
+{ "speech": { "utterances": 12, "autoEnds": 9, "manualEnds": 2, "finalCalls": 9,
+              "noiseFloorSum": 0.42, "noiseSamples": 30, "thresholdSum": 0.6, "thresholdSamples": 30,
+              "avgNoiseRms": 0.014, "avgNoiseDb": -37.1, "avgSpeechThreshold": 0.02,
+              "avgPartialLatencyMs": 820.5,
+              "avgFinalEndDelayMs": 1010, "avgFinalLatencyMs": 1340, "avgFinalServerMs": 240,
+              "avgFirstSentenceMs": 700, "avgFirstAudioMs": 420, "asrAudioSec": 96.4,
+              "avgEchoRms": 0.031, "avgEchoDb": -30.2, "echoOverRate": 0.12, "echoFarOverRate": 0.02 } }
+```
+
+- `avgNoiseDb` / `avgEchoDb = 20·log10(均值 RMS)`，没有样本时写 `-120`（远低于任何真实环境，一眼能看出是空的）；
+- `avgSpeechThreshold` 与 `avgNoiseRms` 要**并排看**：它俩的差就是自适应阈值到底有没有在干活；
+- `avgFinalEndDelayMs` / `avgFinalLatencyMs` / `avgFirstSentenceMs` / `avgFirstAudioMs` 是**四段延迟**，验收时限值各不相同（见 `docs/voice-realtime-plan.md` §4 P2）；
+- `echoOverRate` / `echoFarOverRate` 是插话门限该抬多高的直接依据；
+- `asrAudioSec` 是 ASR 的**音频秒**（分段 + 终稿），成本测算按它算而不是按调用次数。
+
+这一组数**不落库**：它是现场调参用的体检数据，进程重启即清零（与问答计数「重启必须还在」的口径不同）。
+
 ## 会话与反馈
 
 ### 会话访问令牌（`X-Session-Token`）
@@ -295,7 +377,7 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 
 ### GET /api/stats（需鉴权）
 
-`uptimeSec`、`chatTotal`、`ragHits`、`llmOnly`、`noHit`、`rewritten`、`uncoveredCount`、`tokens{prompt,completion,reasoning,total,calls}`、`errors`、`activeSessions`、`feedback{up,down}`、`recent[]`。
+`uptimeSec`、`chatTotal`、`ragHits`、`llmOnly`、`noHit`、`rewritten`、`uncoveredCount`、`tokens{prompt,completion,reasoning,total,calls}`、`errors`、`activeSessions`、`feedback{up,down}`、`recent[]`；声学遥测有过上报时多一个 `speech`（形状见「语音」章末，**没有上报就没有这个键**）。
 
 - `noHit` = 知识库未覆盖次数（下一批要补的资料就在这儿）；
 - `tokens.reasoning > 0` 说明上游思考模式没关（又慢又贵）；

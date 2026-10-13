@@ -25,7 +25,7 @@
 
 资源与测试：`resources/{application.yml,schema.sql,openapi.json,META-INF/spring.factories}`；`db/init.sql`（建库建账号）；`eval/retrieval-cases.json`（评测用例）；`src/test/java/.../{knowledge,http,analytics,eval,cli}`（单测 + 三个 CLI 工具：`eval`、`calibrate`、`ingest`）。
 
-前端源码根 `web/src/`：`App.vue`（页面状态与布局）、`api/`（契约、SSE 与语音请求；入口 `api/index.ts`，按 `types`/`http`/`stream`/`admin`/`speech` 拆文件，对外 import 路径不变）、`format.ts`（回答排版：粗体/列表/分段，不产出 HTML）、`composables/useChat.ts`（问答状态机）、`composables/useSpeech.ts`（服务端 TTS 优先、浏览器合成降级）、`composables/useDictation.ts`（录音、重采样与 WAV 编码）、`storage.ts`、`components/{SourcePanel,AdminPanel,KnowledgePanel,DiagnosticsPanel,StageDiagram,AvatarPortrait,AvatarFigure}.vue`（其中 `KnowledgePanel`/`DiagnosticsPanel`/`StageDiagram` 各有对应的 `.spec.ts` 单测）、`styles.css`。
+前端源码根 `web/src/`：`App.vue`（页面状态与布局）、`api/`（契约、SSE 与语音请求；入口 `api/index.ts`，按 `types`/`http`/`stream`/`admin`/`speech` 拆文件，对外 import 路径不变）、`format.ts`（回答排版：粗体/列表/分段，不产出 HTML）、`composables/useChat.ts`（问答状态机）、`composables/useSpeech.ts`（服务端 TTS 优先、浏览器合成降级）、`composables/useDictation.ts`（录音、VAD 与状态机）、`composables/useSegmentStream.ts`（常开聆听的分段识别管线）、`composables/audioPcm.ts`（RMS/重采样/WAV 等共用原语）、`composables/useAcoustics.ts`（声学遥测的本地累加与批量上报）、`storage.ts`、`components/{SourcePanel,AdminPanel,KnowledgePanel,DiagnosticsPanel,StageDiagram,AvatarPortrait,AvatarFigure}.vue`（其中 `KnowledgePanel`/`DiagnosticsPanel`/`StageDiagram` 各有对应的 `.spec.ts` 单测）、`styles.css`。
 
 ## 2. 一次问答的时序
 
@@ -128,7 +128,10 @@ MySQL 表（`resources/schema.sql`，全部 `CREATE TABLE IF NOT EXISTS`）：
 | `api/`（入口 `index.ts`；`types`/`http`/`stream`/`admin`/`speech` 分文件） | 契约类型与调用；SSE 用 `fetch` 流式读取 + 逐帧解析（`EventSource` 只能 GET，提问要放 body）；跨 chunk 半帧重组；封装 TTS/ASR 请求；中文/TS 类型与后端字段一一对应 |
 | `composables/useChat.ts` | 问答状态机：发送、流式增量、失败不抹掉已收到的半句、来源、推荐问题、反馈 |
 | `composables/useSpeech.ts` | 语音播报：服务端 MiMo TTS 优先，失败当场退回浏览器合成；只读回答、流式结束整段读、长文按句切片、开关落 localStorage |
-| `composables/useDictation.ts` | 语音提问：采集 16kHz 单声道 PCM、重采样、拼 WAV，再调用服务端 ASR |
+| `composables/useDictation.ts` | 语音提问：两种模式（点按 / 常开聆听）共用一套采集与 VAD 状态机；底噪自适应阈值、播报期间的回声观察与插话判决也在这里（它才是「谁在听」的判决方） |
+| `composables/useSegmentStream.ts` | 常开聆听的分段识别管线：切片时机（首段 2.8s，其后 2s）、在途闸门、预览拼接、换句/抑制时的整批作废；不碰麦克风与 VAD，也不提交任何东西 |
+| `composables/audioPcm.ts` | 采集与编码的共用原语（RMS、线性重采样、RIFF 打包、预览拼接）。单独成文件是为了让上面两条管线单向引用它，而不是互相引用形成环 |
+| `composables/useAcoustics.ts` | 声学遥测：把只在前端看得见的量累成增量计数，每 15 秒（及切后台/卸载）批量送 `/api/speech/metrics` |
 | `storage.ts` | 浏览器存储的安全读写封装 |
 | `format.ts` | 回答排版：`**粗体**`→加粗片段、`1.`/`·` 列表→悬挂缩进、空行分段；只产出结构交给模板渲染，模型输出里的尖括号只是文字 |
 | `components/AvatarPortrait.vue` | 虚拟形象：立绘优先（`public/avatar-guide.png`），`AvatarFigure.vue`（手写 SVG）兜底；外部只吃 `state` 属性，换 3D/Live2D 只改内部 |

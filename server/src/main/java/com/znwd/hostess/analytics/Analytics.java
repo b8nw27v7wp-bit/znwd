@@ -32,6 +32,9 @@ public class Analytics {
     public static final int MAX_LOGS = 500;
     public static final int MAX_FEEDBACK = 500;
 
+    /** 声学遥测单项的上限，与 {@code SpeechParser.METRIC_MAX_VALUE} 同一口径（这里是最后一道防线） */
+    private static final double SPEECH_METRIC_MAX = 1e6;
+
     @Nullable
     private final ChatLogMapper chatLogMapper;
     @Nullable
@@ -62,6 +65,14 @@ public class Analytics {
     private long noHits;
     private long rewritten;
     private final TokenTotals tokens = new TokenTotals();
+    /**
+     * 声学遥测的增量累加器（键 → 和），见 {@link #recordSpeech}。
+     *
+     * <p>刻意**不落库、也不在 {@link #restore()} 里清空**：它是给展厅现场调阈值用的体检数据，
+     * 没有对应的表；而 restore() 在「库中途恢复」时也会被调到，在那里清零会把本次运行攒的现场样本
+     * 一起抹掉。进程重启自然归零——这与问答计数「重启必须还在」的口径不同，别顺手把它也接进库。
+     */
+    private final Map<String, Double> speech = new LinkedHashMap<>();
 
     /** 库不可用时跳过写库（不白等 connection-timeout）；测试里传 null 表示"照常尝试" */
     private boolean dbWritable() {
@@ -166,6 +177,33 @@ public class Analytics {
         }
     }
 
+    /**
+     * 声学遥测：前端上报的增量计数（底噪、语句数、分段调用次数等只发生在浏览器里的量）。
+     *
+     * <p>逐项 clamp 而不是直接相加：接口无鉴权，一条 {@code NaN}/负数进来就会把这个计数器永久污染
+     * （内存计数没有回退路径，重启前运营面板读到的都是错的）；上限只卡在**单次上报的每个值**上，
+     * 拦住的是「一条 1e18 把面板顶到读不出来」。
+     *
+     * <p>**累加结果本身不封顶，这是有意的**：底噪采样在展厅里约 4 次/秒，连续听 70 小时就会到 1e6，
+     * 而一体机是几个月不重启的——真给总量封顶，`avgNoiseRms`/`avgNoiseDb` 会先失真（和先饱和、
+     * 次数还在涨），比不封顶更难排查。防刷靠接口自己的配额（{@code AUDIO_METRICS_RATE_PER_MIN}）
+     * 与体积闸门，那两道是硬的；这里只是不让一条坏数据把计数变脏。
+     * 与 logChat 同一把 this 锁——可见性口径见 {@link #stats(int)}。
+     */
+    public synchronized void recordSpeech(Map<String, Double> deltas) {
+        if (deltas == null || deltas.isEmpty()) {
+            return;
+        }
+        for (Map.Entry<String, Double> entry : deltas.entrySet()) {
+            String key = entry.getKey();
+            Double raw = entry.getValue();
+            if (key == null || raw == null || !Double.isFinite(raw) || raw <= 0) {
+                continue;
+            }
+            speech.merge(key, Math.min(raw, SPEECH_METRIC_MAX), Double::sum);
+        }
+    }
+
     /** 未覆盖问题清单（新→旧），供运营补资料 */
     public synchronized List<UncoveredEntry> uncoveredList(int limit) {
         int size = Math.min(Math.max(limit, 0), uncovered.size());
@@ -205,8 +243,68 @@ public class Analytics {
         out.put("errors", errors);
         out.put("activeSessions", activeSessions);
         out.put("feedback", Map.of("up", up, "down", down));
+        // 没有任何一次上报就不出这个键：运营面板据此决定要不要显示整块声学行，
+        // 否则没开常开聆听的部署上会一直挂着一排 0，看着像功能没生效
+        if (!speech.isEmpty()) {
+            out.put("speech", speechStats());
+        }
         out.put("recent", recent);
         return out;
+    }
+
+    /**
+     * 声学遥测的对外形状：原始计数 + 由它们算出的均值。
+     *
+     * <p>均值在服务端算而不是让面板自己除：口径只留一份（前端只报「和」与「次数」，
+     * 现场调阈值时两个入口读到的数一定一致）。无样本时的口径也写死——底噪 -120dB
+     * 远低于任何真实环境，看一眼就知道「还没有样本」，比 0 不容易被误读成「静音室」。
+     *
+     * <p>派生值分五组，各自的用途写在各行注释里：底噪 / 阈值、分段、终稿三段延迟、
+     * 播报期间的回声与插话、以及 ASR 的音频秒（§5 S8 的成本口径）。
+     */
+    private Map<String, Object> speechStats() {
+        double noiseSum = sum("noiseFloorSum");
+        double noiseCount = sum("noiseSamples");
+        Map<String, Object> out = new LinkedHashMap<>(speech);
+        // —— 底噪与它换来的阈值：两个数必须并排看，才看得出「采了有没有用」
+        out.put("avgNoiseRms", round(avg(noiseSum, noiseCount), 4));
+        out.put("avgNoiseDb", db(noiseSum, noiseCount));
+        out.put("avgSpeechThreshold", round(avg(sum("thresholdSum"), sum("thresholdSamples")), 4));
+        // —— 分段识别
+        out.put("avgPartialLatencyMs", round(avg(sum("partialLatencySumMs"), sum("partialLatencyCount")), 1));
+        // —— 终稿三段（§4 P2 修订 1：拆开记，超标了才知道该优化谁）
+        double finals = sum("finalCalls");
+        out.put("avgFinalEndDelayMs", round(avg(sum("finalEndDelaySumMs"), finals), 1));
+        out.put("avgFinalLatencyMs", round(avg(sum("finalLatencySumMs"), finals), 1));
+        out.put("avgFinalServerMs", round(avg(sum("finalServerSumMs"), finals), 1));
+        // —— 回答链路的另两段（终稿→首句、首句→首音），由 App 打点
+        out.put("avgFirstSentenceMs", round(avg(sum("firstSentenceSumMs"), sum("firstSentenceCount")), 1));
+        out.put("avgFirstAudioMs", round(avg(sum("firstAudioSumMs"), sum("firstAudioCount")), 1));
+        // —— 播报期间的回声（P3a-1）：插话门限该抬多高，就看这几个比例
+        double echoCount = sum("echoSamples");
+        double echoSum = sum("echoFloorSum");
+        out.put("avgEchoRms", round(avg(echoSum, echoCount), 4));
+        out.put("avgEchoDb", db(echoSum, echoCount));
+        out.put("echoOverRate", round(avg(sum("echoOverCount"), echoCount), 4));
+        out.put("echoFarOverRate", round(avg(sum("echoFarOverCount"), echoCount), 4));
+        // —— 成本口径：ASR 按音频秒计费，只报调用次数算不出账
+        out.put("asrAudioSec", round((sum("segmentAudioMs") + sum("finalAudioMs")) / 1000, 1));
+        return out;
+    }
+
+    private double sum(String key) {
+        return speech.getOrDefault(key, 0.0);
+    }
+
+    /** 无样本一律给 0；面板据此显示「还没有数据」 */
+    private static double avg(double sum, double count) {
+        return count > 0 ? sum / count : 0;
+    }
+
+    /** RMS 均值转分贝；没有样本（或全零）时给 -120——远低于任何真实环境，一眼就是「没数据」 */
+    private static double db(double sum, double count) {
+        double rms = avg(sum, count);
+        return rms > 0 ? round(20 * Math.log10(rms), 1) : -120;
     }
 
     /** 负反馈汇总，便于知识回流 */

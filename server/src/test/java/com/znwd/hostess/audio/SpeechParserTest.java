@@ -129,4 +129,69 @@ class SpeechParserTest {
         assertEquals(SpeechParser.Reason.AUDIO_TOO_LARGE, result.reason());
         assertTrue(SpeechParser.message(result.reason(), 40, MAX_CHARS).contains("KB"));
     }
+
+    @Test
+    void 声学遥测只收白名单里的有限非负数值() {
+        SpeechParser.Result<Map<String, Double>> ok = SpeechParser.metrics(
+                Map.of("utterances", 3, "noiseFloorSum", 0.12, "noiseSamples", 4));
+        assertTrue(ok.ok());
+        assertEquals(3.0, ok.value().get("utterances").doubleValue());
+        assertEquals(0.12, ok.value().get("noiseFloorSum").doubleValue());
+    }
+
+    @Test
+    void 声学遥测的空对象合法() {
+        // 前端攒不到东西就不该发，但发来了不是错——回空 map，由调用方决定要不要落库
+        SpeechParser.Result<Map<String, Double>> result = SpeechParser.metrics(Map.of());
+        assertTrue(result.ok());
+        assertTrue(result.value().isEmpty());
+    }
+
+    @Test
+    void 声学遥测拒未知字段而不是静默忽略() {
+        // 静默忽略的表现是「面板上这一行永远是 0」，没有报错也没有日志——现场比对才发现
+        for (Object body : new Object[] {
+                Map.of("utterence", 1),          // 拼错一个字母
+                Map.of("utterances", 1, "x", 2),
+        }) {
+            SpeechParser.Result<Map<String, Double>> result = SpeechParser.metrics(body);
+            assertFalse(result.ok(), "应判为不合法：" + body);
+            assertEquals(SpeechParser.Reason.METRICS_UNKNOWN_FIELD, result.reason());
+        }
+    }
+
+    @Test
+    void 声学遥测拒非数值负数与超大值() {
+        for (Object value : new Object[] {
+                "3", true, null, -1, -0.5,
+                SpeechParser.METRIC_MAX_VALUE * 2,
+                Double.POSITIVE_INFINITY, Double.NaN,
+        }) {
+            Map<String, Object> body = new java.util.HashMap<>();
+            body.put("utterances", value);
+            SpeechParser.Result<Map<String, Double>> result = SpeechParser.metrics(body);
+            assertFalse(result.ok(), "应判为不合法：" + value);
+            assertEquals(SpeechParser.Reason.METRICS_BAD_VALUE, result.reason());
+        }
+    }
+
+    @Test
+    void 声学遥测的请求体必须是JSON对象() {
+        SpeechParser.Result<Map<String, Double>> result = SpeechParser.metrics("nope");
+        assertFalse(result.ok());
+        assertEquals(SpeechParser.Reason.BODY_NOT_OBJECT, result.reason());
+    }
+
+    @Test
+    void 白名单里的键都有可读的错误文案() {
+        for (String key : SpeechParser.METRIC_KEYS) {
+            Map<String, Object> body = new java.util.HashMap<>();
+            body.put(key, 0);
+            assertTrue(SpeechParser.metrics(body).ok(), key + " 必须在白名单里");
+        }
+        assertTrue(SpeechParser.message(SpeechParser.Reason.METRICS_BAD_VALUE, MAX_BYTES, MAX_CHARS)
+                .contains("有限"));
+        assertTrue(SpeechParser.message(SpeechParser.Reason.METRICS_UNKNOWN_FIELD, MAX_BYTES, MAX_CHARS)
+                .contains("未知字段"));
+    }
 }

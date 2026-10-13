@@ -158,7 +158,22 @@ public record AppProperties(
              */
             long ttsCacheMaxBytes,
             /** 合成接口的独立限流（次/分钟）：一次提问会合成多句，配额要比 /api/chat 宽 */
-            int synthRatePerMin) {
+            int synthRatePerMin,
+            /**
+             * 识别接口的独立限流（次/分钟）。
+             *
+             * <p>不能与 /api/chat 同桶：常开聆听下一次讲话就要按 2 秒切片连打多次
+             * {@code /api/speech/recognize}，30/min 的问答配额会被瞬间打满，把访客真正的提问饿死
+             * （见 docs/voice-realtime-plan.md 的第 3 档）。默认 120 ≈ 每说话人 30 次/分 + 收尾调用 + 突发余量。
+             */
+            int asrRatePerMin,
+            /**
+             * 声学遥测（{@code POST /api/speech/metrics}）的独立限流（次/分钟）。
+             *
+             * <p>该接口无鉴权、写的是运营统计：名义上 15 秒一批（4/min），30 是给页面被节流后的
+             * 集中补报留的余量。
+             */
+            int metricsRatePerMin) {
     }
 
     /**
@@ -223,6 +238,15 @@ public record AppProperties(
 
     public int audioSynthRatePerMin() {
         return audio == null || audio.synthRatePerMin() <= 0 ? 60 : audio.synthRatePerMin();
+    }
+
+    /** 识别配额：常开聆听按 2 秒切片送识别，一次讲话就有多次调用，默认给到 120 */
+    public int audioAsrRatePerMin() {
+        return audio == null || audio.asrRatePerMin() <= 0 ? 120 : audio.asrRatePerMin();
+    }
+
+    public int audioMetricsRatePerMin() {
+        return audio == null || audio.metricsRatePerMin() <= 0 ? 30 : audio.metricsRatePerMin();
     }
 
     public int audioTtsCacheSize() {

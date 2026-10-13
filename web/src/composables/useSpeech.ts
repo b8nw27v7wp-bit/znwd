@@ -181,6 +181,15 @@ export type SpeechOptions = {
    * interrupted / canceled 是「我们自己停读」的正常语义（换问题、点停读、开新对话），不在这里报。
    */
   onError?: (reason: string) => void;
+  /**
+   * **本答的第一段音频真的响起来了**（每个回答至多一次）。
+   *
+   * <p>它存在的唯一理由是延迟埋点（§4 P2 修订 1 的第三段「首句 → 首段音频」）：
+   * 「合成回来了」与「参观者听见了」是两件事，只有播放器真的起播才算开口。
+   * 服务端引擎在 `play()` 落地时回调，浏览器内置引擎在第一句 `onstart` 时回调——
+   * 两条路径都算，否则降级部署上这一段延迟永远是空的。
+   */
+  onPlaybackStart?: () => void;
 };
 
 export function useSpeech(options: SpeechOptions = {}) {
@@ -242,6 +251,15 @@ export function useSpeech(options: SpeechOptions = {}) {
   let pendingBrowserParts: string[] = [];
   /** 循环在「队列空且未关闭」时挂在这里，feed/end/stop 唤醒 */
   let queueWaiter: (() => void) | null = null;
+  /** 本答的首段音频是否已经报过（每答只报一次，降级路径重播不该让计数翻倍） */
+  let firstAudioReported = false;
+
+  /** 首段音频起播：每个回答只往上报一次，供 App 算「首句 → 首音」那一段延迟 */
+  function notifyPlaybackStart(): void {
+    if (firstAudioReported) return;
+    firstAudioReported = true;
+    options.onPlaybackStart?.();
+  }
 
   function readEnabled(): boolean {
     return readStorage('local', ENABLED_KEY) !== '0';
@@ -340,6 +358,7 @@ export function useSpeech(options: SpeechOptions = {}) {
     fetch1 = null;
     inFlight = null;
     pendingBrowserParts = [];
+    firstAudioReported = false;
   }
 
   /**
@@ -579,9 +598,15 @@ export function useSpeech(options: SpeechOptions = {}) {
       }, PLAYBACK_WATCHDOG_MS);
       playbackWatchdog = watchdog;
       try {
-        void Promise.resolve(element.play()).catch((e: unknown) => {
-          done(new Error(`autoplay-blocked:${e instanceof Error ? e.message : ''}`));
-        });
+        // play() 落地才算「开口」：合成回来与参观者听见了是两件事（见 onPlaybackStart）
+        void Promise.resolve(element.play()).then(
+          () => {
+            if (audio === element) notifyPlaybackStart();
+          },
+          (e: unknown) => {
+            done(new Error(`autoplay-blocked:${e instanceof Error ? e.message : ''}`));
+          },
+        );
       } catch (e) {
         done(new Error(`autoplay-blocked:${e instanceof Error ? e.message : ''}`));
       }
@@ -604,6 +629,8 @@ export function useSpeech(options: SpeechOptions = {}) {
       utter.rate = 1.02;
       utter.pitch = 1;
       if (voice) utter.voice = voice;
+      // 降级路径也要报「开口」：否则没有服务端 TTS 的部署上，第三段延迟永远是空的
+      if (index === 0) utter.onstart = () => notifyPlaybackStart();
       if (index === parts.length - 1) {
         // 以最后一段收尾为准：读完或读错都把状态放回 idle
         utter.onend = () => {

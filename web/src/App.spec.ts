@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount } from '@vue/test-utils';
+import { SEGMENT_FIRST_MS } from './composables/useSegmentStream';
 import App from './App.vue';
 
 /**
@@ -202,6 +203,13 @@ function stubServerSpeech(audios: FakeAudioEl[], calls: string[]): void {
 }
 
 describe('展厅页面：服务端语音接线', () => {
+  /** performance.now 探针的复位钩子：延迟埋点要把时钟拨到指定的时刻 */
+  let restoreNow: (() => void) | undefined;
+  afterEach(() => {
+    restoreNow?.();
+    restoreNow = undefined;
+  });
+
   it('health 报语音可用时播报走服务端，运营视图如实写出来源', async () => {
     const audios: FakeAudioEl[] = [];
     const calls: string[] = [];
@@ -222,6 +230,110 @@ describe('展厅页面：服务端语音接线', () => {
     });
 
     wrapper.unmount();
+  });
+
+  /**
+   * 三段延迟的后两段（§4 P2 修订 1）：终稿→首句生成、首句→首段音频。
+   *
+   * <p>它们跨了 chat 与 speech 两个 composable，只有 App 看得全，所以打点在提问入口
+   * 与两个 watcher 里——正是那种「改一处接线就悄悄不再上报」的地方，值得一条回归。
+   *
+   * <p>这里的合成响应**故意卡住**（而不是复用 stubServerSpeech）：不卡的话「首句生成」与
+   * 「首段音频」落在同一个微任务批次里，两段延迟会在同一个时刻结算，这一段埋点写错了也看不出来。
+   */
+  it('终稿→首句→首音的延迟在 App 里打点并进遥测', async () => {
+    let releaseSynth: (() => void) | undefined;
+    const synthGate = new Promise<void>((resolve) => {
+      releaseSynth = resolve;
+    });
+    class FakeURL extends (globalThis.URL as unknown as typeof URL) {
+      static createObjectURL(): string {
+        return 'blob:fake/1';
+      }
+      static revokeObjectURL(): void {}
+    }
+    vi.stubGlobal('URL', FakeURL);
+    vi.stubGlobal(
+      'Audio',
+      class {
+        src: string;
+        ended = false;
+        onended: (() => void) | null = null;
+        onerror: (() => void) | null = null;
+        constructor(src: string) {
+          this.src = src;
+        }
+        play(): Promise<void> {
+          return Promise.resolve();
+        }
+        pause(): void {}
+      },
+    );
+    stubFetchWith((url) => {
+      if (url.includes('/api/health')) {
+        return new Response(
+          JSON.stringify({ ok: true, knowledgeChunks: 1, llmProvider: 'mock', speech: 'mimo', speechReady: true, embedding: 'bag', retrieval: { mode: 'keyword', keywordChunks: 1 }, storage: 'mysql', storageAvailable: true, activeSessions: 0, minRelevanceScore: 6.3, uptimeSec: 1 }),
+          { status: 200 },
+        );
+      }
+      if (url.includes('/api/chat/stream')) {
+        // 收尾帧放到下一个宏任务：`sse()` 一次把三帧全塞进去时，streaming 会在同一个微任务
+        // 批次里翻回 false，App 那两个 watcher 根本看不到「流开始了」（beginAnswer/endAnswer
+        // 全被跳过，合成请求也就发不出去）。真实后端本来就是一帧一帧来的，这里照着它来。
+        const encoder = new TextEncoder();
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(encoder.encode(
+                'event:meta\ndata:{"mode":"rag","provider":"mock","retrieval":"keyword","noHit":false,"cached":false,"sources":[]}\n\n',
+              ));
+              controller.enqueue(encoder.encode(`event:delta\ndata:{"text":${JSON.stringify(ANSWER)}}\n\n`));
+              setTimeout(() => {
+                controller.enqueue(encoder.encode(
+                  `event:done\ndata:{"mode":"rag","provider":"mock","retrieval":"keyword","noHit":false,"cached":false,"sources":[],"answer":${JSON.stringify(ANSWER)},"latencyMs":42}\n\n`,
+                ));
+                controller.close();
+              }, 0);
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'text/event-stream' } },
+        );
+      }
+      if (url.includes('/api/speech/synthesize')) {
+        // 形态与 stubServerSpeech 一致（普通对象而不是 new Response(new Blob(...))，理由见那里）
+        return synthGate.then(() => ({
+          ok: true,
+          status: 200,
+          blob: async () => new Blob([new Uint8Array([82, 73, 70, 70])], { type: 'audio/wav' }),
+        })) as unknown as Response;
+      }
+      return undefined;
+    });
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1_000);
+    restoreNow = () => now.mockRestore();
+
+    const wrapper = mountWithAdmin();
+    // 等 bootstrap 把 health 的 speechReady 灌进 useSpeech：没灌进去时 resolveEngine() 是 null，
+    // 整条播报链根本不启动（也就没有首音这一段）
+    await vi.waitFor(() => {
+      expect(wrapper.find('.local-set').text()).toContain('服务端 TTS');
+    });
+
+    await wrapper.find('textarea').setValue('叶片检测要停机吗？');
+    now.mockReturnValue(1_100); // 提问发出
+    await wrapper.find('textarea').trigger('keydown', { key: 'Enter' });
+    now.mockReturnValue(1_700); // 首句生成：流里的句末标点到达
+    await flushPromises();
+    now.mockReturnValue(2_100); // 首段音频起播：合成回来 → play() 落地
+    releaseSynth?.();
+    await flushPromises();
+
+    wrapper.unmount(); // 卸载会冲刷最后一批遥测，不必去推 15 秒的定时器
+    const body = metricsBody();
+    expect(body?.firstSentenceCount, '终稿 → 首句生成').toBe(1);
+    expect(body?.firstSentenceSumMs).toBe(600);
+    expect(body?.firstAudioCount, '首句 → 首段音频').toBe(1);
+    expect(body?.firstAudioSumMs).toBe(400);
   });
 });
 
@@ -497,6 +609,17 @@ describe('展厅页面：回答与片段里的 HTML 不上屏', () => {
  */
 function fetchCalls(): Array<[string, RequestInit | undefined]> {
   return (fetch as unknown as { mock: { calls: Array<[string, RequestInit | undefined]> } }).mock.calls;
+}
+
+/**
+ * 最后一批声学遥测的请求体。
+ *
+ * <p>遥测是攒批送的（15 秒一批），但**卸载时会冲刷一次**——所以在用例里 `unmount()`
+ * 之后再读，就不必去推时钟。
+ */
+function metricsBody(): Record<string, number> | null {
+  const call = fetchCalls().find((c) => String(c[0]).includes('/api/speech/metrics'));
+  return call ? (JSON.parse(String(call[1]!.body)) as Record<string, number>) : null;
 }
 
 describe('展厅页面：对话主流程接线', () => {
@@ -855,6 +978,510 @@ describe('缺口用例补全', () => {
     expect(wrapper.text()).toContain('不需要停机');
 
     wrapper.unmount();
+  });
+});
+
+/**
+ * 常开聆听的**接线**（第 3 档）：开麦时机、预览进草稿、开关持久化、复位清理。
+ *
+ * 这一层只能挂真组件才验得到——「谁决定什么时候开麦」「哪份草稿允许被预览覆盖」都写在 App.vue 里，
+ * useDictation 只管采集与状态机。麦克风与 AudioContext 照第一组用例的路子桩掉（jsdom 没有它们），
+ * 再直接往 ScriptProcessor 里喂 PCM 驱动整个链路。
+ */
+describe('展厅页面：常开聆听接线', () => {
+  type Feedable = {
+    onaudioprocess:
+      | ((event: { inputBuffer: { getChannelData: (channel: number) => Float32Array } }) => void)
+      | null;
+  };
+
+  /** 假的麦克风 + AudioContext + ScriptProcessor：与 useDictation.spec 同一套桩 */
+  function installDictationBrowser() {
+    const processor: Feedable & { connect: () => void; disconnect: () => void } = {
+      onaudioprocess: null,
+      connect: vi.fn(),
+      disconnect: vi.fn(),
+    };
+    const source = { connect: vi.fn(), disconnect: vi.fn() };
+    const getUserMedia = vi.fn(
+      async () => ({ getTracks: () => [{ stop: vi.fn() }] }) as unknown as MediaStream,
+    );
+    class FakeAudioContext {
+      sampleRate = 16000;
+      destination = {};
+      createMediaStreamSource = vi.fn(() => source);
+      createScriptProcessor = vi.fn(() => processor);
+      close = vi.fn(async () => {});
+    }
+    Object.defineProperty(navigator, 'mediaDevices', { value: { getUserMedia }, configurable: true });
+    vi.stubGlobal('AudioContext', FakeAudioContext);
+    // node 侧没有 FileReader（Blob → data URL 那步用得到），补一个最小实现
+    class FakeFileReader {
+      result: string | null = null;
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      onabort: (() => void) | null = null;
+      private aborted = false;
+      readAsDataURL(blob: Blob): void {
+        void blob.arrayBuffer().then(
+          (buffer) => {
+            if (this.aborted) return;
+            this.result = `data:${blob.type || 'application/octet-stream'};base64,${Buffer.from(buffer).toString('base64')}`;
+            this.onload?.();
+          },
+          () => {
+            if (!this.aborted) this.onerror?.();
+          },
+        );
+      }
+      abort(): void {
+        this.aborted = true;
+        this.onabort?.();
+      }
+    }
+    vi.stubGlobal('FileReader', FakeFileReader);
+    // jsdom 的 HTMLMediaElement.play() 是「未实现」，语音解锁那条暖机会刷一屏警告；
+    // 这里只要它别出声，桩掉即可
+    class SilentAudio {
+      src: string;
+      ended = false;
+      onended: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      constructor(src: string) {
+        this.src = src;
+      }
+      play(): Promise<void> {
+        return Promise.resolve();
+      }
+      pause(): void {}
+    }
+    vi.stubGlobal('Audio', SilentAudio);
+    return { processor, getUserMedia };
+  }
+
+  /** health 响应；speechReady 决定 App 会不会自动开麦 */
+  function healthResponse(speechReady: boolean): Response {
+    return new Response(
+      JSON.stringify({ ok: true, knowledgeChunks: 1, llmProvider: 'mock', speech: speechReady ? 'mimo' : 'none', speechReady, embedding: 'bag', retrieval: { mode: 'keyword', keywordChunks: 1 }, storage: 'mysql', storageAvailable: true, activeSessions: 0, minRelevanceScore: 6.3, uptimeSec: 1 }),
+      { status: 200 },
+    );
+  }
+
+  /**
+   * health 报「服务端语音可用」的环境，识别接口按调用次序依次回给定文本
+   * （第一段通常是分段预览、第二段才是终稿——一眼能看出预览与终稿是两条路）。
+   */
+  function stubListeningFetch(texts: string[]): void {
+    let calls = 0;
+    stubFetchWith((url) => {
+      if (url.includes('/api/health')) return healthResponse(true);
+      if (url.includes('/api/speech/recognize')) {
+        const text = texts[Math.min(calls, texts.length - 1)] ?? '';
+        calls += 1;
+        return new Response(JSON.stringify({ text, seconds: 2 }), { status: 200 });
+      }
+      if (url.includes('/api/speech/metrics')) return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      return undefined;
+    });
+  }
+
+  /** 说话块：检出人声并累积分段（4096 帧 @16k = 256ms） */
+  function feedSpeech(processor: Feedable): void {
+    processor.onaudioprocess?.({ inputBuffer: { getChannelData: () => new Float32Array(4096).fill(0.1) } });
+  }
+
+  /** 静音块：累计收尾用的静音时长（4 块 = 1024ms ≥ VAD_SILENCE_MS） */
+  function feedSilence(processor: Feedable): void {
+    processor.onaudioprocess?.({ inputBuffer: { getChannelData: () => new Float32Array(4096) } });
+  }
+
+  /**
+   * 小块（1024 帧 @16k = 64ms）。
+   *
+   * <p>插话判据按**持续时长**算（BARGEIN_HOLD_MS），256ms 的大块一次就够长了，
+   * 测不出「一记爆音不该算插话」那一半。
+   */
+  function feedSmall(processor: Feedable, fill: number): void {
+    processor.onaudioprocess?.({ inputBuffer: { getChannelData: () => new Float32Array(1024).fill(fill) } });
+  }
+
+  /**
+   * 「一直在生成、不结束」的回答流（第一条断流零 delta 会触发一次自动重问，让重问正常收尾）。
+   *
+   * @return 用例结束时 abort() 让流收尾，别把挂死的流留给后面的用例
+   */
+  function stubHangingAnswer(): AbortController {
+    const hang = new AbortController();
+    let streamCalls = 0;
+    stubFetchWith((url) => {
+      if (url.includes('/api/health')) return healthResponse(true);
+      if (url.includes('/api/chat/stream')) {
+        streamCalls += 1;
+        if (streamCalls > 1) {
+          return sse(
+            'event:done\ndata:{"mode":"rag","provider":"mock","retrieval":"keyword","noHit":false,"cached":false,"sources":[],"answer":"好了","latencyMs":1}\n\n',
+          );
+        }
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              hang.signal.addEventListener('abort', () => {
+                try {
+                  controller.close();
+                } catch {
+                  /* 流已结束 */
+                }
+              }, { once: true });
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'text/event-stream' } },
+        );
+      }
+      if (url.includes('/api/speech/metrics')) return new Response('{"ok":true}', { status: 200 });
+      return undefined;
+    });
+    return hang;
+  }
+
+  /**
+   * 攒够**首段**门槛（SEGMENT_FIRST_MS）需要的说话块数：11 块 × 256ms ≈ 2.8 秒。
+   *
+   * <p>首段比后续段长是 §5 S5 的修法——门槛从起句开始算、静音尾巴也算在里面，
+   * 1.5 秒的短句到 2 秒就白发一段，而那正是 VAD 马上要收尾的时刻。
+   */
+  const SEGMENT_CHUNKS = Math.ceil((SEGMENT_FIRST_MS / 1000) * 16_000 / 4096);
+
+  let restoreNow: (() => void) | undefined;
+  /** 用例中途失败时 wrapper 不会走到 unmount，挂着的组件会劫持后面用例的 window 事件——兜底卸掉 */
+  let mounted: { unmount: () => void } | null = null;
+  function track<T extends { unmount: () => void }>(wrapper: T): T {
+    mounted = wrapper;
+    return wrapper;
+  }
+
+  afterEach(() => {
+    mounted?.unmount();
+    mounted = null;
+    restoreNow?.();
+    restoreNow = undefined;
+    delete (navigator as unknown as { mediaDevices?: unknown }).mediaDevices;
+  });
+
+  /** 麦克风相关的用例都关掉朗读：合成器一开口就会把走查带偏（也会真的去打合成接口） */
+  function muteSpeech(): void {
+    localStorage.setItem('znwd.speak', '0');
+  }
+
+  it('存储键缺省 = 开：首次手势后自动开麦，按钮变成「聆听中」', async () => {
+    muteSpeech();
+    const { getUserMedia } = installDictationBrowser();
+    stubListeningFetch(['叶片有裂纹']);
+
+    const wrapper = track(mount(App));
+    await flushPromises();
+    expect(localStorage.getItem('znwd.listen'), '缺省不落键，读出来算开').toBeNull();
+    expect(getUserMedia).not.toHaveBeenCalled();
+
+    window.dispatchEvent(new Event('pointerdown'));
+    await flushPromises();
+
+    expect(getUserMedia, '第一次真实手势就该开麦').toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => {
+      expect(wrapper.find('.mic').attributes('aria-label')).toContain('聆听中');
+    });
+    expect(wrapper.find('.mic').classes()).toContain('on');
+    wrapper.unmount();
+  });
+
+  it('znwd.listen=0 时不开麦，回到「点一下说话」', async () => {
+    muteSpeech();
+    localStorage.setItem('znwd.listen', '0');
+    const { getUserMedia } = installDictationBrowser();
+    stubListeningFetch(['叶片有裂纹']);
+
+    const wrapper = track(mount(App));
+    await flushPromises();
+    window.dispatchEvent(new Event('pointerdown'));
+    await flushPromises();
+
+    expect(getUserMedia, '运营关掉常开后不许偷开麦').not.toHaveBeenCalled();
+    expect(wrapper.find('.mic').attributes('aria-label')).toBe('语音提问');
+    expect(wrapper.find('.mic').classes()).not.toContain('on');
+    wrapper.unmount();
+  });
+
+  it('health 报语音不可用时也不自动开麦（AUDIO_PROVIDER=none 的机器）', async () => {
+    muteSpeech();
+    const { getUserMedia } = installDictationBrowser();
+    stubFetchWith((url) => (url.includes('/api/health') ? healthResponse(false) : undefined));
+
+    const wrapper = track(mount(App));
+    await flushPromises();
+    window.dispatchEvent(new Event('pointerdown'));
+    await flushPromises();
+
+    // 自动开麦会变成每次说话都刷一条 503，运营视图全被这类噪音淹掉
+    expect(getUserMedia).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it('回答期间按钮说明「暂时不听」，回答结束自动恢复聆听', async () => {
+    // 抑制期间说话是没有反应的：不把这件事写在按钮上，参观者只会觉得机器坏了
+    muteSpeech();
+    const { getUserMedia } = installDictationBrowser();
+    const hang = new AbortController();
+    let streamCalls = 0;
+    stubFetchWith((url) => {
+      if (url.includes('/api/health')) return healthResponse(true);
+      if (url.includes('/api/chat/stream')) {
+        streamCalls += 1;
+        if (streamCalls > 1) {
+          // 第二条：第一次断流零 delta 会触发一次自动重问（断流活性那套），这里让它正常收尾
+          return sse(
+            'event:done\ndata:{"mode":"rag","provider":"mock","retrieval":"keyword","noHit":false,"cached":false,"sources":[],"answer":"好了","latencyMs":1}\n\n',
+          );
+        }
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              hang.signal.addEventListener('abort', () => {
+                try {
+                  controller.close();
+                } catch {
+                  /* 流已结束 */
+                }
+              }, { once: true });
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'text/event-stream' } },
+        );
+      }
+      if (url.includes('/api/speech/metrics')) return new Response('{"ok":true}', { status: 200 });
+      return undefined;
+    });
+
+    const wrapper = track(mount(App));
+    await flushPromises();
+    window.dispatchEvent(new Event('pointerdown'));
+    await vi.waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(wrapper.find('.mic').attributes('aria-label')).toContain('聆听中'));
+
+    await wrapper.find('textarea').setValue('叶片检测要停机吗？');
+    await wrapper.find('textarea').trigger('keydown', { key: 'Enter' });
+    await flushPromises();
+    expect(wrapper.find('.mic').attributes('aria-label')).toContain('暂时不听');
+
+    hang.abort();
+    await flushPromises();
+    await vi.waitFor(() => expect(wrapper.find('.mic').attributes('aria-label')).toContain('聆听中'));
+  });
+
+  it('插话打断（P3a）：判决开着时持续越限就当场让口，回答被掐掉', async () => {
+    muteSpeech();
+    localStorage.setItem('znwd.bargein', '1');
+    const { processor } = installDictationBrowser();
+    const hang = stubHangingAnswer();
+
+    const wrapper = track(mount(App));
+    await flushPromises();
+    window.dispatchEvent(new Event('pointerdown'));
+    await vi.waitFor(() => expect(wrapper.find('.mic').attributes('aria-label')).toContain('聆听中'));
+
+    await wrapper.find('textarea').setValue('叶片检测要停机吗？');
+    await wrapper.find('textarea').trigger('keydown', { key: 'Enter' });
+    await flushPromises();
+    // 回答一开始生成就进抑制；判决开着时麦克风是真的在听，按钮文案得跟着改口
+    expect(wrapper.find('.mic').attributes('aria-label')).toContain('想插话直接说');
+    expect(wrapper.find('.send.ghost').exists(), '回答还在生成').toBe(true);
+
+    feedSmall(processor, 0.2);
+    feedSmall(processor, 0.2); // 两小块 = 128ms > BARGEIN_HOLD_MS
+
+    await vi.waitFor(() =>
+      expect(wrapper.find('.send.ghost').exists(), 'AI 让口：还在生成的那条回答也被掐掉').toBe(false));
+    expect(wrapper.find('.mic').attributes('aria-label'), '这几块已经接成新的一句').toContain('结束录音并识别');
+
+    hang.abort();
+    wrapper.unmount();
+  });
+
+  it('插话打断缺省关：同样的越限声音只采回声，回答继续说', async () => {
+    // 判据（门限抬多少、持续多久）必须由现场回声数据定，缺省拿参观者试参数是不行的
+    muteSpeech();
+    const { processor } = installDictationBrowser();
+    const hang = stubHangingAnswer();
+
+    const wrapper = track(mount(App));
+    await flushPromises();
+    window.dispatchEvent(new Event('pointerdown'));
+    await vi.waitFor(() => expect(wrapper.find('.mic').attributes('aria-label')).toContain('聆听中'));
+
+    await wrapper.find('textarea').setValue('叶片检测要停机吗？');
+    await wrapper.find('textarea').trigger('keydown', { key: 'Enter' });
+    await flushPromises();
+    expect(wrapper.find('.mic').attributes('aria-label')).toContain('暂时不听');
+
+    for (let i = 0; i < 10; i++) feedSmall(processor, 0.2);
+    await flushPromises();
+
+    expect(wrapper.find('.send.ghost').exists(), '关着判决就不该打断').toBe(true);
+    expect(wrapper.find('.mic').attributes('aria-label')).toContain('暂时不听');
+
+    hang.abort();
+    wrapper.unmount();
+  });
+
+  it('运营视图里的插话打断开关落存储（缺省不落键）', async () => {
+    muteSpeech();
+    installDictationBrowser();
+    stubListeningFetch(['叶片有裂纹']);
+
+    const wrapper = track(mountWithAdmin());
+    await flushPromises();
+
+    expect(localStorage.getItem('znwd.bargein'), '缺省不落键：这是替没做过决定的人做决定').toBeNull();
+    const toggle = wrapper.findAll('.local-set .row').find((row) => row.text().startsWith('插话打断'))!;
+    expect(toggle.text()).toContain('关');
+
+    await toggle.find('button').trigger('click');
+    await flushPromises();
+    expect(localStorage.getItem('znwd.bargein')).toBe('1');
+    expect(toggle.text()).toContain('开');
+
+    await toggle.find('button').trigger('click');
+    await flushPromises();
+    expect(localStorage.getItem('znwd.bargein')).toBe('0');
+    wrapper.unmount();
+  });
+
+  it('分段预览进输入框，终稿覆盖预览并自动提问', async () => {
+    muteSpeech();
+    const { processor } = installDictationBrowser();
+    stubListeningFetch(['叶片有', '叶片有裂纹']);
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1_000);
+    restoreNow = () => now.mockRestore();
+
+    const wrapper = track(mountWithAdmin());
+    await flushPromises();
+    window.dispatchEvent(new Event('pointerdown'));
+    await flushPromises();
+
+    for (let i = 0; i < SEGMENT_CHUNKS; i++) feedSpeech(processor);
+    await vi.waitFor(() => {
+      expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('叶片有');
+    });
+
+    now.mockReturnValue(3_000); // 越过 400ms 的有效门槛
+    for (let i = 0; i < 4; i++) feedSilence(processor);
+    await vi.waitFor(() => {
+      const call = fetchCalls().find((c) => String(c[0]).includes('/api/chat/stream'));
+      expect(call, '终稿要自动提问').toBeTruthy();
+      expect(JSON.parse(String(call![1]!.body)).message).toBe('叶片有裂纹');
+    });
+    expect((wrapper.find('textarea').element as HTMLTextAreaElement).value, '提交后输入框清空').toBe('');
+    wrapper.unmount();
+  });
+
+  it('重新开始会清掉半截语音预览（闲置复位走的是同一条 watcher）', async () => {
+    muteSpeech();
+    const { processor } = installDictationBrowser();
+    stubListeningFetch(['叶片有']); // 只有分段预览，不会有终稿
+
+    const wrapper = track(mountWithAdmin());
+    await flushPromises();
+    window.dispatchEvent(new Event('pointerdown'));
+    await flushPromises();
+
+    // 先有一轮对话：闲置复位/重新开始都只在「有对话可清」时才会触发那条 watcher
+    await wrapper.find('textarea').setValue('叶片检测要停机吗？');
+    await wrapper.find('textarea').trigger('keydown', { key: 'Enter' });
+    await vi.waitFor(() => {
+      expect(wrapper.find('.msg.assistant .answer').text()).toContain('正常回答');
+    });
+    await flushPromises();
+
+    for (let i = 0; i < SEGMENT_CHUNKS; i++) feedSpeech(processor);
+    await vi.waitFor(() => {
+      expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('叶片有');
+    });
+
+    const restart = wrapper.findAll('.local-set .row button').find((b) => b.text() === '重新开始');
+    await restart!.trigger('click');
+    await flushPromises();
+
+    expect(wrapper.findAll('.msg').length).toBe(0);
+    expect((wrapper.find('textarea').element as HTMLTextAreaElement).value, '半截预览不该留给下一位参观者').toBe('');
+    wrapper.unmount();
+  });
+
+  it('参观者手打的草稿不会被语音预览清掉', async () => {
+    muteSpeech();
+    const { processor } = installDictationBrowser();
+    // 整段识别回空（环境噪声被当成说话）：这条路径会调 onPartial(null) 清预览
+    stubListeningFetch(['']);
+
+    const wrapper = track(mount(App));
+    await flushPromises();
+    window.dispatchEvent(new Event('pointerdown'));
+    await flushPromises();
+
+    // 手打一行，还没发出去
+    await wrapper.find('textarea').setValue('我自己打的');
+    // 环境噪声被当成说话 → 终稿为空 → onPartial(null)：这条路径不该把手工草稿抹掉
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1_000);
+    restoreNow = () => now.mockRestore();
+    feedSpeech(processor);
+    now.mockReturnValue(3_000);
+    for (let i = 0; i < 4; i++) feedSilence(processor);
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('我自己打的');
+    wrapper.unmount();
+  });
+
+  it('运营视图的「常开聆听」开关落 localStorage 并可即时关掉聆听', async () => {
+    muteSpeech();
+    const { getUserMedia } = installDictationBrowser();
+    stubListeningFetch([]);
+
+    const wrapper = track(mountWithAdmin());
+    await flushPromises();
+    const row = wrapper.findAll('.local-set .row').find((r) => r.text().includes('常开聆听'));
+    expect(row, '运营视图要有这一行').toBeTruthy();
+    expect(row!.find('button').text()).toBe('开');
+    expect(localStorage.getItem('znwd.listen'), '缺省不落键').toBeNull();
+
+    await row!.find('button').trigger('click');
+    expect(localStorage.getItem('znwd.listen')).toBe('0');
+    expect(row!.find('button').text()).toBe('关');
+
+    window.dispatchEvent(new Event('pointerdown'));
+    await flushPromises();
+    expect(getUserMedia, '关掉之后手势也不该开麦').not.toHaveBeenCalled();
+
+    // 再拨回来：这一下本身就是真实手势，应当直接开麦
+    await row!.find('button').trigger('click');
+    expect(localStorage.getItem('znwd.listen')).toBe('1');
+    window.dispatchEvent(new Event('pointerdown'));
+    await flushPromises();
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    wrapper.unmount();
+  });
+
+  it('卸载时放开麦克风（常开聆听下它一直开着）', async () => {
+    muteSpeech();
+    const { processor, getUserMedia } = installDictationBrowser();
+    stubListeningFetch([]);
+
+    const wrapper = track(mount(App));
+    await flushPromises();
+    window.dispatchEvent(new Event('pointerdown'));
+    await vi.waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(1));
+
+    wrapper.unmount();
+    // track 不停的话浏览器会一直显示「正在使用麦克风」
+    expect(processor.disconnect).toHaveBeenCalled();
   });
 });
 
