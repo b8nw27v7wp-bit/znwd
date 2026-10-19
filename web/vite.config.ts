@@ -59,14 +59,15 @@ export default defineConfig({
         'src/main.ts',
       ],
       reporter: ['text', 'html', 'lcov'],
-      // 覆盖率门禁：阈值取 2026-10-04 实测（164 项）下调 1–2 个百分点，防抖动卡线——
-      // 门禁的意义是「不低于当前水平」，不是追高。实测：Stmts 88.14 / Branch 75.08 /
-      // Funcs 90.32 / Lines 91.67。改了被测代码把覆盖率做上去后，四项一起上调。
+      // 覆盖率门禁：阈值取实测下调 1–2 个百分点，防抖动卡线——
+      // 门禁的意义是「不低于当前水平」，不是追高。2026-10-19 实测（**303 项**，送 ASR 前的语音增强
+      // 高通 + 增益归一化）：Stmts 91.78 / Branch 82.07 / Funcs 93 / Lines 94.89。
+      // 上一轮 2026-10-16（287 项）：91.53 / 81.81 / 92.92 / 94.74。改了被测代码把覆盖率做上去后，四项一起上调。
       thresholds: {
-        statements: 86.5,
-        branches: 73.5,
-        functions: 88.5,
-        lines: 90,
+        statements: 90,
+        branches: 80,
+        functions: 91,
+        lines: 93,
       },
     },
   },

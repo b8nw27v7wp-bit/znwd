@@ -141,7 +141,10 @@ public record AppProperties(
             String asrModel,
             /** auto / zh / en；展厅以中文为主，默认 zh 更稳（auto 偶有英文字母误判） */
             String asrLanguage,
+            /** 一次合成（含全部重试）的总预算，不是单次等待上限 */
             long timeoutMs,
+            /** 一次识别（含全部重试）的总预算：整段录音比一句讲解词重，不该共用一个数 */
+            long asrTimeoutMs,
             int maxRetries,
             long retryBaseMs,
             /** 单次合成的文本上限（前端按句切片后通常远小于它） */
@@ -230,6 +233,21 @@ public record AppProperties(
 
     public int audioMaxChars() {
         return audio == null || audio.maxChars() <= 0 ? 300 : audio.maxChars();
+    }
+
+    /**
+     * 一次合成的总预算（含重试）。
+     *
+     * <p>**必须短于客户端的合成等待上限（20 秒）**：这条同步调用不会因为浏览器 abort 而中断上游请求，
+     * 服务端比客户端还晚收场，就只是在替一个没人要的响应花线程与上游调用。
+     */
+    public long audioTimeoutMs() {
+        return audio == null || audio.timeoutMs() <= 0 ? 15_000 : audio.timeoutMs();
+    }
+
+    /** 一次识别的总预算（含重试）：整段录音比一句讲解词重，且客户端整段给了 90 秒的余量 */
+    public long audioAsrTimeoutMs() {
+        return audio == null || audio.asrTimeoutMs() <= 0 ? 30_000 : audio.asrTimeoutMs();
     }
 
     public long audioMaxUploadBytes() {

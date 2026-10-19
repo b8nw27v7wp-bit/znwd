@@ -1,0 +1,1362 @@
+{
+  "chunks" : 246,
+  "mode" : "HYBRID",
+  "semantic" : true,
+  "effectiveThreshold" : 6.5,
+  "gateMetric" : "keywordBestScore（排序分，含同义词扩展，与 HybridRetriever 判闸门同一口径）",
+  "inDomainWeakest" : [ {
+    "id" : "cov-08",
+    "question" : "对环保有什么贡献",
+    "keywordBest" : 2.5836,
+    "vectorBest" : 0.0,
+    "topTitle" : "应用成效与落地案例",
+    "matchedTokens" : 4,
+    "matched" : [ "减排", "环保", "绿色", "低碳" ]
+  }, {
+    "id" : "probe-64",
+    "question" : "有客户了吗",
+    "keywordBest" : 5.3066,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 5,
+    "matched" : [ "客户", "户数", "数量", "情况", "服务" ]
+  }, {
+    "id" : "probe-75",
+    "question" : "融资了吗",
+    "keywordBest" : 6.4087,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 9,
+    "matched" : [ "融资", "资额", "资方", "投资", "资阶", "资需", "总融", "阶段", "需求" ]
+  }, {
+    "id" : "probe-92",
+    "question" : "清洗后效率能到多少",
+    "keywordBest" : 6.8822,
+    "vectorBest" : 0.0,
+    "topTitle" : "应用成效与落地案例",
+    "matchedTokens" : 4,
+    "matched" : [ "效率", "洗后", "清洗", "清洁" ]
+  }, {
+    "id" : "probe-28",
+    "question" : "CBAM 是什么",
+    "keywordBest" : 6.9745,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏医生常见问题",
+    "matchedTokens" : 2,
+    "matched" : [ "cbam", "什么" ]
+  }, {
+    "id" : "probe-89",
+    "question" : "售后支持有吗",
+    "keywordBest" : 7.418,
+    "vectorBest" : 0.0,
+    "topTitle" : "服务与合作",
+    "matchedTokens" : 5,
+    "matched" : [ "服务", "支持", "术支", "技术", "售后" ]
+  }, {
+    "id" : "probe-91",
+    "question" : "运维成本能降多少",
+    "keywordBest" : 8.0198,
+    "vectorBest" : 0.0,
+    "topTitle" : "应用成效与落地案例",
+    "matchedTokens" : 4,
+    "matched" : [ "成本", "维成", "多少", "运维" ]
+  }, {
+    "id" : "probe-24",
+    "question" : "隐裂能发现吗",
+    "keywordBest" : 8.2719,
+    "vectorBest" : 0.0,
+    "topTitle" : "无人机巡检与缺陷诊断",
+    "matchedTokens" : 2,
+    "matched" : [ "隐裂", "发现" ]
+  }, {
+    "id" : "probe-23",
+    "question" : "能识别热斑吗",
+    "keywordBest" : 8.5414,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏医生常见问题",
+    "matchedTokens" : 3,
+    "matched" : [ "别热", "热斑", "识别" ]
+  }, {
+    "id" : "probe-25",
+    "question" : "积灰怎么评估",
+    "keywordBest" : 8.5545,
+    "vectorBest" : 0.0,
+    "topTitle" : "两栖光伏清洁机器人产品概述",
+    "matchedTokens" : 4,
+    "matched" : [ "灰怎", "积灰", "评估", "怎么" ]
+  }, {
+    "id" : "probe-76",
+    "question" : "团队多少人",
+    "keywordBest" : 8.7047,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 3,
+    "matched" : [ "团队", "多少", "少人" ]
+  }, {
+    "id" : "pv-08",
+    "question" : "屋顶光伏能用无人机清洗吗？",
+    "keywordBest" : 9.0336,
+    "vectorBest" : 0.0,
+    "topTitle" : "两栖光伏清洁机器人产品概述",
+    "matchedTokens" : 6,
+    "matched" : [ "光伏", "清洁", "清洗", "人机", "无人", "屋顶" ]
+  }, {
+    "id" : "probe-84",
+    "question" : "研究院是做什么的",
+    "keywordBest" : 9.1064,
+    "vectorBest" : 0.0,
+    "topTitle" : "团队、单位与知识产权",
+    "matchedTokens" : 3,
+    "matched" : [ "究院", "研究", "什么" ]
+  }, {
+    "id" : "probe-85",
+    "question" : "研究院有多少人",
+    "keywordBest" : 9.1286,
+    "vectorBest" : 0.0,
+    "topTitle" : "团队、单位与知识产权",
+    "matchedTokens" : 3,
+    "matched" : [ "究院", "研究", "多少" ]
+  }, {
+    "id" : "probe-79",
+    "question" : "专利号是多少",
+    "keywordBest" : 9.1423,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 3,
+    "matched" : [ "专利", "利号", "多少" ]
+  }, {
+    "id" : "cov-04",
+    "question" : "数据集是从哪里采集的",
+    "keywordBest" : 9.1498,
+    "vectorBest" : 0.0,
+    "topTitle" : "数据基础与数据治理",
+    "matchedTokens" : 3,
+    "matched" : [ "数据", "据集", "采集" ]
+  }, {
+    "id" : "mix-01",
+    "question" : "太阳能电站清洗后发电会提升吗？",
+    "keywordBest" : 9.3576,
+    "vectorBest" : 0.0,
+    "topTitle" : "应用成效与落地案例",
+    "matchedTokens" : 6,
+    "matched" : [ "发电", "洗后", "后发", "提升", "清洗", "清洁" ]
+  }, {
+    "id" : "probe-21",
+    "question" : "光伏医生包含哪些技术",
+    "keywordBest" : 9.4006,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏医生系统总览",
+    "matchedTokens" : 5,
+    "matched" : [ "伏医", "医生", "光伏", "技术", "伏板" ]
+  }, {
+    "id" : "proj-06",
+    "question" : "如何联系合作？",
+    "keywordBest" : 9.4137,
+    "vectorBest" : 0.0,
+    "topTitle" : "服务与合作",
+    "matchedTokens" : 2,
+    "matched" : [ "合作", "运维" ]
+  }, {
+    "id" : "probe-02",
+    "question" : "为什么叫两栖",
+    "keywordBest" : 9.4668,
+    "vectorBest" : 0.0,
+    "topTitle" : "两栖光伏清洁机器人产品概述",
+    "matchedTokens" : 2,
+    "matched" : [ "两栖", "什么" ]
+  }, {
+    "id" : "probe-74",
+    "question" : "怎么推广",
+    "keywordBest" : 9.6604,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 3,
+    "matched" : [ "么推", "推广", "怎么" ]
+  }, {
+    "id" : "proj-12",
+    "question" : "有哪些代表性论文？",
+    "keywordBest" : 9.7925,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 4,
+    "matched" : [ "论文", "代表", "表性", "性论" ]
+  }, {
+    "id" : "probe-34",
+    "question" : "多久巡检一次",
+    "keywordBest" : 9.8603,
+    "vectorBest" : 0.0,
+    "topTitle" : "无人机巡检与缺陷诊断",
+    "matchedTokens" : 5,
+    "matched" : [ "巡检", "多久", "一次", "复检", "检测" ]
+  }, {
+    "id" : "probe-47",
+    "question" : "能预测发电量吗",
+    "keywordBest" : 9.8811,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏医生常见问题",
+    "matchedTokens" : 4,
+    "matched" : [ "预测", "测发", "电量", "发电" ]
+  }, {
+    "id" : "cov-02",
+    "question" : "传统运维有什么问题",
+    "keywordBest" : 9.9538,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 5,
+    "matched" : [ "问题", "么问", "传统", "什么", "运维" ]
+  }, {
+    "id" : "probe-05",
+    "question" : "履带湿滑会不会打滑",
+    "keywordBest" : 9.9787,
+    "vectorBest" : 0.0,
+    "topTitle" : "结构与材料创新",
+    "matchedTokens" : 3,
+    "matched" : [ "履带", "打滑", "湿滑" ]
+  }, {
+    "id" : "probe-50",
+    "question" : "兼容别的无人机吗",
+    "keywordBest" : 10.0634,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏医生常见问题",
+    "matchedTokens" : 4,
+    "matched" : [ "容别", "兼容", "人机", "无人" ]
+  }, {
+    "id" : "probe-94",
+    "question" : "和哪些电站合作",
+    "keywordBest" : 10.2169,
+    "vectorBest" : 0.0,
+    "topTitle" : "服务与合作",
+    "matchedTokens" : 3,
+    "matched" : [ "合作", "运维", "电站" ]
+  }, {
+    "id" : "probe-78",
+    "question" : "有哪些专利",
+    "keywordBest" : 10.2521,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 3,
+    "matched" : [ "专利", "些专", "哪些" ]
+  }, {
+    "id" : "proj-18",
+    "question" : "运维服务怎么收费？",
+    "keywordBest" : 10.3386,
+    "vectorBest" : 0.0,
+    "topTitle" : "商业模式与定价",
+    "matchedTokens" : 6,
+    "matched" : [ "收费", "么收", "维服", "怎么", "服务", "运维" ]
+  }, {
+    "id" : "probe-95",
+    "question" : "社会效益如何",
+    "keywordBest" : 10.3932,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 6,
+    "matched" : [ "益如", "如何", "效益", "境效", "价值", "环境" ]
+  }, {
+    "id" : "proj-15",
+    "question" : "发电效率能提升多少？",
+    "keywordBest" : 10.3957,
+    "vectorBest" : 0.0,
+    "topTitle" : "应用成效与落地案例",
+    "matchedTokens" : 4,
+    "matched" : [ "电效", "效率", "发电", "提升" ]
+  }, {
+    "id" : "doc-11",
+    "question" : "故障识别模型还能用在哪？",
+    "keywordBest" : 10.435,
+    "vectorBest" : 0.0,
+    "topTitle" : "识别与预测算法",
+    "matchedTokens" : 4,
+    "matched" : [ "识别", "障识", "模型", "故障" ]
+  }, {
+    "id" : "probe-54",
+    "question" : "农光互补能管吗",
+    "keywordBest" : 10.4403,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏医生常见问题",
+    "matchedTokens" : 3,
+    "matched" : [ "光互", "互补", "农光" ]
+  }, {
+    "id" : "probe-18",
+    "question" : "屋顶光伏能用吗",
+    "keywordBest" : 10.484,
+    "vectorBest" : 0.0,
+    "topTitle" : "平台功能与应用场景",
+    "matchedTokens" : 3,
+    "matched" : [ "顶光", "屋顶", "光伏" ]
+  }, {
+    "id" : "probe-37",
+    "question" : "热斑标注标准是什么",
+    "keywordBest" : 10.5971,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏医生常见问题",
+    "matchedTokens" : 5,
+    "matched" : [ "标注", "标准", "注标", "热斑", "什么" ]
+  }, {
+    "id" : "probe-72",
+    "question" : "市场空间多大",
+    "keywordBest" : 10.7582,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 4,
+    "matched" : [ "市场", "场空", "多大", "空间" ]
+  }, {
+    "id" : "probe-46",
+    "question" : "三维可视化能看什么",
+    "keywordBest" : 10.7807,
+    "vectorBest" : 0.0,
+    "topTitle" : "平台功能与应用场景",
+    "matchedTokens" : 4,
+    "matched" : [ "三维", "维可", "可视", "视化" ]
+  }, {
+    "id" : "proj-03",
+    "question" : "团队和专利情况如何？",
+    "keywordBest" : 10.7912,
+    "vectorBest" : 0.0,
+    "topTitle" : "团队、单位与知识产权",
+    "matchedTokens" : 4,
+    "matched" : [ "团队", "专利", "利情", "情况" ]
+  }, {
+    "id" : "probe-36",
+    "question" : "污渍标注标准是什么",
+    "keywordBest" : 10.8145,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏医生常见问题",
+    "matchedTokens" : 5,
+    "matched" : [ "标注", "标准", "注标", "污渍", "什么" ]
+  }, {
+    "id" : "probe-69",
+    "question" : "毛利率多少",
+    "keywordBest" : 10.8654,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 4,
+    "matched" : [ "率多", "多少", "利率", "毛利" ]
+  }, {
+    "id" : "cov-03",
+    "question" : "技术创新之处有哪些",
+    "keywordBest" : 10.9469,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏医生系统总览",
+    "matchedTokens" : 5,
+    "matched" : [ "新之", "之处", "术创", "创新", "技术" ]
+  }, {
+    "id" : "probe-19",
+    "question" : "海上光伏能清洗吗",
+    "keywordBest" : 11.0207,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏清洁机器人常见问题",
+    "matchedTokens" : 6,
+    "matched" : [ "光伏", "清洁", "上光", "海上", "清洗", "太阳" ]
+  }, {
+    "id" : "probe-57",
+    "question" : "还能用于风电吗",
+    "keywordBest" : 11.2099,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏医生常见问题",
+    "matchedTokens" : 3,
+    "matched" : [ "于风", "风电", "用于" ]
+  }, {
+    "id" : "probe-77",
+    "question" : "团队背景",
+    "keywordBest" : 11.2333,
+    "vectorBest" : 0.0,
+    "topTitle" : "团队、单位与知识产权",
+    "matchedTokens" : 3,
+    "matched" : [ "团队", "队背", "背景" ]
+  }, {
+    "id" : "cov-01",
+    "question" : "项目有什么社会效益",
+    "keywordBest" : 11.3021,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 7,
+    "matched" : [ "项目", "么社", "效益", "什么", "境效", "价值", "环境" ]
+  }, {
+    "id" : "probe-04",
+    "question" : "会不会压坏光伏板",
+    "keywordBest" : 11.3596,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏清洁机器人常见问题",
+    "matchedTokens" : 4,
+    "matched" : [ "光伏", "坏光", "压坏", "伏板" ]
+  }, {
+    "id" : "probe-88",
+    "question" : "怎么合作",
+    "keywordBest" : 11.5294,
+    "vectorBest" : 0.0,
+    "topTitle" : "服务与合作",
+    "matchedTokens" : 2,
+    "matched" : [ "合作", "运维" ]
+  }, {
+    "id" : "probe-27",
+    "question" : "为什么用 YOLOv8",
+    "keywordBest" : 11.6763,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏医生常见问题",
+    "matchedTokens" : 4,
+    "matched" : [ "么用", "yolov8", "为什", "什么" ]
+  }, {
+    "id" : "probe-13",
+    "question" : "清洗流程是什么",
+    "keywordBest" : 11.7069,
+    "vectorBest" : 0.0,
+    "topTitle" : "清洁作业流程与两栖协同",
+    "matchedTokens" : 3,
+    "matched" : [ "流程", "清洁", "清洗" ]
+  }, {
+    "id" : "probe-32",
+    "question" : "图像分辨率有什么要求",
+    "keywordBest" : 11.7476,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏医生常见问题",
+    "matchedTokens" : 5,
+    "matched" : [ "像分", "分辨", "辨率", "什么", "图像" ]
+  }, {
+    "id" : "probe-30",
+    "question" : "数据集有多少张图",
+    "keywordBest" : 11.815,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏医生常见问题",
+    "matchedTokens" : 5,
+    "matched" : [ "数据", "少张", "张图", "多少", "据集" ]
+  }, {
+    "id" : "probe-67",
+    "question" : "收费怎么算",
+    "keywordBest" : 11.8546,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 4,
+    "matched" : [ "收费", "费怎", "么算", "怎么" ]
+  }, {
+    "id" : "probe-26",
+    "question" : "用什么算法识别污渍",
+    "keywordBest" : 11.924,
+    "vectorBest" : 0.0,
+    "topTitle" : "识别与预测算法",
+    "matchedTokens" : 3,
+    "matched" : [ "算法", "识别", "污渍" ]
+  }, {
+    "id" : "probe-59",
+    "question" : "光伏运维市场多大",
+    "keywordBest" : 12.0062,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 7,
+    "matched" : [ "市场", "场多", "多大", "维市", "伏运", "运维", "光伏" ]
+  }, {
+    "id" : "probe-49",
+    "question" : "平台怎么部署",
+    "keywordBest" : 12.0248,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏医生常见问题",
+    "matchedTokens" : 5,
+    "matched" : [ "部署", "么部", "台怎", "怎么", "平台" ]
+  }, {
+    "id" : "probe-73",
+    "question" : "竞争格局如何",
+    "keywordBest" : 12.0455,
+    "vectorBest" : 0.0,
+    "topTitle" : "商业模式与定价",
+    "matchedTokens" : 3,
+    "matched" : [ "争格", "格局", "竞争" ]
+  }, {
+    "id" : "probe-82",
+    "question" : "依托单位是谁",
+    "keywordBest" : 12.192,
+    "vectorBest" : 0.0,
+    "topTitle" : "团队、单位与知识产权",
+    "matchedTokens" : 3,
+    "matched" : [ "单位", "托单", "依托" ]
+  }, {
+    "id" : "probe-62",
+    "question" : "人工巡检有什么问题",
+    "keywordBest" : 12.2927,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 6,
+    "matched" : [ "问题", "么问", "工巡", "什么", "人工", "巡检" ]
+  }, {
+    "id" : "proj-14",
+    "question" : "融资情况如何？",
+    "keywordBest" : 12.39,
+    "vectorBest" : 0.0,
+    "topTitle" : "商业模式与定价",
+    "matchedTokens" : 13,
+    "matched" : [ "况如", "资情", "如何", "情况", "融资", "资阶", "资需", "总融", "阶段", "资额", "资方", "需求", "投资" ]
+  }, {
+    "id" : "probe-44",
+    "question" : "病历档案是什么",
+    "keywordBest" : 12.3928,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏医生常见问题",
+    "matchedTokens" : 4,
+    "matched" : [ "历档", "病历", "档案", "什么" ]
+  }, {
+    "id" : "probe-51",
+    "question" : "集中式电站怎么用",
+    "keywordBest" : 12.4187,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏医生常见问题",
+    "matchedTokens" : 7,
+    "matched" : [ "站怎", "么用", "式电", "中式", "集中", "怎么", "电站" ]
+  }, {
+    "id" : "proj-13",
+    "question" : "数据来源和更新频率是怎样的？",
+    "keywordBest" : 12.6076,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目基本信息与申报情况",
+    "matchedTokens" : 6,
+    "matched" : [ "数据", "更新", "新频", "频率", "据来", "来源" ]
+  }, {
+    "id" : "doc-05",
+    "question" : "污渍识别用的什么算法？",
+    "keywordBest" : 12.6473,
+    "vectorBest" : 0.0,
+    "topTitle" : "识别与预测算法",
+    "matchedTokens" : 3,
+    "matched" : [ "算法", "识别", "污渍" ]
+  }, {
+    "id" : "probe-41",
+    "question" : "数据传输安全吗",
+    "keywordBest" : 12.7847,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏医生常见问题",
+    "matchedTokens" : 5,
+    "matched" : [ "数据", "据传", "输安", "传输", "安全" ]
+  }, {
+    "id" : "probe-17",
+    "question" : "适用哪些电站",
+    "keywordBest" : 12.8562,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏清洁机器人常见问题",
+    "matchedTokens" : 5,
+    "matched" : [ "电站", "用哪", "些电", "适用", "哪些" ]
+  }, {
+    "id" : "doc-03",
+    "question" : "巡检图像的采集参数有什么要求？",
+    "keywordBest" : 12.9038,
+    "vectorBest" : 0.0,
+    "topTitle" : "无人机巡检与缺陷诊断",
+    "matchedTokens" : 6,
+    "matched" : [ "巡检", "集参", "参数", "采集", "图像", "复检" ]
+  }, {
+    "id" : "proj-05",
+    "question" : "提供培训吗？",
+    "keywordBest" : 12.9278,
+    "vectorBest" : 0.0,
+    "topTitle" : "服务与合作",
+    "matchedTokens" : 4,
+    "matched" : [ "培训", "供培", "提供", "操作" ]
+  }, {
+    "id" : "probe-87",
+    "question" : "能提供培训吗",
+    "keywordBest" : 12.9278,
+    "vectorBest" : 0.0,
+    "topTitle" : "服务与合作",
+    "matchedTokens" : 4,
+    "matched" : [ "培训", "供培", "提供", "操作" ]
+  }, {
+    "id" : "probe-70",
+    "question" : "成本结构怎样",
+    "keywordBest" : 13.0076,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 5,
+    "matched" : [ "成本", "本结", "构怎", "怎样", "结构" ]
+  }, {
+    "id" : "probe-45",
+    "question" : "能自动生成运维方案吗",
+    "keywordBest" : 13.0115,
+    "vectorBest" : 0.0,
+    "topTitle" : "平台功能与应用场景",
+    "matchedTokens" : 6,
+    "matched" : [ "运维", "动生", "生成", "维方", "方案", "自动" ]
+  }, {
+    "id" : "probe-63",
+    "question" : "项目来源哪里",
+    "keywordBest" : 13.0881,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 4,
+    "matched" : [ "项目", "哪里", "目来", "来源" ]
+  }, {
+    "id" : "cov-07",
+    "question" : "对社会有什么好处",
+    "keywordBest" : 13.0904,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 6,
+    "matched" : [ "对社", "么好", "好处", "什么", "效益", "价值" ]
+  }, {
+    "id" : "probe-61",
+    "question" : "传统清洗有什么问题",
+    "keywordBest" : 13.1366,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 6,
+    "matched" : [ "问题", "么问", "统清", "传统", "什么", "清洗" ]
+  }, {
+    "id" : "pv-02",
+    "question" : "太阳能组件怎么清洗？",
+    "keywordBest" : 13.2645,
+    "vectorBest" : 0.0,
+    "topTitle" : "清洁作业流程与两栖协同",
+    "matchedTokens" : 9,
+    "matched" : [ "清洁", "清洗", "光伏", "件怎", "么清", "太阳", "怎么", "组件", "伏板" ]
+  }, {
+    "id" : "probe-09",
+    "question" : "CFRP 有什么优点",
+    "keywordBest" : 13.3215,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏清洁机器人常见问题",
+    "matchedTokens" : 4,
+    "matched" : [ "么优", "优点", "cfrp", "什么" ]
+  }, {
+    "id" : "probe-29",
+    "question" : "训练数据怎么来的",
+    "keywordBest" : 13.3243,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏医生常见问题",
+    "matchedTokens" : 6,
+    "matched" : [ "数据", "据怎", "么来", "练数", "训练", "怎么" ]
+  }, {
+    "id" : "probe-80",
+    "question" : "获得过什么奖",
+    "keywordBest" : 13.4971,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 5,
+    "matched" : [ "得过", "过什", "么奖", "获得", "什么" ]
+  }, {
+    "id" : "probe-58",
+    "question" : "国内光伏装机多少",
+    "keywordBest" : 13.7571,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 7,
+    "matched" : [ "装机", "机多", "内光", "伏装", "国内", "多少", "光伏" ]
+  }, {
+    "id" : "doc-08",
+    "question" : "运维方案能自动生成吗？",
+    "keywordBest" : 13.9099,
+    "vectorBest" : 0.0,
+    "topTitle" : "平台功能与应用场景",
+    "matchedTokens" : 6,
+    "matched" : [ "运维", "动生", "生成", "维方", "方案", "自动" ]
+  }, {
+    "id" : "doc-10",
+    "question" : "清洁和检测是不是同一套系统？",
+    "keywordBest" : 13.983,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏医生系统总览",
+    "matchedTokens" : 7,
+    "matched" : [ "系统", "清洁", "巡检", "一套", "套系", "同一", "检测" ]
+  }, {
+    "id" : "doc-09",
+    "question" : "巡检数据会不会拍到居民区？",
+    "keywordBest" : 13.9989,
+    "vectorBest" : 0.0,
+    "topTitle" : "数据基础与数据治理",
+    "matchedTokens" : 5,
+    "matched" : [ "数据", "拍到", "到居", "民区", "居民" ]
+  }, {
+    "id" : "probe-65",
+    "question" : "收入情况怎样",
+    "keywordBest" : 14.0299,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 5,
+    "matched" : [ "收入", "入情", "况怎", "怎样", "情况" ]
+  }, {
+    "id" : "doc-07",
+    "question" : "海上光伏能用无人机巡检吗？",
+    "keywordBest" : 14.0453,
+    "vectorBest" : 0.0,
+    "topTitle" : "无人机巡检与缺陷诊断",
+    "matchedTokens" : 7,
+    "matched" : [ "机巡", "人机", "无人", "巡检", "光伏", "检查", "检测" ]
+  }, {
+    "id" : "probe-20",
+    "question" : "光伏医生是什么",
+    "keywordBest" : 14.1172,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏医生系统总览",
+    "matchedTokens" : 5,
+    "matched" : [ "伏医", "医生", "光伏", "什么", "伏板" ]
+  }, {
+    "id" : "doc-06",
+    "question" : "平台有哪些功能？",
+    "keywordBest" : 14.1476,
+    "vectorBest" : 0.0,
+    "topTitle" : "平台功能与应用场景",
+    "matchedTokens" : 3,
+    "matched" : [ "平台", "些功", "哪些" ]
+  }, {
+    "id" : "proj-11",
+    "question" : "项目目前有客户和收入吗？",
+    "keywordBest" : 14.2662,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目基本信息与申报情况",
+    "matchedTokens" : 9,
+    "matched" : [ "项目", "情况", "收入", "目目", "目前", "客户", "户数", "服务", "数量" ]
+  }, {
+    "id" : "cov-06",
+    "question" : "这套系统卖多少钱",
+    "keywordBest" : 14.2889,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 6,
+    "matched" : [ "统卖", "卖多", "少钱", "套系", "多少", "系统" ]
+  }, {
+    "id" : "probe-22",
+    "question" : "和只用无人机的方案有什么不同",
+    "keywordBest" : 14.3197,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏医生常见问题",
+    "matchedTokens" : 8,
+    "matched" : [ "只用", "么不", "用无", "不同", "方案", "什么", "人机", "无人" ]
+  }, {
+    "id" : "probe-90",
+    "question" : "碳排放怎么算",
+    "keywordBest" : 14.3457,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 5,
+    "matched" : [ "放怎", "么算", "碳排", "排放", "怎么" ]
+  }, {
+    "id" : "probe-11",
+    "question" : "支持二次开发吗",
+    "keywordBest" : 14.4373,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏清洁机器人常见问题",
+    "matchedTokens" : 5,
+    "matched" : [ "持二", "次开", "二次", "支持", "开发" ]
+  }, {
+    "id" : "probe-40",
+    "question" : "数据归谁所有",
+    "keywordBest" : 14.4841,
+    "vectorBest" : 0.0,
+    "topTitle" : "数据基础与数据治理",
+    "matchedTokens" : 4,
+    "matched" : [ "数据", "据归", "归谁", "谁所" ]
+  }, {
+    "id" : "probe-48",
+    "question" : "功率预测用什么算法",
+    "keywordBest" : 14.7216,
+    "vectorBest" : 0.0,
+    "topTitle" : "识别与预测算法",
+    "matchedTokens" : 6,
+    "matched" : [ "算法", "预测", "测用", "率预", "功率", "什么" ]
+  }, {
+    "id" : "doc-04",
+    "question" : "热红外数据集有多大？",
+    "keywordBest" : 14.7535,
+    "vectorBest" : 0.0,
+    "topTitle" : "数据基础与数据治理",
+    "matchedTokens" : 5,
+    "matched" : [ "数据", "据集", "热红", "红外", "多大" ]
+  }, {
+    "id" : "probe-81",
+    "question" : "发表过论文吗",
+    "keywordBest" : 14.7997,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 4,
+    "matched" : [ "论文", "表过", "过论", "发表" ]
+  }, {
+    "id" : "pv-10",
+    "question" : "履带在湿滑条件下会打滑吗？",
+    "keywordBest" : 14.8487,
+    "vectorBest" : 0.0,
+    "topTitle" : "结构与材料创新",
+    "matchedTokens" : 6,
+    "matched" : [ "履带", "滑条", "打滑", "湿滑", "件下", "条件" ]
+  }, {
+    "id" : "probe-52",
+    "question" : "分布式屋顶怎么巡检",
+    "keywordBest" : 14.8916,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏医生常见问题",
+    "matchedTokens" : 9,
+    "matched" : [ "顶怎", "么巡", "式屋", "布式", "屋顶", "怎么", "分布", "检查", "巡检" ]
+  }, {
+    "id" : "probe-33",
+    "question" : "热成像灵敏度要求",
+    "keywordBest" : 14.8972,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏医生常见问题",
+    "matchedTokens" : 5,
+    "matched" : [ "像灵", "灵敏", "敏度", "热成", "成像" ]
+  }, {
+    "id" : "probe-71",
+    "question" : "未来五年财务预测",
+    "keywordBest" : 14.9149,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 7,
+    "matched" : [ "务预", "年财", "来五", "五年", "未来", "财务", "预测" ]
+  }, {
+    "id" : "probe-03",
+    "question" : "机器人对光伏板的压强是多少",
+    "keywordBest" : 14.9645,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏清洁机器人常见问题",
+    "matchedTokens" : 6,
+    "matched" : [ "器人", "机器", "光伏", "压强", "对光", "伏板" ]
+  }, {
+    "id" : "probe-60",
+    "question" : "宁波光伏装机多少",
+    "keywordBest" : 15.0738,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 7,
+    "matched" : [ "装机", "波光", "机多", "伏装", "多少", "宁波", "光伏" ]
+  }, {
+    "id" : "proj-04",
+    "question" : "项目能降低多少运维成本？",
+    "keywordBest" : 15.1383,
+    "vectorBest" : 0.0,
+    "topTitle" : "应用成效与落地案例",
+    "matchedTokens" : 8,
+    "matched" : [ "成本", "项目", "低多", "少运", "维成", "多少", "降低", "运维" ]
+  }, {
+    "id" : "probe-86",
+    "question" : "算力平台怎么样",
+    "keywordBest" : 15.4552,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 6,
+    "matched" : [ "力平", "算力", "台怎", "么样", "怎么", "平台" ]
+  }, {
+    "id" : "probe-31",
+    "question" : "数据从哪些电站采集",
+    "keywordBest" : 15.5149,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏医生常见问题",
+    "matchedTokens" : 8,
+    "matched" : [ "数据", "据从", "从哪", "些电", "站采", "哪些", "采集", "电站" ]
+  }, {
+    "id" : "probe-14",
+    "question" : "巡检怎么发现污渍",
+    "keywordBest" : 15.5387,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏清洁机器人常见问题",
+    "matchedTokens" : 8,
+    "matched" : [ "检怎", "么发", "现污", "发现", "污渍", "怎么", "巡检", "检测" ]
+  }, {
+    "id" : "probe-10",
+    "question" : "机器人怎么控制",
+    "keywordBest" : 15.5672,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏清洁机器人常见问题",
+    "matchedTokens" : 5,
+    "matched" : [ "器人", "机器", "么控", "控制", "怎么" ]
+  }, {
+    "id" : "probe-42",
+    "question" : "系统满足哪些标准",
+    "keywordBest" : 15.6792,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏医生常见问题",
+    "matchedTokens" : 7,
+    "matched" : [ "标准", "统满", "足哪", "些标", "哪些", "满足", "系统" ]
+  }, {
+    "id" : "proj-07",
+    "question" : "有没有售后技术支持？",
+    "keywordBest" : 15.86,
+    "vectorBest" : 0.0,
+    "topTitle" : "服务与合作",
+    "matchedTokens" : 6,
+    "matched" : [ "服务", "术支", "支持", "技术", "后技", "售后" ]
+  }, {
+    "id" : "probe-06",
+    "question" : "履带用什么材料",
+    "keywordBest" : 15.9319,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏清洁机器人常见问题",
+    "matchedTokens" : 6,
+    "matched" : [ "材料", "履带", "带用", "用什", "么材", "什么" ]
+  }, {
+    "id" : "probe-53",
+    "question" : "海上光伏运维怎么做",
+    "keywordBest" : 16.0771,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏医生常见问题",
+    "matchedTokens" : 8,
+    "matched" : [ "光伏", "运维", "维怎", "么做", "上光", "海上", "怎么", "伏运" ]
+  }, {
+    "id" : "probe-08",
+    "question" : "主体框架用什么材料",
+    "keywordBest" : 16.2174,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏清洁机器人常见问题",
+    "matchedTokens" : 7,
+    "matched" : [ "材料", "用什", "体框", "么材", "主体", "框架", "什么" ]
+  }, {
+    "id" : "probe-56",
+    "question" : "组件报废怎么判断",
+    "keywordBest" : 16.2703,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏医生常见问题",
+    "matchedTokens" : 8,
+    "matched" : [ "光伏", "件报", "报废", "废怎", "么判", "判断", "怎么", "组件" ]
+  }, {
+    "id" : "pv-05",
+    "question" : "清洁机器人适用哪些场景？",
+    "keywordBest" : 16.3293,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏清洁机器人常见问题",
+    "matchedTokens" : 8,
+    "matched" : [ "洁机", "器人", "机器", "清洁", "场景", "用哪", "适用", "哪些" ]
+  }, {
+    "id" : "probe-55",
+    "question" : "循环经济用得上吗",
+    "keywordBest" : 16.4376,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏医生常见问题",
+    "matchedTokens" : 6,
+    "matched" : [ "循环", "环经", "经济", "济用", "用得", "得上" ]
+  }, {
+    "id" : "probe-35",
+    "question" : "数据采集缺失怎么办",
+    "keywordBest" : 16.5557,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏医生常见问题",
+    "matchedTokens" : 8,
+    "matched" : [ "数据", "集缺", "失怎", "么办", "缺失", "据采", "采集", "怎么" ]
+  }, {
+    "id" : "proj-17",
+    "question" : "项目总投入多少资金？",
+    "keywordBest" : 16.6086,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 7,
+    "matched" : [ "项目", "入多", "目总", "总投", "投入", "多少", "资金" ]
+  }, {
+    "id" : "proj-08",
+    "question" : "可以发展本地服务商吗？",
+    "keywordBest" : 16.727,
+    "vectorBest" : 0.0,
+    "topTitle" : "服务与合作",
+    "matchedTokens" : 7,
+    "matched" : [ "服务", "展本", "地服", "务商", "本地", "发展", "可以" ]
+  }, {
+    "id" : "probe-12",
+    "question" : "有几种工作模式",
+    "keywordBest" : 16.7388,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏清洁机器人常见问题",
+    "matchedTokens" : 5,
+    "matched" : [ "作模", "工作", "模式", "几种", "种工" ]
+  }, {
+    "id" : "proj-10",
+    "question" : "项目参加的是什么比赛？",
+    "keywordBest" : 16.7627,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目基本信息与申报情况",
+    "matchedTokens" : 6,
+    "matched" : [ "项目", "目参", "么比", "比赛", "参加", "什么" ]
+  }, {
+    "id" : "probe-66",
+    "question" : "项目投入多少钱",
+    "keywordBest" : 16.7645,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 6,
+    "matched" : [ "项目", "目投", "入多", "少钱", "投入", "多少" ]
+  }, {
+    "id" : "pv-04",
+    "question" : "光伏电站组件积灰怎么处理？",
+    "keywordBest" : 17.2519,
+    "vectorBest" : 0.0,
+    "topTitle" : "两栖光伏清洁机器人产品概述",
+    "matchedTokens" : 11,
+    "matched" : [ "光伏", "组件", "电站", "么处", "灰怎", "站组", "件积", "积灰", "处理", "怎么", "伏电" ]
+  }, {
+    "id" : "probe-38",
+    "question" : "标注质量怎么保证",
+    "keywordBest" : 17.3062,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏医生常见问题",
+    "matchedTokens" : 7,
+    "matched" : [ "标注", "量怎", "么保", "注质", "保证", "质量", "怎么" ]
+  }, {
+    "id" : "probe-83",
+    "question" : "公司什么时候成立的",
+    "keywordBest" : 17.3985,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 7,
+    "matched" : [ "司什", "么时", "时候", "候成", "成立", "什么", "公司" ]
+  }, {
+    "id" : "pv-07",
+    "question" : "组件表面鸟粪如何清理？",
+    "keywordBest" : 17.4127,
+    "vectorBest" : 0.0,
+    "topTitle" : "清洁作业流程与两栖协同",
+    "matchedTokens" : 9,
+    "matched" : [ "光伏", "粪如", "何清", "清理", "如何", "鸟粪", "件表", "表面", "组件" ]
+  }, {
+    "id" : "pv-11",
+    "question" : "两栖是什么意思？",
+    "keywordBest" : 17.6702,
+    "vectorBest" : 0.0,
+    "topTitle" : "两栖光伏清洁机器人产品概述",
+    "matchedTokens" : 4,
+    "matched" : [ "两栖", "么意", "意思", "什么" ]
+  }, {
+    "id" : "probe-43",
+    "question" : "数据多久更新一次",
+    "keywordBest" : 17.8013,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏医生常见问题",
+    "matchedTokens" : 7,
+    "matched" : [ "数据", "据多", "久更", "新一", "更新", "多久", "一次" ]
+  }, {
+    "id" : "proj-01",
+    "question" : "项目背景是什么？",
+    "keywordBest" : 17.8151,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目背景与需求",
+    "matchedTokens" : 4,
+    "matched" : [ "目背", "背景", "项目", "什么" ]
+  }, {
+    "id" : "doc-02",
+    "question" : "无人机巡检能发现哪些故障？",
+    "keywordBest" : 17.817,
+    "vectorBest" : 0.0,
+    "topTitle" : "无人机巡检与缺陷诊断",
+    "matchedTokens" : 10,
+    "matched" : [ "机巡", "人机", "无人", "巡检", "现哪", "哪些", "发现", "复检", "故障", "检测" ]
+  }, {
+    "id" : "pv-09",
+    "question" : "清洁机器人有多重？",
+    "keywordBest" : 18.3636,
+    "vectorBest" : 0.0,
+    "topTitle" : "两栖光伏清洁机器人产品概述",
+    "matchedTokens" : 6,
+    "matched" : [ "洁机", "器人", "机器", "清洁", "清洗", "积灰" ]
+  }, {
+    "id" : "probe-68",
+    "question" : "一个 GW 电站一年要多少服务费",
+    "keywordBest" : 18.485,
+    "vectorBest" : 0.0,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 9,
+    "matched" : [ "站一", "一年", "少服", "务费", "一个", "gw", "多少", "服务", "电站" ]
+  }, {
+    "id" : "proj-02",
+    "question" : "有哪些落地案例？",
+    "keywordBest" : 18.7019,
+    "vectorBest" : 0.0,
+    "topTitle" : "应用成效与落地案例",
+    "matchedTokens" : 3,
+    "matched" : [ "落地", "地案", "案例" ]
+  }, {
+    "id" : "probe-15",
+    "question" : "无人机巡检后机器人怎么知道去哪洗",
+    "keywordBest" : 19.3486,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏清洁机器人常见问题",
+    "matchedTokens" : 11,
+    "matched" : [ "器人", "机器", "么知", "知道", "道去", "去哪", "哪洗", "人怎", "怎么", "巡检", "检测" ]
+  }, {
+    "id" : "doc-01",
+    "question" : "光伏医生系统是什么？",
+    "keywordBest" : 19.4941,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏医生系统总览",
+    "matchedTokens" : 7,
+    "matched" : [ "生系", "系统", "伏医", "医生", "光伏", "什么", "伏板" ]
+  }, {
+    "id" : "pv-06",
+    "question" : "清洁机器人和光伏医生是什么关系？",
+    "keywordBest" : 19.6931,
+    "vectorBest" : 0.0,
+    "topTitle" : "两栖光伏清洁机器人产品概述",
+    "matchedTokens" : 10,
+    "matched" : [ "洁机", "器人", "机器", "清洁", "光伏", "清洗", "关系", "伏医", "医生", "伏板" ]
+  }, {
+    "id" : "mix-02",
+    "question" : "无人机巡检比人工爬塔更安全吗？",
+    "keywordBest" : 19.9765,
+    "vectorBest" : 0.0,
+    "topTitle" : "无人机巡检与缺陷诊断",
+    "matchedTokens" : 11,
+    "matched" : [ "机巡", "人机", "无人", "巡检", "检比", "比人", "更安", "安全", "人工", "检查", "检测" ]
+  }, {
+    "id" : "proj-09",
+    "question" : "设备操作培训包括什么？",
+    "keywordBest" : 20.2899,
+    "vectorBest" : 0.0,
+    "topTitle" : "服务与合作",
+    "matchedTokens" : 9,
+    "matched" : [ "培训", "备操", "训包", "括什", "作培", "操作", "包括", "什么", "设备" ]
+  }, {
+    "id" : "probe-93",
+    "question" : "落地案例有哪些",
+    "keywordBest" : 20.4869,
+    "vectorBest" : 0.0,
+    "topTitle" : "应用成效与落地案例",
+    "matchedTokens" : 3,
+    "matched" : [ "落地", "地案", "案例" ]
+  }, {
+    "id" : "probe-39",
+    "question" : "数据涉及居民隐私怎么办",
+    "keywordBest" : 20.7172,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏医生常见问题",
+    "matchedTokens" : 10,
+    "matched" : [ "隐私", "数据", "据涉", "民隐", "私怎", "涉及", "及居", "么办", "居民", "怎么" ]
+  }, {
+    "id" : "probe-16",
+    "question" : "清洁机器人能替代人工吗",
+    "keywordBest" : 21.4686,
+    "vectorBest" : 0.0,
+    "topTitle" : "两栖光伏清洁机器人产品概述",
+    "matchedTokens" : 8,
+    "matched" : [ "洁机", "器人", "机器", "清洁", "清洗", "替代", "代人", "人工" ]
+  }, {
+    "id" : "proj-16",
+    "question" : "清洁机器人怎么收费？",
+    "keywordBest" : 21.9691,
+    "vectorBest" : 0.0,
+    "topTitle" : "两栖光伏清洁机器人产品概述",
+    "matchedTokens" : 9,
+    "matched" : [ "洁机", "器人", "机器", "清洁", "清洗", "人怎", "么收", "怎么", "收费" ]
+  }, {
+    "id" : "cov-05",
+    "question" : "你们做扫地机器人吗",
+    "keywordBest" : 22.3141,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏清洁机器人常见问题",
+    "matchedTokens" : 6,
+    "matched" : [ "器人", "机器", "们做", "做扫", "扫地", "地机" ]
+  }, {
+    "id" : "probe-07",
+    "question" : "机器人外壳防护等级多少",
+    "keywordBest" : 22.7935,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏清洁机器人常见问题",
+    "matchedTokens" : 9,
+    "matched" : [ "器人", "机器", "防护", "人外", "壳防", "等级", "护等", "外壳", "多少" ]
+  }, {
+    "id" : "pv-01",
+    "question" : "光伏清洁机器人是做什么的？",
+    "keywordBest" : 25.3822,
+    "vectorBest" : 0.0,
+    "topTitle" : "两栖光伏清洁机器人产品概述",
+    "matchedTokens" : 9,
+    "matched" : [ "伏清", "洁机", "器人", "机器", "清洁", "光伏", "清洗", "做什", "什么" ]
+  }, {
+    "id" : "probe-01",
+    "question" : "两栖光伏清洁机器人是做什么的",
+    "keywordBest" : 31.8677,
+    "vectorBest" : 0.0,
+    "topTitle" : "两栖光伏清洁机器人产品概述",
+    "matchedTokens" : 11,
+    "matched" : [ "栖光", "两栖", "伏清", "洁机", "器人", "机器", "清洁", "光伏", "清洗", "做什", "什么" ]
+  }, {
+    "id" : "pv-03",
+    "question" : "清洁作业流程是怎样的？",
+    "keywordBest" : 32.5429,
+    "vectorBest" : 0.0,
+    "topTitle" : "清洁作业流程与两栖协同",
+    "matchedTokens" : 7,
+    "matched" : [ "业流", "洁作", "流程", "作业", "清洁", "清洗", "怎样" ]
+  } ],
+  "outOfDomain" : [ {
+    "id" : "ood-10",
+    "question" : "光伏和风电哪个更赚钱？",
+    "keywordBest" : 5.4627,
+    "vectorBest" : 0.5711,
+    "topTitle" : "光伏医生系统总览",
+    "matchedTokens" : 3,
+    "matched" : [ "光伏", "风电", "伏板" ]
+  }, {
+    "id" : "ood-12",
+    "question" : "这台无人机多少钱？",
+    "keywordBest" : 5.3298,
+    "vectorBest" : 0.5966,
+    "topTitle" : "无人机巡检与缺陷诊断",
+    "matchedTokens" : 3,
+    "matched" : [ "人机", "无人", "飞行" ]
+  }, {
+    "id" : "ood-3",
+    "question" : "午饭吃什么好",
+    "keywordBest" : 5.2861,
+    "vectorBest" : 0.3677,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 2,
+    "matched" : [ "么好", "什么" ]
+  }, {
+    "id" : "ood-11",
+    "question" : "你们的产品比别的厂家贵吗？",
+    "keywordBest" : 5.1398,
+    "vectorBest" : 0.5383,
+    "topTitle" : "两栖光伏清洁机器人产品概述",
+    "matchedTokens" : 1,
+    "matched" : [ "产品" ]
+  }, {
+    "id" : "ood-7",
+    "question" : "你用的什么大模型",
+    "keywordBest" : 5.0189,
+    "vectorBest" : 0.5391,
+    "topTitle" : "平台功能与应用场景",
+    "matchedTokens" : 2,
+    "matched" : [ "大模", "模型" ]
+  }, {
+    "id" : "ood-8",
+    "question" : "会议室在哪里",
+    "keywordBest" : 4.712,
+    "vectorBest" : 0.4224,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 1,
+    "matched" : [ "哪里" ]
+  }, {
+    "id" : "ood-4",
+    "question" : "股票行情怎么样",
+    "keywordBest" : 4.2674,
+    "vectorBest" : 0.4228,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 2,
+    "matched" : [ "么样", "怎么" ]
+  }, {
+    "id" : "ood-0",
+    "question" : "今天上海天气怎么样？",
+    "keywordBest" : 3.7635,
+    "vectorBest" : 0.4529,
+    "topTitle" : "项目与团队常见问题",
+    "matchedTokens" : 2,
+    "matched" : [ "么样", "怎么" ]
+  }, {
+    "id" : "ood-5",
+    "question" : "帮我订一张去北京的机票",
+    "keywordBest" : 3.0847,
+    "vectorBest" : 0.4483,
+    "topTitle" : "团队、单位与知识产权",
+    "matchedTokens" : 1,
+    "matched" : [ "北京" ]
+  }, {
+    "id" : "ood-13",
+    "question" : "能开发票吗？",
+    "keywordBest" : 2.9387,
+    "vectorBest" : 0.5003,
+    "topTitle" : "团队、单位与知识产权",
+    "matchedTokens" : 1,
+    "matched" : [ "开发" ]
+  }, {
+    "id" : "ood-9",
+    "question" : "洗手间怎么走",
+    "keywordBest" : 1.9272,
+    "vectorBest" : 0.4612,
+    "topTitle" : "光伏清洁机器人常见问题",
+    "matchedTokens" : 1,
+    "matched" : [ "怎么" ]
+  }, {
+    "id" : "ood-1",
+    "question" : "帮我写一首诗",
+    "keywordBest" : 0.0,
+    "vectorBest" : 0.3515,
+    "topTitle" : "-",
+    "matchedTokens" : 0,
+    "matched" : [ ]
+  }, {
+    "id" : "ood-2",
+    "question" : "你是谁？",
+    "keywordBest" : 0.0,
+    "vectorBest" : 0.38,
+    "topTitle" : "-",
+    "matchedTokens" : 0,
+    "matched" : [ ]
+  }, {
+    "id" : "ood-6",
+    "question" : "讲个笑话",
+    "keywordBest" : 0.0,
+    "vectorBest" : 0.3933,
+    "topTitle" : "-",
+    "matchedTokens" : 0,
+    "matched" : [ ]
+  } ],
+  "minInDomain" : 6.6325,
+  "maxOutOfDomain" : 6.4249,
+  "minInDomainOriginal" : 2.5836,
+  "maxOutOfDomainOriginal" : 5.4627,
+  "minMatchedTokensInDomain" : 2,
+  "maxMatchedTokensOutOfDomain" : 3,
+  "suggestedThreshold" : 6.5,
+  "separated" : true,
+  "gateMetricUsedByGate" : "keywordBestScore（排序分，与 HybridRetriever 判闸门同一口径）",
+  "gateSafe" : true,
+  "gateMargin" : 0.0751,
+  "effectiveMinVectorScore" : 0.75,
+  "maxOutOfDomainVector" : 0.6252,
+  "minGatedInDomainVector" : 0.0,
+  "outOfDomainNear" : [ {
+    "id" : "near-1",
+    "question" : "今年光伏补贴政策有什么变化？",
+    "keywordBest" : 3.7502,
+    "vectorBest" : 0.6252,
+    "topTitle" : "光伏医生常见问题",
+    "matchedTokens" : 2,
+    "matched" : [ "光伏", "变化" ]
+  }, {
+    "id" : "near-5",
+    "question" : "你们公司上市了吗？",
+    "keywordBest" : 5.8844,
+    "vectorBest" : 0.5521,
+    "topTitle" : "商业模式与定价",
+    "matchedTokens" : 2,
+    "matched" : [ "上市", "公司" ]
+  }, {
+    "id" : "near-6",
+    "question" : "帮我查一下明天的天气",
+    "keywordBest" : 2.1207,
+    "vectorBest" : 0.5169,
+    "topTitle" : "清洁作业流程与两栖协同",
+    "matchedTokens" : 1,
+    "matched" : [ "天气" ]
+  }, {
+    "id" : "near-7",
+    "question" : "帮我写一段 Python 代码",
+    "keywordBest" : 3.6499,
+    "vectorBest" : 0.4528,
+    "topTitle" : "平台功能与应用场景",
+    "matchedTokens" : 1,
+    "matched" : [ "python" ]
+  }, {
+    "id" : "near-2",
+    "question" : "你们和隆基绿能是什么关系？",
+    "keywordBest" : 3.0544,
+    "vectorBest" : 0.3628,
+    "topTitle" : "两栖光伏清洁机器人产品概述",
+    "matchedTokens" : 1,
+    "matched" : [ "关系" ]
+  }, {
+    "id" : "near-0",
+    "question" : "光伏板多少钱一瓦？",
+    "keywordBest" : 5.9829,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏清洁机器人常见问题",
+    "matchedTokens" : 4,
+    "matched" : [ "光伏", "板多", "伏板", "太阳" ]
+  }, {
+    "id" : "near-3",
+    "question" : "扫地机器人多少钱？",
+    "keywordBest" : 15.1019,
+    "vectorBest" : 0.0,
+    "topTitle" : "光伏清洁机器人常见问题",
+    "matchedTokens" : 4,
+    "matched" : [ "器人", "机器", "扫地", "地机" ]
+  }, {
+    "id" : "near-4",
+    "question" : "这个机器人能送外卖吗？",
+    "keywordBest" : 9.1786,
+    "vectorBest" : 0.0,
+    "topTitle" : "两栖光伏清洁机器人产品概述",
+    "matchedTokens" : 2,
+    "matched" : [ "器人", "机器" ]
+  } ],
+  "gatedInDomainWeakest" : [ ],
+  "vectorHatchSeparated" : false
+}

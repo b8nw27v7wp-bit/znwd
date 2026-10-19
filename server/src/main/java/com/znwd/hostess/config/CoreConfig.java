@@ -137,10 +137,11 @@ public class CoreConfig {
             return new DisabledSpeechModel("语音缺少 api-key");
         }
         AppProperties.Audio audio = props.audio();
-        log.info("[audio] provider=mimo tts={} asr={} voice={} lang={} baseUrl={}",
-                audio.ttsModel(), audio.asrModel(), props.audioVoice(), audio.asrLanguage(), props.audioBaseUrl());
+        log.info("[audio] provider=mimo tts={} asr={} voice={} lang={} baseUrl={} 预算 tts={}ms asr={}ms",
+                audio.ttsModel(), audio.asrModel(), props.audioVoice(), audio.asrLanguage(), props.audioBaseUrl(),
+                props.audioTimeoutMs(), props.audioAsrTimeoutMs());
         return new MimoSpeechModel(props.audioBaseUrl(), props.audioApiKey(), audio.ttsModel(), props.audioVoice(),
-                audio.style(), audio.asrModel(), audio.asrLanguage(), audio.timeoutMs(),
+                audio.style(), audio.asrModel(), audio.asrLanguage(), props.audioTimeoutMs(), props.audioAsrTimeoutMs(),
                 audio.maxRetries(), audio.retryBaseMs(), mapper);
     }
 

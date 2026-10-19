@@ -81,7 +81,7 @@ znwd:
   # 目录不存在（或没有 index.html）时该功能自动关闭，开发时仍用 Vite dev（npm run dev）。
   web-dist-dir: ${WEB_DIST_DIR:./web/dist}
   watch-knowledge: ${KNOWLEDGE_WATCH:false}
-  min-relevance-score: ${MIN_RELEVANCE_SCORE:6.3}
+  min-relevance-score: ${MIN_RELEVANCE_SCORE:6.5}
   # 语义向量兜底阈值：关键词没过阈值时，余弦 ≥ 它才放行。
   # 当前 0.75 = 「关闭兜底」：实测域外最高余弦 0.6252，待救在域用例 0 条（余弦 0.0000），
   # 区间不成立——开口子必然先把域外问题放进来。语义向量因此只做诊断与「关键词没过闸门时的余弦兜底」，
@@ -151,7 +151,12 @@ znwd:
     asr-model: ${AUDIO_ASR_MODEL:mimo-v2.5-asr}
     # auto / zh / en：展厅以中文为主，默认 zh 更稳
     asr-language: ${AUDIO_ASR_LANGUAGE:zh}
-    timeout-ms: ${AUDIO_TIMEOUT_MS:60000}
+    # 一次合成（含全部重试）的总预算，不是单次等待上限：客户端等 20s，服务端必须更早收场
+    # ——浏览器一放弃，这条同步调用再重试下去只是替一个没人要的响应花线程与上游调用
+    timeout-ms: ${AUDIO_TIMEOUT_MS:15000}
+    # 一次识别（含全部重试）的总预算：整段录音 ≤20 秒音频 / 约 850KB，慢链路要留余量，
+    # 所以比合成宽（合成正常 1~3 秒就回来）。分段识别客户端只等 15s，会先放弃，服务端最多再花到这里
+    asr-timeout-ms: ${AUDIO_ASR_TIMEOUT_MS:30000}
     max-retries: ${AUDIO_MAX_RETRIES:2}
     retry-base-ms: ${AUDIO_RETRY_BASE_MS:1000}
     # 单次合成的文本上限（前端按句切片，每片通常 60 字上下）

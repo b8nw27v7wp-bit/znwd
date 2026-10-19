@@ -57,16 +57,18 @@ describe('项目讲解图', () => {
   it('图上的数字与仓库当前口径一致（改了图没改这里会红）', () => {
     const wrapper = mount(StageDiagram);
     const text = wrapper.text();
-    // 语料：knowledge 209 块（/api/health 实测）
-    expect(text).toContain('209 个片段');
-    expect(text).toContain('209 片段');
-    // 阈值：四处同步的 MIN_RELEVANCE_SCORE=6.3
-    expect(text).toContain('阈值 6.3');
-    // 评测基线：137 条计分用例 top1/top3 = 1.0，闸门误拦 2 条
-    expect(text).toContain('1.0 / 1.0');
-    expect(text).toContain('2 / 137');
+    // 语料：knowledge 242 块（/api/health 实测）
+    expect(text).toContain('242 个片段');
+    expect(text).toContain('242 片段');
+    // 阈值：四处同步的 MIN_RELEVANCE_SCORE=6.5
+    expect(text).toContain('阈值 6.5');
+    // 评测基线：161 条计分用例 top1 0.99 / top3 1.0（唯一未中 top1 的 ind-09 是展区交叉的边界用例），闸门误拦 0 条
+    expect(text).toContain('0.99 / 1.0');
+    expect(text).toContain('0 / 161');
+    // 同义词组数（2026-10-19 由 21 组补到 34 组）
+    expect(text).toContain('34 组');
     // 冒烟项数
-    expect(text).toContain('56 项');
+    expect(text).toContain('100 项');
     wrapper.unmount();
   });
 });

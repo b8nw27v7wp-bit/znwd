@@ -41,6 +41,15 @@ export type AcousticsEvent = DictationMetric | AnswerMetric;
 /** 增量计数累加器：键与后端 `/api/speech/metrics` 的白名单一一对应 */
 export type AcousticsCounters = Record<string, number>;
 
+/**
+ * 单项数值的上限，**与后端 `SpeechParser.METRIC_MAX_VALUE` 必须同一个数**（有测试读那份源码对齐）。
+ *
+ * <p>后端对越界的值不是「忽略这一项」而是**整批 400**——内存计数器没有回退路径，一条坏数据进去，
+ * 重启前运营面板读到的都是错的。那条判据是对的，代价是「一个越界值带走整批几十个键」，
+ * 所以客户端出口这里先夹一道：越界的夹到上限、非有限值直接不发。
+ */
+export const METRIC_MAX_VALUE = 1e6;
+
 export function emptyCounters(): AcousticsCounters {
   return {
     utterances: 0,
@@ -163,11 +172,19 @@ export function accumulate(counters: AcousticsCounters, event: AcousticsEvent): 
   }
 }
 
-/** 只取非零项：全零的键不发，免得每一批都白占几十个字段的带宽与配额 */
+/**
+ * 只取非零项：全零的键不发，免得每一批都白占几十个字段的带宽与配额。
+ *
+ * <p>出口再夹一道值域（{@link METRIC_MAX_VALUE}）：后端对越界的值是**整批 400**，
+ * 一个离谱的样本（比如机器休眠几小时醒来后 `performance.now()` 的跳变算出来的毫秒数）
+ * 会把这 15 秒里攒的几十个键一起带走，而且一声不响。夹到上限至少保住同批的其它样本
+ * ——反正后端 `Analytics#recordSpeech` 也是按同一个上限夹的。
+ */
 export function pendingDeltas(counters: AcousticsCounters): AcousticsCounters {
   const out: AcousticsCounters = {};
   for (const [key, value] of Object.entries(counters)) {
-    if (value) out[key] = value;
+    if (!Number.isFinite(value) || value <= 0) continue;
+    out[key] = Math.min(value, METRIC_MAX_VALUE);
   }
   return out;
 }
@@ -185,9 +202,12 @@ export function useAcoustics() {
     const deltas = pendingDeltas(counters);
     if (!Object.keys(deltas).length) return;
     counters = emptyCounters();
-    void sendSpeechMetrics(deltas).catch(() => {
+    void sendSpeechMetrics(deltas).catch((error: unknown) => {
       // 上报是尽力而为：接口没起来、配额正好用尽、页面正在卸载都会失败，
-      // 而这些都不影响参观者此刻能不能提问，所以既不重试也不往上抛
+      // 而这些都不影响参观者此刻能不能提问，所以既不重试也不往上抛。
+      // 但**要留下痕迹**：被 400 掉（键漂移或值越界）的表现是「运营面板上那几行永远是 0」，
+      // 一声不响的话只有人蹲到现场比对才发现——控制台至少给研究者留一条线索。
+      console.warn('[acoustics] 这批声学遥测没能上报（下一批带新的增量继续）：', error);
     });
   }
 

@@ -49,6 +49,75 @@ class KnowledgeRetrievalTest {
         assertTrue(chunks.stream().allMatch(chunk -> chunk.length() <= 500));
     }
 
+    /**
+     * 2026-10-19 修：标题是先加还是后加，决定了续块有没有标题。
+     * 修之前「国内主要标准」那种长清单会切出一块 99 字符的无标题碎片（正文从半句「电站现场组件检测规程》」开始）。
+     */
+    @Test
+    void 长清单切分后每一块都必须带标题() {
+        StringBuilder list = new StringBuilder();
+        for (int i = 1; i <= 14; i++) {
+            list.append("- **GB/T ").append(10000 + i)
+                    .append("**：这是第 ").append(i).append(" 条标准，规定光伏组件检修与维护的技术要求。\n");
+        }
+        List<String> chunks = TextChunker.chunkText("# 标准清单\n\n" + list);
+
+        assertTrue(chunks.size() > 1, "这一节超过上限，必须切成多块");
+        assertTrue(chunks.stream().allMatch(chunk -> chunk.length() <= 500), "任何一块都不得超过上限");
+        for (int i = 0; i < chunks.size(); i++) {
+            String expected = i == 0 ? "标准清单" : "标准清单（续）";
+            assertTrue(chunks.get(i).startsWith(expected),
+                    "第 " + i + " 块必须以「" + expected + "」开头，实际开头=" + firstLine(chunks.get(i)));
+        }
+    }
+
+    /** 滑窗切点要落在换行/句末上：把条目或标准号切一半，检索到的那块就答不全 */
+    @Test
+    void 滑窗切点落在自然边界上() {
+        StringBuilder text = new StringBuilder("# 判据\n\n");
+        for (int i = 1; i <= 30; i++) {
+            text.append("第 ").append(i).append(" 句：同一光伏组件外表面的温差应小于 20℃。\n");
+        }
+        List<String> chunks = TextChunker.chunkText(text.toString(), 300, 60);
+
+        assertTrue(chunks.size() > 2, "构造的语料必须切成多块才谈得上切点");
+        for (int i = 0; i < chunks.size() - 1; i++) {
+            assertTrue("。".indexOf(chunks.get(i).charAt(chunks.get(i).length() - 1)) >= 0,
+                    "非末块必须以句末标点收尾，实际结尾=「"
+                            + chunks.get(i).substring(Math.max(0, chunks.get(i).length() - 12)) + "」");
+        }
+        for (String chunk : chunks) {
+            for (String line : chunk.split("\n")) {
+                if (line.isBlank() || line.startsWith("判据")) {
+                    continue;
+                }
+                // 首行可能是上一窗口的重叠残尾（本来就该重叠，不是缺陷），但它同样必须以句末标点收尾；
+                // 若窗口末尾落在句子中间，这里就会出现一行没有句末标点的残句。
+                assertTrue(line.endsWith("。"), "行尾必须是完整句，实际=" + line);
+            }
+        }
+    }
+
+    /** 正文打包到 496、标题 4 字时，修之前拼上标题就 502 → 二次切分产出无标题续块 */
+    @Test
+    void 正文打包时给标题留出位置() {
+        StringBuilder body = new StringBuilder();
+        while (body.length() < 496) {
+            body.append("光伏组件清洗后透光率可恢复到接近初始值。");
+        }
+        List<String> chunks = TextChunker.chunkText("# 标准清单\n\n" + body.substring(0, 496));
+
+        assertTrue(chunks.size() > 1);
+        assertTrue(chunks.stream().allMatch(chunk -> chunk.length() <= 500));
+        assertTrue(chunks.get(0).startsWith("标准清单"));
+        assertTrue(chunks.get(1).startsWith("标准清单（续）"), "续块必须带上标题，实际=" + firstLine(chunks.get(1)));
+    }
+
+    private static String firstLine(String chunk) {
+        int idx = chunk.indexOf('\n');
+        return idx < 0 ? chunk : chunk.substring(0, idx);
+    }
+
     @Test
     void 单字命中不再给分_域外问题无候选() {
         Retriever retriever = new Retriever();

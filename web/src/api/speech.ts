@@ -11,14 +11,27 @@ import { apiUrl, awaitWithAbort, json, requestTimeout, safeError, streamAbortErr
  *
  * <p>没有它的话，一次卡住的请求会让播报循环永久停在 await 上（speaking 一直为 true、
  * 页面上「停读」不消失）。按句切片后正常在 1~3 秒内回来，20 秒是给网络抖动留的余量。
+ *
+ * <p>**它必须长于服务端一次合成的总预算**（`AUDIO_TIMEOUT_MS`，缺省 15s，含全部重试）：
+ * 那条同步调用不会因为浏览器 abort 而中断上游请求，客户端先放弃就只是让服务端白跑一趟，
+ * 而且会把一次本可以成功的重试判成失败（`useSpeech` 会就此降级到浏览器合成）。
  */
 export const SYNTH_TIMEOUT_MS = 20_000;
+/**
+ * 整段识别的等待上限：要等一次 20 秒录音的上传 + 上游出字 + 可能的服务端重试。
+ *
+ * <p>服务端一次识别的总预算是 `AUDIO_ASR_TIMEOUT_MS`（缺省 30s，含全部重试），比它短得多。
+ */
 export const RECOGNITION_TIMEOUT_MS = 90_000;
 /**
  * 常开聆听下**分段识别**的等待上限。
  *
  * <p>整段识别给 90s 是因为要等一次 20 秒录音的上传 + 上游出字；分段只有 2 秒音频，
  * 沿用 90s 会让「同时在途至多 2 段」的闸门卡死十几秒（表现为文字迟迟不出、后面的段全被丢弃）。
+ *
+ * <p>它比服务端那 30s 预算**短**，是有意的：分段只是预览，参观者等不到就先不要它，
+ * 让槽位立刻空出来给后面的段；服务端那侧的花费被它自己的预算封顶（不会再出现
+ * 「客户端 15s 放弃、服务端重试到三分钟」）。
  */
 export const SEGMENT_RECOGNITION_TIMEOUT_MS = 15_000;
 
@@ -93,12 +106,15 @@ export async function recognizeSpeech(
  * - **keepalive**：卸载或切到后台时那一批必须发得出去，否则「关页面」这类现场动作永远缺最后一笔。
  */
 export async function sendSpeechMetrics(deltas: Record<string, number>): Promise<void> {
-  await fetch(apiUrl('/api/speech/metrics'), {
+  const res = await fetch(apiUrl('/api/speech/metrics'), {
     method: 'POST',
     headers: json,
     body: JSON.stringify(deltas),
     keepalive: true,
   });
+  // 非 2xx 要**抛**：这个接口对未知键与越界值是整批 400，只看 fetch 是否 resolve 会把
+  // 「这批数据被拒了」当成「上报成功」——表现是运营面板上那几行永远不动，且毫无线索。
+  if (!res.ok) throw new Error(`speech metrics ${res.status}`);
 }
 
 /** Blob → data URL：交给 FileReader（原生实现），不用 btoa 拼字符串，避免大录音上爆栈 */

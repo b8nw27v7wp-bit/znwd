@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MAX_SPEAK_CHARS, lastSentenceEnd, PLAYBACK_WATCHDOG_MS, SPEAK_CHUNK_CHARS, sanitizeForSpeech, splitForSpeech, useSpeech } from './useSpeech';
+import { MAX_SPEAK_CHARS, lastSentenceEnd, PLAYBACK_WATCHDOG_MS, SERVER_RETRY_COOLDOWN_MS, SPEAK_CHUNK_CHARS, sanitizeForSpeech, splitForSpeech, useSpeech } from './useSpeech';
 
 /**
  * 语音播报测试：node 环境没有 window/speechSynthesis，全部用假实现顶替。
@@ -199,7 +199,7 @@ describe('播报状态机', () => {
 });
 
 /**
- * 播报失败的可见性（docs/archive/2026-09-22-speech-plan.md 的 P0）。
+ * 播报失败的可见性（自动播放拦截的 P0，见 CHANGELOG 2026-09-22 条目）。
  *
  * 现场最糟的表现是「一声不响」：应用照常调 speak、浏览器按自动播放策略拒掉、页面上什么都不显示。
  * 所以失败必须能被上报到运营视图，而**主动停读**（interrupted / canceled）不能混进来——
@@ -451,17 +451,66 @@ describe('服务端 TTS 播报', () => {
     expect(speech.serverReady.value).toBe(false);
   });
 
-  it('运行中失败过之后，后续 health 再报可用也不复辟', async () => {
+  /**
+   * 降级当场生效、恢复要过冷却期。
+   *
+   * <p>早先这里是个布尔闩（失败过就永不复辟），配上「health 只在挂载时取一次」，
+   * 等于一次上游抖动就把这台机器的音色永久换成浏览器合成，直到有人手刷页面——
+   * 展厅里几台机器声音不一致，运营还得翻 ?admin=1 才知道。
+   */
+  it('运行中失败之后：冷却期内的陈旧 health 不复辟，过了冷却期就恢复', async () => {
     const env = stubServer({ fail: true, withSynth: true });
     const speech = useSpeech();
     speech.setServerReady(true);
     speech.speak('先失败一次。');
     await vi.waitFor(() => expect(speech.serverReady.value).toBe(false));
 
-    speech.setServerReady(true); // 陈旧的 health 结果
+    // 以「读到失败那一刻」为基准拨钟（fail 记录的时刻只会更早），两个方向都不会误判
+    const base = Date.now();
+    const clock = vi.spyOn(Date, 'now');
+    try {
+      clock.mockReturnValue(base + 1_000);
+      speech.setServerReady(true); // 多半是页面早期拿到的那份陈旧 health
+      expect(speech.serverReady.value, '冷却期内不复辟').toBe(false);
 
-    expect(speech.serverReady.value, '失败过的会话不再回头信 health').toBe(false);
+      clock.mockReturnValue(base + SERVER_RETRY_COOLDOWN_MS + 1);
+      speech.setServerReady(true); // 这回是 App 低频重探拿回来的新结论
+      expect(speech.serverReady.value, '过了冷却期要能恢复服务端播报').toBe(true);
+    } finally {
+      clock.mockRestore();
+    }
     void env;
+  });
+
+  /**
+   * 失败降级会把暖机闩复位，恢复后**重新暖机**。
+   *
+   * <p>没有这一条：runQueue 的失败降级若只写 serverReady/failedAt（漏了 serverWarmed），
+   * V3 的恢复路径里 `warmServer()` 会因闩还是 true 而空转——恢复后的首次服务端播报可能被
+   * 自动播放策略挡下（静音音频拿的那份「用户激活」配额没有在恢复后补回）。
+   */
+  it('失败降级后恢复：复位暖机闩并重新暖机', async () => {
+    const env = stubServer({ fail: true }); // 不开浏览器合成器，只看服务端暖机那份静音音频
+    const speech = useSpeech();
+    speech.setServerReady(true);
+    speech.unlock(); // 第一次真实手势：暖机一次（静音音频）
+    const warmedBefore = env.audios.length;
+    expect(warmedBefore, 'unlock 后应当已经暖过一次').toBe(1);
+
+    speech.speak('先失败一次。');
+    await vi.waitFor(() => expect(speech.serverReady.value).toBe(false));
+
+    const base = Date.now();
+    const clock = vi.spyOn(Date, 'now');
+    try {
+      clock.mockReturnValue(base + SERVER_RETRY_COOLDOWN_MS + 1);
+      speech.setServerReady(true); // 上游恢复（过了冷却期）
+      expect(speech.serverReady.value).toBe(true);
+    } finally {
+      clock.mockRestore();
+    }
+
+    expect(env.audios.length, '恢复要重新暖机，证明 serverWarmed 被复位').toBeGreaterThan(warmedBefore);
   });
 
   it('stop() 停住正在播的那句，也不再继续后面的句子', async () => {

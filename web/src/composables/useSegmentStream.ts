@@ -1,5 +1,5 @@
 import { recognizeSpeech, SEGMENT_RECOGNITION_TIMEOUT_MS } from '../api';
-import { concat, encodeWav, joinPartials, resample, TARGET_SAMPLE_RATE } from './audioPcm';
+import { concat, encodeWav, enhanceForUpload, joinPartials, TARGET_SAMPLE_RATE } from './audioPcm';
 
 /**
  * 常开聆听的**分段识别管线**：把说话过程中的 PCM 按切片送 ASR，把回文本拼成预览。
@@ -133,6 +133,11 @@ export function useSegmentStream(options: SegmentStreamOptions) {
     parts = [];
     clearSlice();
     abort();
+    // 在途请求已 abort，这里把它们占的槽位**就地**释放：只 abort 的话要等各自 reject 才轮到
+    // finally 自减，上一句的请求会继续占着名额，下一句的第一个切片会被误判为超限而丢弃。
+    // send 的 finally 按「控制器是否还在集合里」自减，所以清空集合不会让 inflight 变负。
+    controllers.clear();
+    inflight = 0;
     nextAt = Math.round((SEGMENT_FIRST_MS / 1000) * options.sampleRate());
   }
 
@@ -168,6 +173,10 @@ export function useSegmentStream(options: SegmentStreamOptions) {
   /**
    * 送一段去识别，成功就把文本拼进预览。
    *
+   * <p>编码前过一遍 {@link enhanceForUpload}：切片与终稿走的是**同一条**增强路径，
+   * 否则「预览认得出来、终稿认不出来」这类问题永远分不清是数据还是模型的锅。
+   * `SEGMENT_MIN_SPEECH_RATIO` 那条判据仍按原始 PCM 的 RMS 算，不受增强影响。
+   *
    * <p>过期判定用「generation + 语句号」两道：抑制、取消、换句都会换号，
    * 迟到的返回值一律丢弃。
    */
@@ -183,7 +192,7 @@ export function useSegmentStream(options: SegmentStreamOptions) {
     inflight += 1;
     const sentAt = performance.now();
     try {
-      const wav = encodeWav(resample(pcm, rate, TARGET_SAMPLE_RATE), TARGET_SAMPLE_RATE);
+      const wav = encodeWav(enhanceForUpload(pcm, rate), TARGET_SAMPLE_RATE);
       const result = await recognizeSpeech(wav, controller.signal, SEGMENT_RECOGNITION_TIMEOUT_MS);
       if (stale(generation, owner)) return;
       options.onMetrics?.({ kind: 'segment', latencyMs: performance.now() - sentAt, audioMs });
@@ -197,8 +206,8 @@ export function useSegmentStream(options: SegmentStreamOptions) {
       // 失败率照样上报，运营在面板上看得到（429/超时/网络都算这里）。
       options.onMetrics?.({ kind: 'segmentFailure', audioMs });
     } finally {
-      inflight -= 1;
-      controllers.delete(controller);
+      // 只有仍被追踪的请求才减：rotate 清空集合时就地释放的槽位不在这里重复自减（否则变负）
+      if (controllers.delete(controller)) inflight -= 1;
     }
   }
 

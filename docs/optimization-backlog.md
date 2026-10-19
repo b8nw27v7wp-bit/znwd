@@ -132,7 +132,7 @@
 | **`NODE_ENV` 绑定失效 → 生产强制管理口令的安全规则从未生效** | `AppProperties.nodeEnv` 是 record 字段，relaxed binding 只认键 `znwd.node-env`，而 application.yml 里没有这个键；`.env` / 系统环境里的 `NODE_ENV` 是另一条独立键，绑不上。于是「生产（`NODE_ENV=production`）未配 `ADMIN_TOKEN` 的管理接口必须 401」这条规则静默失效——编译、启动、其余单测全都不报错 | application.yml 增加 `node-env: ${NODE_ENV:}`。实测两个场景：不设 `NODE_ENV` → `GET /api/stats` **200**（开发放行）；`NODE_ENV=production` 且未配口令 → **401** |
 | 配置接线守卫测试 | 新增 `config/AppPropertiesBindingTest`：反射遍历 `AppProperties` 每个 record 字段，断言 application.yml 的 `znwd` 段里有对应 kebab-case 键；另有一条断言 `node-env` 必须显式绑 `${NODE_ENV:}` | 把 `node-env` 行临时删掉 → 该测试 **2 项失败**（确实拦得住这个 bug 类），恢复后通过 |
 | 管理口令规则测试 | `HttpSupportTest` 补一条：`NODE_ENV` ∈ production/prod/staging（含大写）且未配口令必须 401；development/test/空 放行 | 单测 30 → **33 项全绿** |
-| 文档收尾 | 根 `plan.md`（Node 时代交接文档）按仓库约定归档为 `docs/archive/old-node-plan.md` 并加归档说明；`knowledge/_meta/demo-docs.md` 里残留的 `npm run calibrate` / `npm run eval:retrieval` 换成新栈命令（并补 reload 一步）；README 与 docs 里的单测数 30 → 33；archive 索引补上归档计划文件 | `git status` 显示为 rename；全库 grep 已无旧栈命令 |
+| 文档收尾 | 根 `plan.md`（Node 时代交接文档）按仓库约定归档进 `docs/archive/`（后随文档瘦身移除，结论在 `CHANGELOG.md`）；`knowledge/_meta/demo-docs.md` 里残留的 `npm run calibrate` / `npm run eval:retrieval` 换成新栈命令（并补 reload 一步）；README 与 docs 里的单测数 30 → 33；archive 索引补上归档计划文件 | `git status` 显示为 rename；全库 grep 已无旧栈命令 |
 
 ## 已完成（第五轮：浏览器语音播报）
 
@@ -171,6 +171,15 @@
 | **资料入库工具移植**（旧 Node 版 `server/scripts/ingest-docs.ts`） | `mvn -q test-compile exec:java@ingest -Dexec.args="--src <目录> --zone <展区id> [--force] [--dry-run]"`：PDF 走 `pdftotext -layout -enc UTF-8`、txt/md 直接读、DOCX 内置解析（zip + `word/document.xml`，认得标题样式与 `w:outlineLvl`、编号段落、表格），三种来源过同一套规范化（丢页码与分隔线、合并断行、短行升级标题、表格行贴合）；按 `zones.json` 落 `knowledge/<展区目录>/` 并写 frontmatter；目标已存在默认报错 | 本机实测 6 个素材：中文 DOCX（标题层级/列表/表格）、中文 txt、子目录 md、带文字层 PDF 全部正确入库；扫描件 PDF 与旧版 `.doc` 按预期失败并给出下一步；dry-run 不写盘、`--force` 才覆盖；生成的文件被 `KnowledgeLoader` 正常加载（`[knowledge] 已加载 6 个片段`）；新增单测 **10 项** |
 | **本机 MySQL 初始化完成**（原先挂在待做清单里） | `server/.env` 已配 `DB_*`，`server/db/init.sql` 已在正式实例执行过（应用账号只有 `SELECT/INSERT/UPDATE/DELETE/CREATE`） | 直连核查：`znwd` 库 5 张表齐全（`chat_log`/`feedback`/`session`/`session_message`/`uncovered_question`），`chat_log` **453** 行、`uncovered_question` **50** 行 |
 
+
+## 已完成（第九轮：04 行业展区上线后的检索收口）
+
+| 项 | 内容 | 验证 |
+| --- | --- | --- |
+| **分块把「长段落 + 标题」切出无标题碎片** | `TextChunker` 两处修：① 打包前先按标题长度扣预算（标题 + 空行 + 续块后缀），拼上标题不再超上限，也就不再走「标题 + 正文」的二次切分；② 滑窗切点优先回退到换行/中文句末标点（最多回退窗口的 30%） | 全语料快照逐块对比：无标题/非标题开头块 **4 → 0**，总块数 **246 → 242**（只有 `标准与规范索引.md`、`团队与资质.md`、`项目基本信息.md` 三个文件少块，其余 18 个文件块数一字不变）；`标准与规范索引.md` 由 6 块（500 硬断 + 99 字无标题碎片 + 334 字以「测。」开头）变 5 块（标题齐、条目完整）；新增单测 3 条 |
+| **04 展区在评测集里零覆盖 + 三条实测失手** | 补 `ind-01` ~ `ind-16`（16 条，含口语问法 `ind-15`）；内置同义词表 **21 → 34 组**：新增 `板子/灰/脏/洗`（口语）、`国家标准/国标/规范/认证`（标准族）、`方式/多久/安全/划伤/温差`（问法词） | 评测 **161 条** top1 **0.9938** / top3 **1.0** / 闸门误拦 **0**、与旧 145 条基线逐例 `top1Path` 不一致 **0**；三条失手全部回到 04 展区：「板子上有灰要怎么办」原话分 0.000 → 排序分 8.561 过闸门、「清洗机器人有国家标准吗」答案块第 15 → **top1**、「组件清洗有哪几种方式」第 5 → **top1**；`calibrate --gate-check` 退出码 0（区间 6.371~6.605，阈值 6.5 未动） |
+| **同义词两次过度展开（都被评测拦在提交前）** | ① 「标准」当 key 把「污渍标注标准是什么」「热斑标注标准是什么」抢到 04 标准索引（两条 pv-doctor 用例 top1 退化）→ 收窄成「国家标准 / 国标」；② 「运维」组把「运维服务怎么收费？」从商业模式与定价抢到服务与合作 → 撤掉该组 | 每一版都跑 `exec:java@eval --baseline=…` 逐例对比：`top1Rate` 一度掉到 0.9793，收窄后回到 1.0 且不一致 0 |
+| **文档口径与评测文档同步** | 重生成 `docs/eval/baseline-java.json`（报告归档到 `docs/archive/eval/`）；`docs/eval.md` 新增第九版标定结论与 v6 用例集说明、阈值演进补一行；`README`、`docs/{knowledge,architecture,development,api,security-testing,test-cases}`、大屏讲解图 `StageDiagram.vue` 及其 spec 的数字 | 数字按实跑输出统一：**242 块 / 21 篇**、**161 条计分用例**、top1 **0.99**、同义词 **34 组**、后端单测 **242**、前端 **287** |
 
 ## 已知取舍（不是 bug）
 

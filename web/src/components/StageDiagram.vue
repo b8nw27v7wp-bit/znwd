@@ -17,28 +17,28 @@
  */
 
 const pipeline = [
-  { step: '01', title: '资料库', lines: ['Markdown 展区资料', '分块建索引'], metric: '209 个片段' },
+  { step: '01', title: '资料库', lines: ['Markdown 展区资料', '分块建索引'], metric: '242 个片段' },
   { step: '02', title: '双路检索', lines: ['关键词打分 + 同义词扩展', '向量路 512 维（兜底）'], metric: 'RRF 融合' },
-  { step: '03', title: '相关性闸门', lines: ['阈值 6.3（按真实', '访客问句重标）'], metric: '未命中不调模型', key: true },
+  { step: '03', title: '相关性闸门', lines: ['阈值 6.5（按真实', '访客问句重标）'], metric: '未命中不调模型', key: true },
   { step: '04', title: '生成回答', lines: ['小米 MiMo v2.5', 'OpenAI 兼容接口'], metric: '附来源可追溯' },
 ];
 
 const stack = [
   { name: '前端', detail: 'Vue 3.5 · Vite 6 · TypeScript 5.7', note: '手写 CSS，不引 UI 框架' },
   { name: '后端', detail: 'Spring Boot 3.5.16 · Java 21', note: 'MyBatis 3.0.5 + REST / SSE' },
-  { name: '检索', detail: '关键词打分 + 512 维向量', note: '同义词表 23 组，可在线热更新' },
+  { name: '检索', detail: '关键词打分 + 512 维向量', note: '同义词表 34 组，可在线热更新' },
   { name: '模型', detail: '小米 MiMo v2.5', note: 'OpenAI 兼容，可整体换模型' },
   { name: '存储', detail: 'MySQL 9.7', note: '最小权限账号；库不可用自动降级' },
   { name: '运行', detail: '单机内网 · 一体机离线可用', note: '无第三方 UI 依赖' },
 ];
 
 const metrics = [
-  { label: '语料', value: '209 片段' },
-  { label: '检索 top1 / top3', value: '1.0 / 1.0' },
-  { label: '闸门误拦', value: '2 / 137' },
+  { label: '语料', value: '242 片段' },
+  { label: '检索 top1 / top3', value: '0.99 / 1.0' },
+  { label: '闸门误拦', value: '0 / 161' },
   { label: '端到端（本机实测）', value: '约 4.4 s' },
-  { label: '单测', value: '后端 70 · 前端 55' },
-  { label: '接口冒烟', value: '56 项' },
+  { label: '单测', value: '后端 242 · 前端 287' },
+  { label: '接口冒烟', value: '100 项' },
 ];
 
 /** 链路图坐标（viewBox 1080×258）：四个等宽节点 + 闸门向下分出的「未命中」支路 */

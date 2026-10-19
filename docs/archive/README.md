@@ -1,19 +1,18 @@
 # 归档索引
 
-本目录存放被取代的历史文档，**均不代表现状**，仅供追溯当时的约束、依据与执行记录。归档文档里的命令、路径、数字与链接保留当时口径，不再维护；要了解现状请看 `CHANGELOG.md` 与各活文档（`docs/README.md` 的文档一览）。
+本目录存放被取代的历史文档，**均不代表现状**，仅供追溯当时的约束与依据。归档文档里的命令、路径、数字与链接保留当时口径，不再维护；要了解现状请看 `CHANGELOG.md` 与各活文档（`docs/README.md`）。
 
 命名规则：
 
-- `old-node-*`：Node/Fastify + React 时代（2026-09 原地重写为 Spring Boot + Vue 3 之前）的代码审查 / 审计 / 交接计划。
-- `2026-09-*` / `2026-10-*`：Java 重写期间的历史快照，前缀是快照产生日期（交接、审核、修复计划）。
+- `old-node-*`：Node/Fastify + React 时代（2026-09 原地重写为 Spring Boot + Vue 3 之前）的产物。
+- `eval/`：历史评测与标定产物（Node 与 Java 早期实跑报告）；当前基线/证据仍在 `docs/eval/`。
+
+> 说明：早期的交接 / 审核 / 修复计划等过程快照（`2026-09-*` / `2026-10-*`）已随文档瘦身移除以精简仓库，其结论与依据均已在 `CHANGELOG.md` 留痕。
 
 | 文件 | 内容 | 时效结论 | 现在的替身 |
 |------|------|----------|------------|
-| [old-node-plan.md](./old-node-plan.md) | Node 时代后端优化计划与交接（2026-09-17/18） | 已过时，命令与路径不适用 | `CHANGELOG.md`、`docs/development.md`、`docs/architecture.md` |
-| [old-node-code-review.md](./old-node-code-review.md) | Node 时代代码排查记录（2026-09-17） | 已过时 | `CHANGELOG.md`、`docs/security-testing.md` |
-| [old-node-code-audit.md](./old-node-code-audit.md) | Node 时代代码审计与功能测试报告（0.8.0 → 0.9.0） | 已过时 | `CHANGELOG.md`、`docs/security-testing.md` |
-| [2026-09-22-speech-plan.md](./2026-09-22-speech-plan.md) | 语音播报「没启动」修复计划（P0/P1/P2 已修复并复验） | 已完结，根因分析保留作依据 | `CHANGELOG.md`、`docs/architecture.md`、`docs/api.md` |
-| [2026-09-24-hermes-handoff.md](./2026-09-24-hermes-handoff.md) | 交接快照：工作区状态、不可破坏契约、本轮已做修复 | 已被后续改动取代（2026-09-29 落地并复跑） | `CHANGELOG.md`、`docs/{development,api,security-testing,eval}.md` |
-| [2026-09-24-repair-plan.md](./2026-09-24-repair-plan.md) | 发布前修复计划：P0/P1/P2 验收标准与执行顺序 | 任务多数已落地，现场演练类仍需到目标一体机执行 | `CHANGELOG.md`、`docs/{development,security-testing,eval}.md` |
-| [2026-09-24-code-review-handoff.md](./2026-09-24-code-review-handoff.md) | 代码审核交接：审核状态总表、测试缺口与结论 | 审核表已于 2026-09-29 复核，缺口已补 | `CHANGELOG.md`、`docs/{security-testing,test-cases}.md` |
-| [2026-10-12-voice-realtime-p1-plan.md](./2026-10-12-voice-realtime-p1-plan.md) | 第 3 档 P1（滚动识别 + 常开聆听 + 声学遥测）实施计划与逐条验收清单 | 代码已按此实施完毕（2026-10-12）；展厅声学实测与「服务端复核端点检测」未做 | `CHANGELOG.md`、`docs/api.md`、`docs/voice-realtime-plan.md` |
+| [old-node-spec-virtual-receptionist.md](./old-node-spec-virtual-receptionist.md) | Node 时代整体功能 Spec（虚拟讲解员总纲） | 已交付并重写为 Spring Boot，仅作决策依据 | `docs/architecture.md`、`docs/api.md` |
+| [old-node-spec-reception-ux.md](./old-node-spec-reception-ux.md) | Node 时代接待交互 Spec | 同上 | `docs/{architecture,test-cases}.md`、`web/` |
+| [old-node-spec-phase-a-hardening.md](./old-node-spec-phase-a-hardening.md) | Node 时代 Phase A 加固 Spec | 同上 | `CHANGELOG.md`、`docs/security*.md` |
+| [old-node-spec-phase-b-c-quality-ops.md](./old-node-spec-phase-b-c-quality-ops.md) | Node 时代 Phase B/C 质量与运维 Spec | 同上 | `docs/eval.md`、`docs/optimization-backlog.md` |
+| [eval/](./eval/) | 历史评测/标定报告（`baseline.json`、`retrieval-*.json`、早期 `calibration-*.json`、`probe-scores/ranking.json`） | 仅作证据留存，口径已过时 | `docs/eval/baseline-java.json`、`docs/eval.md` |

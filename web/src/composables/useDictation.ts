@@ -1,6 +1,6 @@
 import { computed, getCurrentInstance, onUnmounted, ref } from 'vue';
 import { recognizeSpeech } from '../api';
-import { chunkRms, concat, encodeWav, resample, TARGET_SAMPLE_RATE } from './audioPcm';
+import { chunkRms, concat, encodeWav, enhanceForUpload, TARGET_SAMPLE_RATE } from './audioPcm';
 import { useSegmentStream, type SegmentMetric } from './useSegmentStream';
 
 /**
@@ -17,6 +17,10 @@ import { useSegmentStream, type SegmentMetric } from './useSegmentStream';
  *
  * 采集节点用已废弃的 ScriptProcessorNode 而不是 AudioWorklet：后者要求单独一个模块文件
  * 并走 addModule 异步加载，为一次录音引入这套构建配置不划算；前者的替代品至今没有全量落地。
+ *
+ * **两条路不要混**：判决路径（VAD、插话、回声观察）吃的始终是麦克风原始 PCM，而上传路径
+ * （终稿与分段切片）在 `encodeWav` 之前过一遍 `enhanceForUpload`（高通 + 增益归一化）——
+ * 增强一旦回灌进判据，就会重现「轻声参观者被压没、面板上还看不出」的静默故障（见 audioPcm）。
  */
 
 /** 单段录音上限：超过自动结束（2MB 上传上限下，这个长度只有三分之一余量） */
@@ -237,6 +241,13 @@ type FinalTiming = {
   voiceAt: number;
   audioMs: number;
   fromBargeIn: boolean;
+  /**
+   * 这一句是**聆听态**起的（结束后麦克风留着）还是点按起的。
+   *
+   * <p>带着走而不是在终稿落地时读 `alwaysOn`：终稿是排队回来的，中途运营可能已经拨过模式开关，
+   * 那时读到的开关值与这一句的来源已经不是一回事了（归类会错，提示也会给错人）。
+   */
+  staysArmed: boolean;
 };
 
 export function useDictation(options: DictationOptions = {}) {
@@ -331,11 +342,16 @@ export function useDictation(options: DictationOptions = {}) {
    */
   let statementStaysArmed = false;
   /**
-   * 上一次已经报过的开麦失败原因。
+   * 上一次已经报过的开麦失败原因，**只在自动 arm 那条路上去重**。
    *
    * <p>常开聆听在 arm 成功前**每次手势都会重试**（权限弹窗要靠用户激活），被拒的机器上
-   * 就是每次点屏幕都失败一次。同一条错反复往运营视图里灌，会把真正的故障挤出去
-   * （`chat.errors` 上限 20 条），所以同一个原因只报一次；成功开麦后清空，下次再失败照样报。
+   * 就是每次点屏幕都失败一次——包括路过的人无意碰一下屏幕。同一条错反复往运营视图里灌，
+   * 会把真正的故障挤出去（`chat.errors` 上限 20 条），所以同一个原因只报一次。
+   *
+   * <p>**点按路径不去重**（{@link start} 每次进来先清空它）：那一路每一次都是参观者主动点的，
+   * 而失败原因现在同时驱动着输入区下方那句行动指引——去重会让第二次之后的点击**彻底静默**，
+   * 正是「点了没反应、机器坏了」那个观感。清空的两处：成功开麦后（下次再失败照样报）、
+   * 以及每次新的点按尝试。
    */
   let reportedMicError = '';
 
@@ -710,6 +726,7 @@ export function useDictation(options: DictationOptions = {}) {
       voiceAt: lastVoiceAt || startedAt,
       audioMs: 0,
       fromBargeIn: statementFromBargeIn,
+      staysArmed: always,
     };
     recording.value = false;
     elapsedMs.value = 0;
@@ -751,7 +768,13 @@ export function useDictation(options: DictationOptions = {}) {
     }
   }
 
-  /** 整段识别：终稿。成功走 onText（调用方据此自动提问），失败走 onError */
+  /**
+   * 整段识别：终稿。成功走 onText（调用方据此自动提问），失败走 onError。
+   *
+   * <p>`pcm` 是这一句的**原始** PCM（采集速率）；语音增强只在这里做一次
+   * （{@link enhanceForUpload}），所以「谁说被当成说话了」与「送上去的音频有多响」
+   * 是两个互不影响的决定。
+   */
   async function recognizeFinal(
     pcm: Float32Array,
     rate: number,
@@ -764,7 +787,7 @@ export function useDictation(options: DictationOptions = {}) {
     const requestController = new AbortController();
     recognitionController = requestController;
     try {
-      const wav = encodeWav(resample(pcm, rate, TARGET_SAMPLE_RATE), TARGET_SAMPLE_RATE);
+      const wav = encodeWav(enhanceForUpload(pcm, rate), TARGET_SAMPLE_RATE);
       const result = await recognizeSpeech(wav, requestController.signal);
       // 终稿延迟只在这一处上报（§5 S4/S8）：说完了多久才等到文本 / 这段录音有多少音频秒。
       // 失败的调用不报（超时那种 90 秒会把均值带偏，与分段延迟同一套口径）。
@@ -773,7 +796,7 @@ export function useDictation(options: DictationOptions = {}) {
       const text = result.text.trim();
       settleFinalOutcome(timing.statement, Boolean(text));
       if (!text) {
-        handleEmptyFinal(timing.fromBargeIn);
+        handleEmptyFinal(timing.fromBargeIn, timing.staysArmed);
         return;
       }
       error.value = '';
@@ -821,16 +844,20 @@ export function useDictation(options: DictationOptions = {}) {
   }
 
   /**
-   * 整段识别回来是空的：常开聆听下几乎都是环境噪声被 VAD 当成了说话。
+   * 整段识别回来是空的：聆听态下几乎都是环境噪声被 VAD 当成了说话。
    *
    * <p>这条路径**不能报错**：展厅里没人说话的时候最多，一句「没有听清」会在大屏上反复刷。
-   * 计数进遥测（`falseTriggers`），预览清掉，等下一句。点按模式是明确的用户操作，保留原有提示。
+   * 计数进遥测（`falseTriggers`），预览清掉，等下一句。点按起的那一句是明确的用户操作，保留原有提示。
+   *
+   * <p>判据取**这一句的来源**（`staysArmed`）而不是当下的模式开关：运营在点按录音中拨到全双工、
+   * 这一句的终稿随后才回来时，读开关会把一次点按误判成聆听态的一句话——参观者听不到任何解释，
+   * 遥测里也多一条假的 `falseTrigger`。这是审核提过的 `handleEmptyFinal` 归类边界，已按来源收口。
    *
    * <p>从插话起的那一句另记一笔 `bargeInRejected`：打断判错的代价是「把回答掐了、又没有新问题」，
    * 这一条才是决定 P3a-2 的门限敢不敢开在低位的那个数（总数仍计在 `falseTriggers` 里）。
    */
-  function handleEmptyFinal(fromBargeIn: boolean): void {
-    if (alwaysOn.value) {
+  function handleEmptyFinal(fromBargeIn: boolean, staysArmed: boolean): void {
+    if (staysArmed) {
       metric({ kind: 'falseTrigger' });
       if (fromBargeIn) metric({ kind: 'bargeInRejected' });
       options.onPartial?.(null);
@@ -844,9 +871,20 @@ export function useDictation(options: DictationOptions = {}) {
   async function start(): Promise<void> {
     if (!supported || disposed || recording.value || pending.value || busy.value || armed.value) return;
     error.value = '';
+    // 每一次点按都是参观者的主动行为（不像常开聆听那样每个手势自动重试一次），所以这一次失败
+    // 一定要报出去：报了才会出现输入区下方那句行动指引，也才谈得上「再点一下就再连一次」。
+    // 去重留给自动 arm 那条路，理由见 reportedMicError。
+    reportedMicError = '';
     const generation = ++operationGeneration;
     if (!(await openMic(generation))) return;
     if (disposed || generation !== operationGeneration) return;
+    // 窄窗：点麦之后、getUserMedia 落地之前参观者手打一句提交了（或回答开始播报），此刻已进抑制。
+    // 照旧进语句的话这一句会空录到 VAD_NO_SPEECH_MS，白报一次「没有听到声音」；
+    // 而 setSuppressed 是在这次 start 之后才调的，收不到它，所以在这里自己收麦。
+    if (suppressed) {
+      releaseMic();
+      return;
+    }
     // 点按起句：结束后收麦。**即使常开开关是开着的**——那台机器可能正是因为 speechReady=false
     // 才没被自动 arm，这一句之后继续挂着麦克风只会让每一次环境噪声都打一次 503
     beginStatement(false);
@@ -939,6 +977,13 @@ export function useDictation(options: DictationOptions = {}) {
     vad = initialVad();
     metric({ kind: 'suppressedAbandon' });
     options.onPartial?.(null);
+    // 被放弃的这一句如果是**点按起句**（staysArmed=false），必须连麦一起收：
+    // 抑制只清 recording/chunks/vad，`armed` 会一直留 true，而 `start()` 开头就有 armed 早退——
+    // 之后每次点 mic 都直接返回，表现为「按钮永久无响应 + 麦克风常开」。
+    // 判据与 `endStatement` 的 `if (!always) releaseMic()` 同源：全双工句恒 staysArmed=true，
+    // 这里收麦会破坏「抑制不收麦」的设计（那是防权限抖动与空窗的），所以按**语句**判而不是按开关判。
+    // 不必 bump operationGeneration：被放弃的点按句没有在途识别——终稿只在 endStatement 之后才发。
+    if (!statementStaysArmed) releaseMic();
   }
 
   function dispose(): void {

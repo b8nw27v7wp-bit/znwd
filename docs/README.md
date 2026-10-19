@@ -4,7 +4,9 @@
 
 技术栈：后端 Spring Boot 3.5.16（Java 21 目标）+ MyBatis + MySQL；前端 Vue 3 + Vite 6 + TypeScript。
 
-## 文档一览
+## 活文档一览
+
+这些是**代表现状**的文档，命令与数字以当前栈为准。历史快照（Node 时代功能 Spec、旧评测产物）一律在 [archive/](./archive/)，索引见 [archive/README.md](./archive/README.md)；过程类的交接/审核/修复计划已精简，结论与依据都在 `CHANGELOG.md` 留痕。
 
 | 文档 | 用途 |
 |------|------|
@@ -21,9 +23,14 @@
 | [test-cases.md](./test-cases.md) | 全幅度测试用例：按功能域分组的用例设计、优先级、自动化归属与覆盖缺口 |
 | [loadtesting.md](./loadtesting.md) | 并发/压测：场景与判据、429 语义、本地与 CI 命令、基线、长跑 |
 | [voice-realtime-plan.md](./voice-realtime-plan.md) | 全双工实时语音（第 3 档）规划：路线对比、分期（含 P1 遗留短板清单）、基建清单、风险与验收 |
-| [eval/](./eval/) | 评测基线与历史报告（json） |
-| [archive/](./archive/) | 历史快照：Node 时代 `old-node-*` 与 Java 重写期间的交接/审核/计划 `2026-09-*`（仅存档，不代表现状，索引见 [archive/README.md](./archive/README.md)） |
-| [compose/spec/](./compose/spec/) | 早期功能 Spec（历史记录） |
+
+产物与存档：
+
+| 位置 | 内容 |
+|------|------|
+| [eval/](./eval/) | **活跃**评测物：`baseline-java.json`（CI 逐例基线）、`probe-questions.json`（95 条真实问句来源）、最新一次 `calibration-*.json` |
+| [archive/](./archive/) | 历史快照：Node 时代功能 Spec（`old-node-spec-*`）与旧评测产物；索引见 [archive/README.md](./archive/README.md) |
+| [archive/eval/](./archive/eval/) | 历史评测/标定报告（Node 与 Java 早期实跑，仅作证据） |
 
 ## 目录约定
 
@@ -52,5 +59,5 @@ tools/                 # mvn（Maven 包装脚本）、smoke.py（接口契约�
 2. 进入检索的知识 → 仅 `knowledge/` 业务子目录；`_meta/` 不参与检索。
 3. 展区/推荐问题/媒体映射 → `knowledge/_meta/zones.json`；同义词覆盖表 → `knowledge/_meta/synonyms.tsv`。
 4. `server/.env`、`web/dist/`、`server/indexes/`、日志不入库。
-5. 功能 Spec → `docs/compose/spec/<feature>.md`；被取代的旧文档 → `docs/archive/`，文件名带旧栈前缀（`old-node-`）或快照日期前缀（`2026-09-*`），索引见 `docs/archive/README.md`。
-6. 文档里的命令必须能在当前栈上直接跑通；旧栈命令只允许出现在 `archive/` 或明确标注的"待移植"说明里。
+5. **被取代的文档一律移入 `docs/archive/`**，不再维护：文件名带旧栈前缀（`old-node-`），并在 `docs/archive/README.md` 登记。过程类记录（审核/交接/计划）不长期留档，结论落 `CHANGELOG.md` 即可。
+6. 文档里的命令必须能在当前栈上直接跑通；旧栈命令只允许出现在 `archive/` 或明确标注的「待移植」说明里。

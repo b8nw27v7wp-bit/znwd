@@ -49,12 +49,12 @@ python tools/db-check.py
 
 - 内容层验收（TC-QUAL）需在 `server/.env` 配置真实 LLM 后再起服务。
 - 中文参数用 curl 直发会因 GBK 控制台乱码，`/api/admin/diagnostics?q=中文` 请用 Python 发或走 `smoke.py`（见 `docs/development.md` Windows 坑一节）。
-- 静态阈值断言与 CI 同源：`MIN_RELEVANCE_SCORE=6.3`、`MIN_VECTOR_SCORE=0.75`（改动需四处同步，见 TC-DEP-04）。
+- 静态阈值断言与 CI 同源：`MIN_RELEVANCE_SCORE=6.5`、`MIN_VECTOR_SCORE=0.75`（改动需四处同步，见 TC-DEP-04）。
 
 ### 0.3 执行顺序与硬约束
 
 1. `smoke → security → db-check` **必须串行**：security 的 F 组会刻意打满 30 次/分钟限流，db-check 并行跑会撞 429 表现成一片 SKIP。
-2. `offline-check` 必须在 `npm run build` 之后（O01–O03 查 `web/dist`）。
+2. `offline-check` 必须在 `npm run build` 之后（O01–O03、O08 查 `web/dist`）。
 3. 跑完 security 中断了的话，等约 1 分钟限流窗口滑过再手工验证。
 4. **本地全绿 ≠ 可发布**：CI 只在 push 后跑；远端 CI 全绿才算集成验证通过。
 
@@ -78,7 +78,7 @@ python tools/db-check.py
 | 同义词管理 | `TC-SYN-` | 同义词读写与热生效 | 7 |
 | 公开元数据 | `TC-META-` | health/suggestions/zones/openapi/CORS | 7 |
 | 管理与统计 | `TC-ADM-` | AdminGuard/stats/uncovered/feedback-stats | 7 |
-| 语音 | `TC-SPK-` | TTS/ASR 接口 + 前端朗读/听写 | 11 |
+| 语音 | `TC-SPK-` | TTS/ASR 接口 + 前端朗读/听写 | 16 |
 | 前端 UI | `TC-UI-` | 聊天交互、渲染、错误、运营抽屉、布局 | 17 |
 | 边界与安全 | `TC-SEC-` | 映射 `security.py` 编号 + 已接受风险记录 | 9 |
 | 数据与隐私 | `TC-DB-` | 库层脱敏、最小权限、备份恢复 | 9 |
@@ -87,7 +87,7 @@ python tools/db-check.py
 | 部署与离线 | `TC-DEP-` | 一体机验收、出网白名单、反代、阈值同步 | 8 |
 | 内容质量 | `TC-QUAL-` | acceptance 六组 + eval 指标门禁 | 6 |
 
-合计约 **160 条**。带 `自动化` 标记的由对应脚本/测试类执行；`手工` 与 `建议自动化` 是本文新增的覆盖面。
+合计约 **164 条**。带 `自动化` 标记的由对应脚本/测试类执行；`手工` 与 `建议自动化` 是本文新增的覆盖面。
 
 ## 2. 用例正文
 
@@ -97,7 +97,7 @@ python tools/db-check.py
 | --- | --- | --- | --- | --- |
 | TC-PRE-01 | `GET /api/health` | 恒 HTTP 200；JSON 内 `ok=true`、`ready=true`、`knowledgeChunks>0`、`storage="mysql"`、`storageAvailable=true`、`version=1.3.0`、`llmProvider`、`embeddingReady`、`retrieval`、`adminTokenRequired`、`uptimeSec` 齐全 | P0 | smoke + CI |
 | TC-PRE-02 | 起 `npm run dev`，浏览器打开首页 | 页面 200、无 console 报错、无失败的静态请求；聊天输入框与发送可用，讲解图渲染 | P0 | 手工（App.spec 覆盖接线） |
-| TC-PRE-03 | `npm run build` 后 `python tools/offline-check.py` | O01–O03 全过：`web/dist` 无联网 URL/CDN/埋点域名，`index.html` 只引相对路径 | P0 | offline + CI |
+| TC-PRE-03 | `npm run build` 后 `python tools/offline-check.py` | O01–O03、O08 全过：`web/dist` 无联网 URL/CDN/埋点域名，`index.html` 只引相对路径，产物里没有正则反向引用断言（老内核整包解析失败 → 白屏） | P0 | offline + CI |
 | TC-PRE-04 | `GET /api/health/summary`（匿名） | 200；`{chatTotal, noHit, activeSessions, retrieval}` 字段齐全 | P1 | smoke |
 | TC-PRE-05 | 默认演示档自洽检查：读 `/api/health` | `llmProvider=mock` 时 `embeddingReady=false`、`retrieval.mode=keyword`（bag 词面）；`ready`/`knowledgeChunks` 仍为真——即「没配真模型不等于没就绪」 | P1 | 建议自动化（offline `--runtime` O06 已覆盖语义路自洽） |
 
@@ -181,6 +181,7 @@ python tools/db-check.py
 | TC-KB-11 | 换 provider（`EMBED_PROVIDER` bag↔openai_compat）重启或 reload | 索引按 provider 分文件，切换后重建/加载对应索引；`retrieval.mode` 与 `embeddingReady` 自洽 | P1 | `RagBackendSnapshotTest` + 手工 |
 | TC-KB-12 | `KNOWLEDGE_WATCH=true` 时直接改 md 文件 | 10s 内指纹比对自动热更，无需手动 reload 即可命中新内容 | P2 | 手工 |
 | TC-KB-13 | 在域问题的 `sources[]` 内容 | 按 `sourcePath` 去重；只保留分数 ≥ 最高分 × 0.5 的来源；`snippet` ≤200 字；`sources.length` 是资料份数而非命中块数 | P1 | `RagPipelineTest` + smoke 字段核对 |
+| TC-KB-14 | 分块（`TextChunker`）：拿一个「标题 + 无空行的长清单」当语料（如 14 条 `- **GB/T …**`，超过 500 字） | 切成多块，**每块都以标题或「标题（续）」开头**、每块 ≤500 字；滑窗切点落在换行或句末标点（条目、标准号不得切一半）；正文打包前先扣标题预算，不出现「标题+正文」的二次切分产物（那会切出无标题碎片） | P0 | `KnowledgeRetrievalTest` 三条（长清单带标题 / 切点落自然边界 / 正文给标题留位置） |
 
 ### TC-SYN 同义词管理
 
@@ -193,6 +194,7 @@ python tools/db-check.py
 | TC-SYN-05 | `PUT`（默认 `persist=true`）后查 `knowledge/_meta/synonyms.tsv` | 落盘成功，重启后仍生效（`source` 字段变化） | P1 | 手工 |
 | TC-SYN-06 | 同义词变更后重问此前 `cached=true` 的问题 | 缓存已清（答案服务调用了 `invalidateAnswerCache`），可反映新同义词 | P1 | 手工 |
 | TC-SYN-07 | `PUT /api/admin/synonyms` 不带/错 Bearer | 401，且同义词文件未被改动 | P0 | 建议自动化 |
+| TC-SYN-08 | 内置表内容与组数（`GET /api/admin/synonyms` 的 `count`，或 `SynonymsTest`） | 34 组；含 2026-10-19 为 04 行业展区补的口语/问法组（`板子`/`灰`/`洗`/`国家标准`/`多久`/`划伤` 等）。**加组判据**：key 必须是访客原话里会出现的子串（展开是 `text.contains(key)` 触发的）、备选词必须是文档里实际存在的词；**key 要收窄**——把「标准」当 key 会把「污渍标注标准是什么」这类问数据标注口径的问法抢到行业标准文档上（实测两条 pv-doctor 用例退化），收窄成「国家标准 / 国标」才两全 | P1 | `SynonymsTest`（含三条新组断言）+ eval `ind-06`/`ind-10`/`ind-15` |
 
 ### TC-META 公开元数据（匿名可访问）
 
@@ -229,10 +231,15 @@ python tools/db-check.py
 | TC-SPK-05 | 上游语音故障（错误的音频配置） | 502 `speech_failed`；服务不 500 | P1 | `MimoSpeechModelTest` + 手工 |
 | TC-SPK-06 | `POST /api/speech/recognize` 正常 WAV | 200 `{text, seconds, elapsedMs}` | P0 | security Y 组 |
 | TC-SPK-07 | 识别：缺 audio / 非 WAV / 坏 base64 | 400 `validation_error` | P1 | security Y 组 |
-| TC-SPK-08 | 识别：>2MB 录音 | 413 `payload_too_large`（语音路径放宽到 2MB，其它路径仍 64KB） | P1 | security W/X 组 + smoke |
+| TC-SPK-08 | 识别：录音超过 `AUDIO_MAX_UPLOAD_BYTES`（缺省 2MB 解码后） | 413 `payload_too_large`：请求体闸门由 `AUDIO_MAX_UPLOAD_BYTES` 按 base64 膨胀推导（缺省约 2.67MB，其它路径仍 64KB），解码后的上限由 `SpeechParser` 给带细节的 413 | P1 | security W/X 组 + smoke |
 | TC-SPK-09 | recognize 与 chat 共用配额：同 IP 打满 30 次/分钟 | 识别与聊天同时 429；TTS 独立配额 60 次/分钟 | P1 | 手工 + 建议自动化 |
 | TC-SPK-10 | 前端朗读：流式回答结束 → 自动朗读；关开关；点停止 | 按句切片朗读；开关状态持久化（localStorage）；停止立即静音；「重新开始」停读清屏 | P1 | vitest `useSpeech`/`App.spec` + 手工 |
 | TC-SPK-11 | 前端听写：安全上下文（https/localhost）点麦克风 → 说话 → 识别 → 自动发问；非安全上下文（内网 http IP） | 安全上下文：出 16kHz WAV、识别文本进输入框并发问；非安全上下文：麦克风按钮**不出现**；自动播放被浏览器拦截时降级不报错 | P1 | vitest `useDictation` + 手工 |
+| TC-SPK-12 | 点按模式可用性：欢迎态「开始实时对话」入口 → 说话 → 停顿自动收尾 → 自动提问 → 二轮再录；麦克风被拒 / 6 秒没声音 / 识别回空；录音中打字提交（抑制放弃当前句）后再点 mic | 入口仅在欢迎态 + 点按模式出现，与 mic 共用 `toggleDictation`、禁用口径一致，首答后消失；失败在输入区下方给**去细节**的行动指引（约 6 秒自清），技术原文只进 `?admin=1` 的运营视图；抑制放弃点按句**必须连麦一起收**，之后点 mic 仍能重新开录（修复前会永久无响应） | P0 | vitest `App.spec`（`点按端到端 · 错误可见 · 入口按钮` 11 条）+ 手工 |
+| TC-SPK-13 | 识别接口的**空结果契约**：`POST /api/speech/recognize` 传一段静音/纯环境噪声的 WAV（或直接对模型桩返回 `content:""`） | **200 + `text:""`**（不是 502）：空文本表示「这段里没听到话」。前端据此把聆听态那句计一次 `falseTriggers` 且**不**弹提示（没人说话是展厅常态），点按态回「没有听清」；响应形状不对（缺 `content` / `null`）才按上游失败报 502 | P1 | `MimoSpeechModelTest` + `SpeechWebContractTest`（回 200 + 空串）+ vitest `useDictation.spec`/`App.spec`（空回识别不报错） |
+| TC-SPK-14 | **重试预算语义**：把上游配成先秒回 5xx 再成功、以及「发完响应头不发响应体」两种情况，分别观察尝试次数与耗时 | `AUDIO_TIMEOUT_MS`（缺省 15000，合成）/ `AUDIO_ASR_TIMEOUT_MS`（缺省 30000，识别）是**一次调用含全部重试的总预算**，不是单次等待上限：秒回的失败（429/5xx/连接被拒）在预算内照旧重试到 `AUDIO_MAX_RETRIES`；退避睡不进预算就收场（不再重试）；卡死的上游一次耗完预算后不再重试。收场保留最后一次的状态码。最坏耗时从旧版 ≈183s 降到 15s/30s | P1 | `MimoSpeechModelTest`（退避睡不进预算不再重试 / 预算够宽照旧重试 / 上游只发头不发体预算内收场） |
+| TC-SPK-15 | **请求体闸门随配置推导**：`AUDIO_MAX_UPLOAD_BYTES` 取缺省 2MB、调到 4MB、调到 64KB 三种配置，用不同大小的请求体打 `/api/speech/recognize` | 语音路径闸门 = `AUDIO_MAX_UPLOAD_BYTES / 3 * 4 + 1KB`（下限 64KB）：缺省约 2.67MB（+1 字节即 413）；调到 4MB 时 5.3MB 请求体放行（旧实现这里是 413）；调到 64KB 时 200KB 被拒。反代侧按同一口径放到 3m | P1 | `RequestSizeLimitFilterTest` + `tools/security.py` N08 |
+| TC-SPK-16 | **上传路径的语音增强**：送 ASR 的两条路（整段终稿、常开聆听的分段切片）分别灌一段轻声（RMS≈0.035，过得了 VAD 地板、但离识别习惯的电平还差一截），把上传的 WAV 解回来量电平 | 两处 `encodeWav` 之前都过 `enhanceForUpload`（100Hz 高通 + **只抬不削**的增益归一化）：上传音频 `rms ≈ ENHANCE_TARGET_RMS`（0.1）且比原始高 1.5 倍以上；同时 `speechDetected` 仍按**原始** RMS 判出人声——增强不回灌 VAD/插话/回声判据。另外：50Hz 哼声压 ≥9dB、500Hz 语音几乎不动；只有底噪的录音不被放大；峰值余量不足时宁可不拉满也不削顶 | P1 | vitest `useDictation.spec`（纯函数 14 条 + 接线 2 条） |
 
 ### TC-UI 前端界面（Vue 3 单页，手工为主）
 
@@ -328,7 +335,7 @@ python tools/db-check.py
 | TC-DEP-03 | `offline-check.py --runtime`（服务在跑） | 运行期自洽：`embeddingReady/mode/degradedReason` 不矛盾；mock 模式下无任何外呼 | P0 | offline `--runtime` |
 | TC-DEP-04 | 阈值同步核查：改 `MIN_RELEVANCE_SCORE` 或 `MIN_VECTOR_SCORE` | `.env` / `application.yml` / `HybridRetriever` 默认常量 / CI workflow **四处同步**；`docs/.env.example` 注释同步 | P0 | 手工（改动时执行）+ calibrate 交叉 |
 | TC-DEP-05 | push 到 GitHub | CI backend + frontend 全绿（mvn test → eval → calibrate → smoke → security 三实例 → db-check ∥ build → vitest → offline-check）；**只在 push 后生效，本地绿不能替代** | P0 | CI |
-| TC-DEP-06 | Nginx/反代后面跑 smoke（`proxy_buffering off`、`X-Accel-Buffering` 透传） | SSE 不被缓冲、`meta` 首帧及时、长流不 502；限流键默认取 `remoteAddr`（`ClientIp.java`），同机反代下**未开 `TRUST_FORWARDED_FOR` 时全部客户端共用反代 IP 一个桶**（易整站 429，不是按各访客分桶）；要按访客各自地址分桶，需反代**先剥离**客户端自带的 `X-Forwarded-For` 再设 `TRUST_FORWARDED_FOR=true` | P1 | 手工（**原期望与实现不符，已按 `ClientIp` 改写**；`docs/archive/2026-09-24-code-review-handoff.md` 标注「真实反代未验证」——未验证，发布前必补） |
+| TC-DEP-06 | Nginx/反代后面跑 smoke（`proxy_buffering off`、`X-Accel-Buffering` 透传） | SSE 不被缓冲、`meta` 首帧及时、长流不 502；限流键默认取 `remoteAddr`（`ClientIp.java`），同机反代下**未开 `TRUST_FORWARDED_FOR` 时全部客户端共用反代 IP 一个桶**（易整站 429，不是按各访客分桶）；要按访客各自地址分桶，需反代**先剥离**客户端自带的 `X-Forwarded-For` 再设 `TRUST_FORWARDED_FOR=true` | P1 | 手工（**原期望与实现不符，已按 `ClientIp` 改写**；真实反代场景**未验证，发布前必补**） |
 | TC-DEP-07 | 展厅现场网络：外网完全不通时启动 | mock 档（默认）全功能可用；配了云模型时按降级路径回落，页面无外网请求 | P1 | 手工 + offline O07 |
 | TC-DEP-08 | `server/.env`、密钥、`server/indexes/`、`web/dist/` 不入库 | `git status` 干净、仓库历史无明文口令 | P0 | 手工核查 + offline O05 侧面 |
 
@@ -385,7 +392,7 @@ python tools/db-check.py
 - **会话归属**（TC-SES-11、TC-SEC-08）：**已收紧（2026-09-29）**——问答响应下发 `sessionToken`；`GET/DELETE /api/sessions/{id}` **会话存在时**不带或不匹配一律 404（不承认该 id 有效，否则等于给枚举器）；**会话不存在时**按原语义回：`GET` 404、`DELETE` 200 `{ok:false}`。`ChatWebContractTest` 4 条单测 + `tools/security.py` S19/S19a–d + `tools/smoke.py` 12) 组 + `useChat.spec` 会话归属令牌组（前端）盯着。残留取舍（令牌持有者等价于会话所有者）见 `docs/security-testing.md`。
 - **语义兜底「只重排还是可增候选」**（影响 TC-KB-02/13 对 `retrieval=hybrid` 的判定）：**已决策——允许语义新增候选，文档已对齐代码**（`docs/architecture.md`/`docs/knowledge.md` 已改写）；改动任一侧时仍要同步本文与 `docs/api.md`。
 - **`MIN_VECTOR_SCORE=0.75` 实际关闭了向量兜底**：当前线上正常应见 `retrieval=keyword`；`hybrid` 只在真语义参与排序时出现。
-- **文档数字**：活文档按实际运行输出统一（后端单测 **167**、前端单测 **144**、冒烟 **100**、安全 **91**（主实例，7 跳过；四实例 99/0/0）、库层 **19**、离线 **7**（1 跳过）、检索评测 **145**）；历史快照保留原数字，**一律以实际运行输出为准**。
+- **文档数字**：活文档按实际运行输出统一（后端单测 **242**、前端单测 **287**、冒烟 **100**、安全 **91**（主实例，7 跳过；四实例 99/0/0）、库层 **19**、离线 **7**（1 跳过）、检索评测 **161**）；历史快照保留原数字，**一律以实际运行输出为准**。
 
 ## 4. 执行顺序与通过标准
 

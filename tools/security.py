@@ -853,9 +853,13 @@ for _i, _payload in enumerate([{"utterances": "3"}, {"utterances": -1},
 _s, _b, _ = request("POST", "/api/speech/metrics", raw_body=b"[1,2,3]")
 check("N07 遥测 body 是数组 → 400 信封", _s == 400 and envelope_ok(_b), f"{_s} {_b[:120]}")
 
+# 载荷要**超过语音路径的闸门**：那个上限由 AUDIO_MAX_UPLOAD_BYTES 按 base64 膨胀推出
+# （缺省 4MB/3+1KB ≈ 2.67MB），不是写死的 2MB——早先这条用 2MB 载荷，闸门改成推导之后
+# 它就会变成「过了闸门、由白名单拒」的 400。取 4MB 留出余量；把上传上限调到 3MB 以上的
+# 实例上这条会需要更大的载荷（那种实例要手工确认一次）。
 _s, _b, _ = request("POST", "/api/speech/metrics",
-                    raw_body=json.dumps({"utterances": 1, "pad": "x" * (2 * 1024 * 1024)}).encode("utf-8"))
-check("N08 遥测 2MB+ body → 413 信封（沿用 /api/speech/* 的体积闸门）",
+                    raw_body=json.dumps({"utterances": 1, "pad": "x" * (4 * 1024 * 1024)}).encode("utf-8"))
+check("N08 遥测 4MB body → 413 信封（沿用 /api/speech/* 的体积闸门）",
       _s == 413 and envelope_ok(_b), f"{_s} {_b[:120]}")
 
 # 自带配额：打满它，接口自己必须开始 429

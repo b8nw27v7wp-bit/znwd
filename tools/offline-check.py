@@ -12,10 +12,12 @@ embedding 走云端（EMBED_PROVIDER=openai_compat 指向外部服务）之后�
     python tools/offline-check.py            # 源码 + 前端产物 + 依赖清单
     python tools/offline-check.py --runtime   # 追加运行期核查（需要服务在跑）
 
-七项检查：
+八项检查：
   O01  前端产物（web/dist）里没有需要联网的引用（字体 CDN、脚本 CDN、图片外链、埋点）
   O02  前端产物里没有已知的第三方 CDN/埋点域名
   O03  index.html 只引本地产物（相对路径）
+  O08  前端产物里没有老内核不支持的语法（正则反向引用断言 → 整包解析失败、白屏）
+       （编号排在后面，但它和 O01–O03 一样查的是前端产物，代码里紧随 O03）
   O04  后端源码里能发起网络连接的入口只有 LLM / Embedding / 语音三个适配器
   O05  依赖清单（pom.xml / package.json）里没有联网 SDK 或遥测库
   O06  （--runtime）语义路状态与检索模式自洽：不可用时必须上报原因并退回仅关键词
@@ -103,6 +105,21 @@ else:
     check("O03 index.html 只引本地产物（相对路径）",
           bool(idx) and "/assets/" in idx and "http" not in idx.replace("http-equiv", ""),
           f"index.html={idx[:120]}")
+
+    # 语法层面的「老内核能不能跑」：反向引用断言（lookbehind）是 ES2018，但浏览器支持得极晚
+    # （Safari/WebKit 到 16.4 才有），而构建目标 es2020 不会降级它、esbuild 也降不了。
+    # 老内核上的失败方式不是「那一句不读」，而是正则字面量**解析失败 → 整个模块解析失败 → 白屏**，
+    # 正是展厅最不能出的一种故障。查产物而不是查源码：注释里提到它不算数。
+    lookbehind = []
+    for f in assets:
+        if f.suffix.lower() != ".js":
+            continue
+        text = f.read_text(encoding="utf-8", errors="replace")
+        hits = text.count("(?<=") + text.count("(?<!")
+        if hits:
+            lookbehind.append(f"{f.name}×{hits}")
+    check("O08 前端产物里没有正则反向引用断言（老内核会整包解析失败 → 白屏）",
+          not lookbehind, f"命中：{lookbehind}；改用带捕获组的 split 或手写扫描")
 
 # ── O04：后端出网入口 ────────────────────────────────────────────────────────
 print("\n== O04 后端源码的出网入口")

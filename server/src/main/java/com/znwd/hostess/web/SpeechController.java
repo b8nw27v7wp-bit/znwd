@@ -159,7 +159,8 @@ public class SpeechController {
         out.put("text", recognition.text());
         out.put("seconds", recognition.seconds());
         out.put("elapsedMs", System.currentTimeMillis() - started);
-        // 只记长度不记内容：录音是参观者说的话，展厅日志不该留全文（与 logMessageMode=preview 同一考量）
+        // 只记长度不记内容：录音是参观者说的话，展厅日志不该留全文（与 logMessageMode=preview 同一考量）。
+        // 「0 字」不是故障：那是这段录音里没有可识别的话（静音/环境噪声），前端据此计一次空识别误触
         log.info("[speech] 识别完成 bytes={} 音频={}s 文本={}字 耗时={}ms",
                 parsed.value().length, recognition.seconds(), recognition.text().length(),
                 out.get("elapsedMs"));

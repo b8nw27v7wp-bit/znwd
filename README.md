@@ -3,7 +3,7 @@
 浏览器大屏：**整页仅占左约 1/4（CSS `--panel-width: 25%`）**——上方虚拟形象，**下方对话框**；右侧约 3/4 留白（可并排放展览视频）。
 基于本地企业知识 **Hybrid RAG** 与可插拔 **LLM** 生成回答，展厅现场无人值守运行。
 
-当前知识业务：**光伏清洁机器人**、**光伏医生智慧运维**、**项目与团队**（语料来自三份申报/项目概述材料，219 块 / 17 篇）。
+当前知识业务：**光伏清洁机器人**、**光伏医生智慧运维**、**项目与团队**、**光伏运维行业知识**（前三个来自三份申报/项目概述材料，第四个为公开行业资料；共 4 个展区、242 块 / 21 篇）。
 
 技术栈：后端 **Spring Boot 3.5.16**（Java 21 目标，`v1.3.0`）+ MyBatis + **MySQL**；前端 **Vue 3 + Vite 6 + TypeScript**（纯手写 CSS，不引 UI 框架）。
 （2026-09 由 Node/Fastify + React 原地重写而来，旧代码只在 git 历史里。）
@@ -12,10 +12,10 @@
 
 - **问答**：`POST /api/chat`（一次性）与 `POST /api/chat/stream`（SSE：`meta → delta* → done`，每 15s 心跳；回答逐字上屏）。
 - **Hybrid RAG**：中文 bigram + IDF 关键词路为主；语义向量（`BAAI/bge-m3`，可选）只做诊断与「关键词不过闸门时的余弦兜底」，不参与普通排序。
-- **相关性闸门**：关键词排序分低于 `MIN_RELEVANCE_SCORE`（默认 6.3）且余弦不达标时回固定拒答（`noHit`，不调模型、0 token）。
+- **相关性闸门**：关键词排序分低于 `MIN_RELEVANCE_SCORE`（默认 6.5）且余弦不达标时回固定拒答（`noHit`，不调模型、0 token）。
 - **多轮上下文**：会话窗口最近 6 轮、TTL 10 分钟、最多 200 会话；指代/省略句自动改写补全。
 - **会话归属**：问答下发 `X-Session-Token`，`GET/DELETE /api/sessions/{id}` 必须带回来（不匹配 404）；换人清上下文。
-- **语音**：回答服务端 TTS 播报（小米 MiMo，失败当场退回浏览器合成）；麦克风录音 → ASR 转文字提问（16kHz WAV，前端自采自封装）。
+- **语音**：回答服务端 TTS 播报（小米 MiMo，失败当场退回浏览器合成）；麦克风录音 → ASR 转文字提问（16kHz WAV，前端自采自封装）。语音模式可切（运营面板 `?admin=1`）：**缺省点按**（点一下说话、停顿约 1 秒自动识别提交，识别调用最少），可切全双工（麦克风常开、说话即提问、可插话打断，识别调用更频繁）。欢迎态另给一颗「开始实时对话」大按钮（与输入框里的 mic 同一入口）；麦克风被拒、没听到声音、识别失败时在输入区下方给一句行动指引，技术原因仍只进运营视图。
 - **运营视图**（`?admin=1`）：统计与未覆盖问题、反馈 CSV、知识清单/一键 reload/同义词热更新、检索诊断（为什么被拦/命中、距阈值差多少）。
 - **展览联动**：展区可被 URL `?zone=<zoneId|mediaId>`、`window.znwdSetZone(id)` 或 `znwd:zone` 事件切换（旁侧展项/多屏联动推荐问题）；选择结果落 localStorage 并同步 URL。
 - **话术外置**：system prompt / 拒答文案可放外部文件（`PROMPT_*`），现场改措辞不必重编译。
@@ -42,7 +42,7 @@ git-bash/MSYS 下**不要直接敲 `mvn`**：官方脚本走 mingw 分支、不�
 znwd/
 ├── server/                      # Spring Boot（HTTP / RAG / LLM / 语音 / MySQL）
 │   ├── db/init.sql              # 建库建最小权限账号（首次部署执行一次）
-│   ├── eval/retrieval-cases.json# 检索评测用例（145 条计分）
+│   ├── eval/retrieval-cases.json# 检索评测用例（161 条计分）
 │   ├── indexes/                 # 向量索引（本地 JSON，可重建，不入库）
 │   ├── src/main/resources/prompts/  # 内置话术（可被 PROMPT_* 外部文件覆盖）
 │   └── src/main/java/com/znwd/hostess/{config,embedding,knowledge,llm,audio,http,domain,repository,session,analytics,rag,web}
@@ -153,11 +153,11 @@ mysql -u root -p < server/db/init.sql
 | 数据库 | `DB_HOST` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` | 一体机固定 `127.0.0.1`、非 root 的 `znwd` 账号 |
 | HTTP | `HOST` / `PORT` / `ADMIN_TOKEN` / `REQUIRE_ADMIN_TOKEN` / `CORS_ORIGINS` / `TRUST_FORWARDED_FOR` | 默认 `127.0.0.1:8787`；管理鉴权默认 fail-closed |
 | 前端托管 | `WEB_DIST_DIR` | 默认 `./web/dist`；目录里有 `index.html` 时 jar 托管前端（同源），不存在则自动关闭（开发用 Vite） |
-| 检索 | `MIN_RELEVANCE_SCORE` / `MIN_VECTOR_SCORE` / `ANSWER_CACHE_SIZE` / `UNCOVERED_LOG_SIZE` | 阈值 6.3 / 0.75；改语料或同义词后必须重标 |
+| 检索 | `MIN_RELEVANCE_SCORE` / `MIN_VECTOR_SCORE` / `ANSWER_CACHE_SIZE` / `UNCOVERED_LOG_SIZE` | 阈值 6.5 / 0.75；改语料或同义词后必须重标 |
 | 话术 | `PROMPT_SYSTEM_PATH` / `PROMPT_NO_HIT_HINT_PATH` / `PROMPT_NO_HIT_REPLY_PATH` | 指向外部 UTF-8 文件覆盖内置话术；随 `reload` 生效，读失败回退内置 |
 | 日志 | `LOG_MAX_BYTES` / `LOG_MESSAGE_MODE` | `events.jsonl` 轮转与脱敏（默认 `hash`，只落 hash + 20 字前缀） |
 
-限流默认：问答 30 次/分/IP（`CHAT_RATE_PER_MIN`）、反馈 10（`FEEDBACK_RATE_PER_MIN`）、合成 60（`AUDIO_SYNTH_RATE_PER_MIN`）。
+限流默认：问答 30 次/分/IP（`CHAT_RATE_PER_MIN`）、反馈 10（`FEEDBACK_RATE_PER_MIN`）、合成 60（`AUDIO_SYNTH_RATE_PER_MIN`）、识别 120（`AUDIO_ASR_RATE_PER_MIN`，与问答分开计）。
 
 ## 启动验收与日常运维
 
@@ -194,7 +194,7 @@ curl -s http://127.0.0.1:8787/api/health
 ## 校验命令
 
 ```bash
-cd server && ../tools/mvn -B test                                        # 后端单测（224 项）
+cd server && ../tools/mvn -B test                                        # 后端单测（238 项）
 cd server && ../tools/mvn -B test-compile exec:java@eval -Dexec.args="--no-write --baseline=docs/eval/baseline-java.json"   # 检索评测 + 已提交基线门禁
 cd server && ../tools/mvn -B test-compile exec:java@calibrate            # 阈值标定（改语料/同义词后必跑）
 cd server && ../tools/mvn -B -q test-compile exec:java@ingest -Dexec.args="--src ./inbox --zone <展区id>"   # 资料入库（PDF/Word/txt）
@@ -204,12 +204,12 @@ python tools/db-check.py                                                 # 库�
 python tools/offline-check.py --runtime                                  # 本地化不变量（除 LLM/embedding/语音外一律本地）
 python tools/acceptance.py                                               # 问答内容验收（需真模型在跑，43 项）
 python tools/loadtest.py --n 8 --streams 4                               # 并发/压测（多路问答+SSE+只读+中断；429 单列）
-cd web && npm run build && npm run lint && npm run test:coverage   # 前端类型检查+构建、ESLint 门禁、单测+覆盖率门禁（257 项）
+cd web && npm run build && npm run lint && npm run test:coverage   # 前端类型检查+构建、ESLint 门禁、单测+覆盖率门禁（287 项）
 ```
 
 Windows 上本机 `python` 命令不可用：把 `python tools/xxx.py` 改成 `py -3 tools/xxx.py`（虚拟环境里则用其 `python`）。
 
-当前基线：145 条计分用例，检索 top1 **1.0** / top3 **1.0** / 闸门漏答 **0**（关键词阈值 6.3）；按闸门排序分口径区间成立（域外最高 6.170 < 6.3 < 在域最低 6.438，余量 0.130），CI 逐例守住 `top1Path` 与指标不退化。语义兜底阈值 `MIN_VECTOR_SCORE=0.75`，当前等价于关闭兜底。
+当前基线：161 条计分用例，检索 top1 **0.99**（160/161；唯一未中 top1 的 `ind-09`「清洗机器人有哪些形态」是 01/04 展区交叉的边界问法，正确答案仍在 top3）/ top3 **1.0** / 闸门漏答 **0**（关键词阈值 6.5）；按闸门排序分口径区间成立（域外最高 6.371 < 6.5 < 在域最低 6.605，余量 0.129 / 0.105），CI 逐例守住 `top1Path` 与指标不退化。语义兜底阈值 `MIN_VECTOR_SCORE=0.75`，当前等价于关闭兜底。
 
 ## 文档索引
 
@@ -222,4 +222,4 @@ Windows 上本机 `python` 命令不可用：把 `python tools/xxx.py` 改成 `p
 - 并发与压测：[docs/loadtesting.md](docs/loadtesting.md)
 - 安全口径与上线检查清单：[docs/security.md](docs/security.md)
 - 待做与已知取舍：[docs/optimization-backlog.md](docs/optimization-backlog.md)
-- 历史快照（交接/审核/计划）：[docs/archive/](docs/archive/)
+- **全部文档索引**：[docs/README.md](docs/README.md)；历史快照（Node 时代功能 Spec、旧评测产物）：[docs/archive/](docs/archive/)

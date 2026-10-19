@@ -43,7 +43,7 @@ import com.znwd.hostess.rag.RewriteResult;
  *   java -cp "target/classes;target/test-classes;$(cat target/cp.txt)" com.znwd.hostess.eval.RetrievalEval
  * 常用参数：
  *   --no-write                只打印，不写报告
- *   --baseline=docs/eval/baseline.json   逐例对比历史基准（top1Path 是否一致）
+ *   --baseline=docs/eval/baseline-java.json   逐例对比已提交基线（top1Path 是否一致）
  *   -Dznwd.knowledge-dir=...  临时换语料（用于「同一语料」对齐）
  * </pre>
  */

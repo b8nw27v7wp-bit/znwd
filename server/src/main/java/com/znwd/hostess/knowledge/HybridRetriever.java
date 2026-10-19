@@ -17,7 +17,7 @@ public class HybridRetriever {
     private volatile long lastVectorDegradedLogMs;
     private static final long VECTOR_DEGRADED_LOG_INTERVAL_MS = 60_000;
 
-    public static final double DEFAULT_MIN_KEYWORD_SCORE = 6.3;
+    public static final double DEFAULT_MIN_KEYWORD_SCORE = 6.5;
     public static final double DEFAULT_MIN_VECTOR_SCORE = 0.75;
 
     private static final int RRF_K = 60;

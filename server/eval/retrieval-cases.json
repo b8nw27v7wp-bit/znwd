@@ -1,6 +1,6 @@
 {
-  "version": 4,
-  "description": "Hybrid 检索评测集 v4：核心用例 + 真实访客问句（probe 集，含常见问题层），覆盖 3 个展区 2026-09-23 增补 cov-01~cov-08：补语料那一轮新覆盖的问法（社会效益/运维痛点/技术创新/数据来源/非本品类/定价），让这批内容有 CI 回归网。",
+  "version": 5,
+  "description": "Hybrid 检索评测集 v5：核心用例 + 真实访客问句（probe 集，含常见问题层），覆盖 4 个展区 2026-09-23 增补 cov-01~cov-08；2026-10-19 增补 ind-01~ind-16：新增 04_光伏运维行业知识 展区（积灰损失/清洗方式/红外巡检/标准索引）与一条口语问法，这批内容原先在评测集里完全看不出来。",
   "cases": [
     {
       "id": "pv-01",
@@ -886,6 +886,104 @@
       "question": "对环保有什么贡献",
       "zone": "project",
       "sourcePathIncludes": "常见问题"
+    },
+    {
+      "id": "ind-01",
+      "question": "组件积灰会造成多少发电损失？",
+      "zone": "pv-industry",
+      "sourcePathIncludes": "积灰损失与清洗价值"
+    },
+    {
+      "id": "ind-02",
+      "question": "积灰比是什么，怎么算？",
+      "zone": "pv-industry",
+      "sourcePathIncludes": "积灰损失与清洗价值"
+    },
+    {
+      "id": "ind-03",
+      "question": "积灰速率多少算严重？",
+      "zone": "pv-industry",
+      "sourcePathIncludes": "积灰损失与清洗价值"
+    },
+    {
+      "id": "ind-04",
+      "question": "组件多久清洗一次比较合适？",
+      "zone": "pv-industry",
+      "sourcePathIncludes": "积灰损失与清洗价值"
+    },
+    {
+      "id": "ind-05",
+      "question": "清洗后发电量能回升多少？",
+      "zone": "pv-industry",
+      "sourcePathIncludes": "积灰损失与清洗价值"
+    },
+    {
+      "id": "ind-06",
+      "question": "组件清洗有哪几种方式？",
+      "zone": "pv-industry",
+      "sourcePathIncludes": "清洗方式与机器人技术",
+      "note": "2026-10-19 前这条 top1 落在 01 产品概述、正确答案排第 5（进不了 top4），加「方式/洗」两组同义词后回到本文件"
+    },
+    {
+      "id": "ind-07",
+      "question": "干洗和湿洗有什么区别？",
+      "zone": "pv-industry",
+      "sourcePathIncludes": "清洗方式与机器人技术"
+    },
+    {
+      "id": "ind-08",
+      "question": "清洗会不会划伤组件？",
+      "zone": "pv-industry",
+      "sourcePathIncludes": "清洗方式与机器人技术"
+    },
+    {
+      "id": "ind-09",
+      "question": "清洗机器人有哪些形态？",
+      "zone": "pv-industry",
+      "sourcePathIncludes": "清洗方式与机器人技术",
+      "note": "已知边界用例：01 产品概述讲自家机器人形态、04 讲行业形态分类，实测 top1 是 01（04 在 top2），保留以便观察"
+    },
+    {
+      "id": "ind-10",
+      "question": "清洗机器人有国家标准吗？",
+      "zone": "pv-industry",
+      "sourcePathIncludes": "标准与规范索引",
+      "note": "2026-10-19 前真正的答案块排第 15，加「国家标准/国标」两组同义词后回到 top1"
+    },
+    {
+      "id": "ind-11",
+      "question": "光伏运维有哪些国家标准？",
+      "zone": "pv-industry",
+      "sourcePathIncludes": "标准与规范索引"
+    },
+    {
+      "id": "ind-12",
+      "question": "无人机热红外巡检是怎么发现故障的？",
+      "zone": "pv-industry",
+      "sourcePathIncludes": "无人机热红外巡检与故障诊断"
+    },
+    {
+      "id": "ind-13",
+      "question": "热斑是怎么形成的？",
+      "zone": "pv-industry",
+      "sourcePathIncludes": "无人机热红外巡检与故障诊断"
+    },
+    {
+      "id": "ind-14",
+      "question": "隐裂用什么手段检测？",
+      "zone": "pv-industry",
+      "sourcePathIncludes": "无人机热红外巡检与故障诊断"
+    },
+    {
+      "id": "ind-15",
+      "question": "板子上有灰要怎么办？",
+      "zone": "pv-industry",
+      "note": "口语问法：原话只命中「怎么/么办」，5.05 分被闸门拦空；加「板子/灰」两组同义词后才过闸门——这条是口语覆盖的回归网"
+    },
+    {
+      "id": "ind-16",
+      "question": "组件外表面温差判据是多少？",
+      "zone": "pv-industry"
     }
   ],
   "followUps": [

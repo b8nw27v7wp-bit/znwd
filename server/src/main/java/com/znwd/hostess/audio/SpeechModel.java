@@ -28,7 +28,12 @@ public interface SpeechModel {
      */
     Recognition recognize(byte[] wav);
 
-    /** 识别结果。 */
+    /**
+     * 识别结果。
+     *
+     * <p>**`text` 可以为空**：那段录音里本来就没有可识别的话（静音、纯环境噪声）——这是正常结果，
+     * 不是失败。调用方按空串处理（前端据此计一次「空识别误触」并静默），只有上游真的报错才走异常。
+     */
     record Recognition(String text, double seconds) {
     }
 }

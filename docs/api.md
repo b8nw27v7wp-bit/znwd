@@ -29,7 +29,7 @@
 | 400 | `validation_error` | 请求体不是合法 JSON（文案固定「请求体不是合法 JSON 对象」，**不会**复用 chat 的文案把排查方向指错） |
 | 401 | `unauthorized` | 管理接口口令不对；或未配 `ADMIN_TOKEN` 且 `REQUIRE_ADMIN_TOKEN` 仍为默认 `true` |
 | 404 | `not_found` | 路由不存在（「接口不存在」）、会话不存在或已过期 |
-| 413 | `payload_too_large` | 请求体超限（`/api/speech/*` 为 2MB，其余 64KB）；或写请求没有 `Content-Length`（无法判定大小，一律按超限处理） |
+| 413 | `payload_too_large` | 请求体超限（其余写请求 64KB；`/api/speech/*` 由 `AUDIO_MAX_UPLOAD_BYTES` 按 base64 膨胀 4/3 推出，缺省约 2.67MB）；或写请求没有 `Content-Length`（无法判定大小，一律按超限处理） |
 | 429 | `rate_limited` | 超出该接口所在限流桶的配额（见 §限流），额外带 `retryAfterSec` |
 | 500 | `internal_error` | 未预期异常；对外固定「服务内部错误」 |
 | 502 | `speech_failed` | 语音上游（MiMo）报错或超时：前端应当降级到浏览器内置播报，别把它当网络抖动重试 |
@@ -189,9 +189,15 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 
 `seconds` 是音频时长，用来区分「说了话」与「录到一片静音」。
 
-失败：`400 validation_error`（缺 `audio`／不是合法 base64／不是 WAV／超过 `AUDIO_MAX_UPLOAD_BYTES`）、`413 payload_too_large`（请求体超过 2MB 硬上限）、`502`/`503` 同上。
+**`text` 可以为空串，这是正常结果而不是失败**：那段录音里本来就没有可识别的话（静音、纯环境噪声）。
+前端据此把聆听态的那一句计成一次「空识别误触」（`falseTriggers`）并静默等待下一句，点按态回一句
+「没有听清，请再说一次」。只有上游真的报错（连不上、超时、上游 4xx/5xx）才是 `502`——
+**不要把空文本当故障**：那样运营面板上的「空识别误触」永远是 0（现场调 VAD 阈值要的就是这组数），
+参观者还会在没人说话时看到一句「没有识别成功」。
 
-体积口径：16kHz/单声道/16bit ≈ 32KB/s，base64 后膨胀 4/3。前端录音上限 20 秒（约 640KB 原始、853KB base64），离 2MB 硬上限有一倍余量。
+失败：`400 validation_error`（缺 `audio`／不是合法 base64／不是 WAV／超过 `AUDIO_MAX_UPLOAD_BYTES`）、`413 payload_too_large`（请求体超过语音路径的闸门：由 `AUDIO_MAX_UPLOAD_BYTES` 按 base64 膨胀推出，缺省约 2.67MB）、`502`/`503` 同上。
+
+体积口径：16kHz/单声道/16bit ≈ 32KB/s，base64 后膨胀 4/3。前端录音上限 20 秒（约 640KB 原始、853KB base64），离那 2.67MB 的请求体闸门有近两倍余量；上限本身只有 `AUDIO_MAX_UPLOAD_BYTES` 一个来源，调大它闸门跟着放宽。
 
 ### POST /api/speech/metrics — 声学遥测上报
 
@@ -355,14 +361,14 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 
 ```json
 {
-  "mode": "keyword", "keywordChunks": 219, "indexReady": true, "generation": 1, "semantic": true,
+  "mode": "keyword", "keywordChunks": 242, "indexReady": true, "generation": 1, "semantic": true,
   "vector": {
-    "provider": "openai_compat", "semantic": true, "dims": 1024, "vectors": 219,
+    "provider": "openai_compat", "semantic": true, "dims": 1024, "vectors": 242,
     "fingerprint": "…", "indexFile": "…",
     "degradedReason": null, "queryFailures": 0, "lastQueryError": null
   },
   "degradedReason": null,
-  "thresholds": { "minKeywordScore": 6.3, "minVectorScore": 0.75 }
+  "thresholds": { "minKeywordScore": 6.5, "minVectorScore": 0.75 }
 }
 ```
 
@@ -416,23 +422,23 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 | `verdict` | 一句人话结论 |
 | `hits[]` | `title`、`sourcePath`、`zone`、`zoneTitle`、`fuseScore`、`keywordScore`、`vectorScore`、`matchedTokens`、`matched[]`、`snippet`。**`vectorScore` 只在语义向量参与了本次排序（兜底路径）时才有值**，其余情况是 0——它不是「这块没有余弦」，而是「这次排序没用到向量路」 |
 
-实测样例（当前 219 块语料、阈值 6.3 / 0.75，语义路已接上）：
+实测样例（当前 242 块语料、阈值 6.5 / 0.75，语义路已接上）：
 
 ```json
 // GET /api/admin/diagnostics?q=有客户了吗   （该样例为补同义词前的历史输出：当时被闸门误拦、余弦 0.6389 不够兜底阈值）
 {
   "gated": true, "mode": "keyword", "reason": "below_threshold", "semantic": true, "degraded": false,
   "keywordGateScore": 4.9037, "keywordBestScore": 4.9037, "vectorBestCosine": 0.6389, "candidates": 16,
-  "thresholds": { "minKeywordScore": 6.3, "minVectorScore": 0.75 },
-  "distanceToGate": 1.3963, "hits": []
+  "thresholds": { "minKeywordScore": 6.5, "minVectorScore": 0.75 },
+  "distanceToGate": 1.5963, "hits": []
 }
 
 // GET /api/admin/diagnostics?q=帮我写一首关于夏天的诗   （域外）
 {
   "gated": true, "mode": "keyword", "reason": "below_threshold", "semantic": true, "degraded": false,
   "keywordGateScore": 0.0, "keywordBestScore": 0.0, "vectorBestCosine": 0.2083, "candidates": 8,
-  "thresholds": { "minKeywordScore": 6.3, "minVectorScore": 0.75 },
-  "distanceToGate": 6.3, "hits": []
+  "thresholds": { "minKeywordScore": 6.5, "minVectorScore": 0.75 },
+  "distanceToGate": 6.5, "hits": []
 }
 ```
 
@@ -488,10 +494,10 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 ```json
 {
   "knowledgeDir": "E:\\znwd\\knowledge",
-  "fileCount": 17, "chunkCount": 219,
+  "fileCount": 21, "chunkCount": 242,
   "retrieval": { "…同 /api/health 的 retrieval…": "" },
   "zones": ["…"],
-  "synonyms": { "count": 21, "source": "builtin", "file": "…synonyms.tsv" },
+  "synonyms": { "count": 34, "source": "builtin", "file": "…synonyms.tsv" },
   "docs": [ { "path": "01_光伏清洁机器人/产品概述.md", "title": "两栖光伏清洁机器人产品概述", "zone": "pv-clean", "zoneTitle": "光伏清洁机器人", "chunks": 11 } ]
 }
 ```
@@ -500,7 +506,7 @@ data: {"latencyMs":12345,"answer":"…完整回答…","sources":[…],"mode":"r
 
 重载知识、重建关键词与向量索引，并清空答案缓存。
 
-`{ "ok": true, "knowledgeChunks": 219, "generation": 2, "retrieval": {…}, "synonyms": {…}, "files": [ {"sourcePath":"…","chunks":5} ] }`
+`{ "ok": true, "knowledgeChunks": 242, "generation": 2, "retrieval": {…}, "synonyms": {…}, "files": [ {"sourcePath":"…","chunks":5} ] }`
 
 ### GET /api/openapi.json（无鉴权）
 

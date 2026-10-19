@@ -1,5 +1,19 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { chunkRms, encodeWav, joinPartials, resample, TARGET_SAMPLE_RATE } from './audioPcm';
+import {
+  applyGain,
+  chunkRms,
+  encodeWav,
+  ENHANCE_HIGHPASS_HZ,
+  ENHANCE_PEAK_CEILING,
+  ENHANCE_SPEECH_RMS,
+  ENHANCE_TARGET_RMS,
+  enhanceForUpload,
+  highPass,
+  joinPartials,
+  resample,
+  speechGain,
+  TARGET_SAMPLE_RATE,
+} from './audioPcm';
 import { SEGMENT_FIRST_MS, SEGMENT_MS } from './useSegmentStream';
 import {
   BARGEIN_HOLD_MS,
@@ -24,6 +38,42 @@ function ascii(view: DataView, offset: number, length: number): string {
   let out = '';
   for (let i = 0; i < length; i++) out += String.fromCharCode(view.getUint8(offset + i));
   return out;
+}
+
+/** 500Hz 的正弦：落在增强高通的通带里，所以电平的变化只可能来自增益那一层 */
+function tone(
+  amplitude: number,
+  frames: number,
+  frequency = 500,
+  sampleRate = TARGET_SAMPLE_RATE,
+): Float32Array {
+  const out = new Float32Array(frames);
+  for (let i = 0; i < frames; i++) {
+    out[i] = amplitude * Math.sin((2 * Math.PI * frequency * i) / sampleRate);
+  }
+  return out;
+}
+
+/** 一段采样的 RMS：独立算一遍，不借被测实现（免得两边一起错） */
+function rms(values: Float32Array): number {
+  let sum = 0;
+  for (const value of values) sum += value * value;
+  return Math.sqrt(sum / values.length);
+}
+
+/**
+ * 把最后一次上传的 data URL 解回 [-1,1] 采样（跳过 44 字节 WAV 头）。
+ * 「送上去的音频到底长什么样」只有从这里看得到——纯函数单测证明不了接线接对了。
+ */
+function uploadedSamples(fetchMock: { mock: { calls: unknown[][] } }): Float32Array {
+  const calls = fetchMock.mock.calls;
+  const init = (calls[calls.length - 1]?.[1] ?? {}) as RequestInit;
+  const body = JSON.parse(String(init.body)) as { audio: string };
+  const base64 = body.audio.slice(body.audio.indexOf(',') + 1);
+  const buffer = Buffer.from(base64, 'base64');
+  const samples = new Float32Array((buffer.length - 44) / 2);
+  for (let i = 0; i < samples.length; i++) samples[i] = buffer.readInt16LE(44 + i * 2) / 32768;
+  return samples;
 }
 
 /** performance.now 探针的复位钩子：stop() 靠它把录音时长拨过 400ms 的有效门槛 */
@@ -92,6 +142,112 @@ describe('resample', () => {
     const input = new Float32Array(300).fill(0.25);
     const out = resample(input, 48000, 16000);
     for (const value of out) expect(value).toBeCloseTo(0.25, 5);
+  });
+});
+
+/**
+ * 送 ASR 前的语音增强：高通 + 增益归一化，**只走上传路径**。
+ * 这一组只验纯函数本身；「接线上没有」在文件末尾那组里从上传的 data URL 上验。
+ */
+describe('highPass', () => {
+  /** 掐掉滤波器起始瞬态再比电平（双二阶从零状态起，头几毫秒本来就不该参与比较） */
+  const tail = (values: Float32Array) => values.subarray(values.length / 2);
+
+  it('50Hz 哼声至少压 9dB，500Hz 的语音几乎不动，长度不变', () => {
+    const hum = tone(0.3, TARGET_SAMPLE_RATE, 50);
+    const filteredHum = highPass(hum, TARGET_SAMPLE_RATE);
+    expect(filteredHum).toHaveLength(hum.length);
+    expect(rms(tail(filteredHum))).toBeLessThan(rms(tail(hum)) * 0.35);
+
+    const voice = tone(0.3, TARGET_SAMPLE_RATE, 500);
+    const filteredVoice = highPass(voice, TARGET_SAMPLE_RATE);
+    expect(rms(tail(filteredVoice))).toBeGreaterThan(rms(tail(voice)) * 0.97);
+  });
+
+  it('参数非法或空输入时原样返回：这一层是锦上添花，不该让一次录音因它出错', () => {
+    const samples = tone(0.3, 64);
+    expect(highPass(samples, 0)).toBe(samples);
+    expect(highPass(samples, TARGET_SAMPLE_RATE, 0)).toBe(samples);
+    // 截止频率越过奈奎斯特：算出来的系数会是废的，直接不滤
+    expect(highPass(samples, 8000, 4000)).toBe(samples);
+    expect(highPass(new Float32Array(0), TARGET_SAMPLE_RATE)).toHaveLength(0);
+  });
+
+  it('默认截止频率就是 ENHANCE_HIGHPASS_HZ（现场只看这一个数）', () => {
+    const samples = tone(0.3, TARGET_SAMPLE_RATE, 50);
+    expect(Array.from(highPass(samples, TARGET_SAMPLE_RATE))).toEqual(
+      Array.from(highPass(samples, TARGET_SAMPLE_RATE, ENHANCE_HIGHPASS_HZ)),
+    );
+  });
+});
+
+describe('speechGain', () => {
+  it('轻声被抬到目标电平：0.03 振幅（RMS≈0.021）拿到 3 倍以上的增益', () => {
+    const quiet = tone(0.03, TARGET_SAMPLE_RATE);
+    const gain = speechGain(quiet, TARGET_SAMPLE_RATE);
+    expect(gain).toBeGreaterThan(3);
+    expect(rms(quiet) * gain).toBeCloseTo(ENHANCE_TARGET_RMS, 2);
+  });
+
+  it('已经够响的原样不动：只抬不削（识别对偏响的容忍度高于偏轻）', () => {
+    expect(speechGain(tone(0.3, TARGET_SAMPLE_RATE), TARGET_SAMPLE_RATE)).toBe(1);
+  });
+
+  it('整段没有一帧够得上语音（全底噪）时返回 1：不把底噪放大成一片响噪声', () => {
+    const noise = tone(0.005, TARGET_SAMPLE_RATE);
+    expect(rms(noise)).toBeLessThan(ENHANCE_SPEECH_RMS);
+    expect(speechGain(noise, TARGET_SAMPLE_RATE)).toBe(1);
+  });
+
+  it('峰值余量不足时宁可不拉满，也不削顶', () => {
+    const samples = tone(0.05, TARGET_SAMPLE_RATE);
+    samples[100] = 0.5; // 一记爆音把峰值顶上去，余量从此说了算
+    const gain = speechGain(samples, TARGET_SAMPLE_RATE);
+    expect(gain).toBeLessThan(ENHANCE_TARGET_RMS / rms(samples));
+    expect(gain * 0.5).toBeLessThanOrEqual(ENHANCE_PEAK_CEILING + 1e-9);
+  });
+
+  it('输入已经越过满量程时也不衰减：宁可原样送上去', () => {
+    const samples = tone(0.03, TARGET_SAMPLE_RATE);
+    samples[10] = 1.2;
+    expect(speechGain(samples, TARGET_SAMPLE_RATE)).toBe(1);
+  });
+
+  it('空输入与非法采样率返回 1（防除零，不做无意义的重算）', () => {
+    expect(speechGain(new Float32Array(0), TARGET_SAMPLE_RATE)).toBe(1);
+    expect(speechGain(tone(0.03, 320), 0)).toBe(1);
+  });
+});
+
+describe('applyGain', () => {
+  it('增益 ≤1 或非正值时原样返回同一个数组：不衰减、也不白复制一份', () => {
+    const samples = new Float32Array([0.5, -0.5]);
+    expect(applyGain(samples, 1)).toBe(samples);
+    expect(applyGain(samples, 0)).toBe(samples);
+    expect(applyGain(samples, Number.NaN)).toBe(samples);
+  });
+
+  it('增益 >1 时缩放成一份新数组（不改入参）', () => {
+    const samples = new Float32Array([0.5, -0.25]);
+    expect(Array.from(applyGain(samples, 2))).toEqual([1, -0.5]);
+    expect(Array.from(samples)).toEqual([0.5, -0.25]);
+  });
+});
+
+describe('enhanceForUpload', () => {
+  it('48kHz 采集：重采样到 16k 后长度按速率折算', () => {
+    const out = enhanceForUpload(tone(0.05, 48_000, 500, 48_000), 48_000);
+    expect(out).toHaveLength(TARGET_SAMPLE_RATE);
+  });
+
+  it('只有底噪的录音不被放大：电平原地不动', () => {
+    const hum = tone(0.005, TARGET_SAMPLE_RATE);
+    const out = enhanceForUpload(hum, TARGET_SAMPLE_RATE);
+    expect(rms(out)).toBeLessThanOrEqual(rms(hum) * 1.01);
+  });
+
+  it('空输入不炸（误触录音时长度可能为 0）', () => {
+    expect(enhanceForUpload(new Float32Array(0), TARGET_SAMPLE_RATE)).toHaveLength(0);
   });
 });
 
@@ -1389,5 +1545,77 @@ describe('VAD 自动断句', () => {
     expect(onError).toHaveBeenCalledWith('没有听到声音');
     expect(fetchMock, '纯静音不该浪费一次识别调用').not.toHaveBeenCalled();
     expect(dictation.recording.value).toBe(false);
+  });
+});
+
+/**
+ * 接线验收（送 ASR 前的语音增强）：判决路径吃原始 PCM、上传路径过 enhanceForUpload。
+ *
+ * <p>纯函数在上面已经验过，这里只问一件纯函数答不了的事——**送上去的那份音频变了没有**。
+ * 用例都从 fetch 的 body 里把 WAV 解回来量电平，所以「改了函数忘了改调用点」这种漏接会当场红。
+ */
+describe('上传路径的语音增强', () => {
+  /** 一段轻声（RMS≈0.035）：过得了 VAD 地板，但离识别习惯的电平还差一截 */
+  const quiet = () => tone(0.05, 4096);
+
+  function stubRecognize(text: string) {
+    installFileReader();
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ text, seconds: 2 }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  }
+
+  function installMic() {
+    const getUserMedia = vi.fn(() =>
+      Promise.resolve({ getTracks: () => [{ stop: vi.fn() }] } as unknown as MediaStream),
+    );
+    return installBrowser(getUserMedia);
+  }
+
+  it('终稿：轻声被抬到目标电平，判决路径不受影响（VAD 照样按原始 RMS 判出人声）', async () => {
+    const fetchMock = stubRecognize('叶片有裂纹');
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1_000);
+    restoreNow = () => now.mockRestore();
+    const { processor } = installMic();
+    const dictation = useDictation();
+
+    await dictation.start();
+    const chunk = quiet();
+    processor.onaudioprocess?.({ inputBuffer: { getChannelData: () => chunk } });
+    expect(dictation.speechDetected.value, '判决看的是原始 RMS').toBe(true);
+    now.mockReturnValue(1_500);
+    await dictation.stop();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    const uploaded = uploadedSamples(fetchMock);
+    expect(rms(uploaded)).toBeGreaterThan(rms(chunk) * 1.5);
+    expect(rms(uploaded)).toBeCloseTo(ENHANCE_TARGET_RMS, 1);
+  });
+
+  it('分段切片：与终稿走同一条增强（预览与终稿的电平口径一致）', async () => {
+    const fetchMock = stubRecognize('叶片');
+    const { processor } = installMic();
+    const dictation = useDictation();
+    dictation.setAlwaysOn(true);
+    await dictation.arm();
+
+    // 首段门槛 2.8s ≈ 11 个 256ms 块：喂到第 11 块才切出去
+    const chunk = quiet();
+    const blocks = Math.ceil(((SEGMENT_FIRST_MS / 1000) * TARGET_SAMPLE_RATE) / chunk.length);
+    for (let i = 0; i < blocks; i++) {
+      processor.onaudioprocess?.({ inputBuffer: { getChannelData: () => chunk } });
+    }
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    const uploaded = uploadedSamples(fetchMock);
+    expect(rms(uploaded)).toBeGreaterThan(rms(chunk) * 1.5);
+    expect(rms(uploaded)).toBeCloseTo(ENHANCE_TARGET_RMS, 1);
+    dictation.dispose();
   });
 });

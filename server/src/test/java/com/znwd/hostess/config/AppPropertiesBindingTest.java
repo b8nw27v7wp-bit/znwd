@@ -57,7 +57,7 @@ class AppPropertiesBindingTest {
 
     @Test
     void Prompt的每个字段都在applicationYml的prompt段里有对应键() throws Exception {
-        List<String> keys = promptSectionKeys(readApplicationYml());
+        List<String> keys = sectionKeys(readApplicationYml(), "prompt");
 
         List<String> missing = new ArrayList<>();
         for (RecordComponent component : AppProperties.Prompt.class.getRecordComponents()) {
@@ -97,25 +97,82 @@ class AppPropertiesBindingTest {
         assertEquals("/etc/prompt/reply.txt", props.prompt().noHitReplyPath());
     }
 
-    /** 取 application.yml 里 znwd.prompt: 段的直接子键（4 空格缩进） */
-    private static List<String> promptSectionKeys(String yml) {
+    /**
+     * 语音（`znwd.audio`）同理：这一段的键最多，而且几乎每个都是「配错了会静默按缺省跑」的类型
+     * ——比如两个超时预算是「一次调用含重试」的总时长，键名写错就退回缺省值，
+     * 表现成现场怎么调都不生效。
+     */
+    @Test
+    void Audio的每个字段都在applicationYml的audio段里有对应键() throws Exception {
+        List<String> keys = sectionKeys(readApplicationYml(), "audio");
+
+        List<String> missing = new ArrayList<>();
+        for (RecordComponent component : AppProperties.Audio.class.getRecordComponents()) {
+            String key = toKebabCase(component.getName());
+            if (!keys.contains(key)) {
+                missing.add(key + "（字段 " + component.getName() + "）");
+            }
+        }
+        assertTrue(missing.isEmpty(),
+                "以下 Audio 配置字段在 application.yml 的 znwd.audio 段里没有键，绑定会静默失效：" + missing);
+    }
+
+    /** 两个超时预算的 relaxed 绑定：键名、record 字段名、访问器三者必须对上 */
+    @Test
+    void Audio超时预算通过relaxed绑定到record字段() {
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("znwd.audio.provider", "mimo");
+        values.put("znwd.audio.timeout-ms", "9000");
+        values.put("znwd.audio.asr-timeout-ms", "21000");
+
+        AppProperties props = new Binder(new MapConfigurationPropertySource(values))
+                .bind("znwd", AppProperties.class).get();
+
+        assertNotNull(props.audio());
+        assertEquals(9_000, props.audio().timeoutMs());
+        assertEquals(21_000, props.audio().asrTimeoutMs());
+        assertEquals(9_000, props.audioTimeoutMs(), "访问器必须原样带出配置值");
+        assertEquals(21_000, props.audioAsrTimeoutMs());
+    }
+
+    /**
+     * 两个超时预算的**缺省值**也是承重的：它们规定了服务端一次调用（含全部重试）的最坏耗时，
+     * 必须短于客户端的等待上限（合成 20s、整段识别 90s），否则浏览器一放弃，服务端还在替一个
+     * 没人要的响应花线程与上游配额。改这两个数要连着前端那一侧一起看。
+     */
+    @Test
+    void 未配置语音时超时预算取缺省值() {
+        // 至少要有一个键，Binder 才会真的去构造这个 record（空源会报「No value bound」）
+        AppProperties props = new Binder(new MapConfigurationPropertySource(Map.of("znwd.node-env", "production")))
+                .bind("znwd", AppProperties.class).get();
+
+        assertTrue(props.audioTimeoutMs() <= 20_000,
+                "合成预算必须 ≤ 前端的 SYNTH_TIMEOUT_MS（20s），实际 " + props.audioTimeoutMs());
+        assertTrue(props.audioAsrTimeoutMs() <= 90_000,
+                "识别预算必须 ≤ 前端的 RECOGNITION_TIMEOUT_MS（90s），实际 " + props.audioAsrTimeoutMs());
+        assertEquals(15_000, props.audioTimeoutMs(), "缺省值写死在文档与 .env.example 里，改动要三处同步");
+        assertEquals(30_000, props.audioAsrTimeoutMs(), "缺省值写死在文档与 .env.example 里，改动要三处同步");
+    }
+
+    /** 取 application.yml 里 znwd.<section>: 段的直接子键（4 空格缩进） */
+    private static List<String> sectionKeys(String yml, String section) {
         List<String> keys = new ArrayList<>();
-        boolean inPrompt = false;
+        boolean inside = false;
         for (String raw : yml.split("\n")) {
             String line = raw.stripTrailing();
             if (line.isEmpty() || line.stripLeading().startsWith("#")) {
                 continue;
             }
             int indent = line.length() - line.stripLeading().length();
-            if (indent == 2 && line.strip().equals("prompt:")) {
-                inPrompt = true;
+            if (indent == 2 && line.strip().equals(section + ":")) {
+                inside = true;
                 continue;
             }
             if (indent <= 2) {
-                inPrompt = false;
+                inside = false;
                 continue;
             }
-            if (inPrompt && indent == 4) {
+            if (inside && indent == 4) {
                 int colon = line.indexOf(':');
                 if (colon > 0) {
                     keys.add(line.substring(0, colon).strip());

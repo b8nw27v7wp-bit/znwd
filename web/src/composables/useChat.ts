@@ -101,6 +101,23 @@ export function useChat() {
     await loadSuggestions();
   }
 
+  /**
+   * 只重取一次 health（不动展区与推荐问题，也不清已有结论）。
+   *
+   * <p>给 App 的**播报低频重探**用：服务端 TTS 一旦被判失败就降级到浏览器合成，
+   * 而 health 平时只在挂载时取一次——没有这条重探，一次上游抖动会让这台机器一直用错引擎。
+   *
+   * @return 是否拿到了新的一份；拿不到（后端没起来）时调用方什么都别改，等下一轮
+   */
+  async function refreshHealth(): Promise<boolean> {
+    try {
+      health.value = await fetchHealth();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async function loadSuggestions(): Promise<void> {
     const generation = ++suggestionsGeneration;
     const requestedZone = zone.value;
@@ -314,6 +331,7 @@ export function useChat() {
     errors,
     feedback,
     bootstrap,
+    refreshHealth,
     setZone,
     ask,
     cancel,

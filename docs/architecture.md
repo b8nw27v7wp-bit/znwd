@@ -25,7 +25,7 @@
 
 资源与测试：`resources/{application.yml,schema.sql,openapi.json,META-INF/spring.factories}`；`db/init.sql`（建库建账号）；`eval/retrieval-cases.json`（评测用例）；`src/test/java/.../{knowledge,http,analytics,eval,cli}`（单测 + 三个 CLI 工具：`eval`、`calibrate`、`ingest`）。
 
-前端源码根 `web/src/`：`App.vue`（页面状态与布局）、`api/`（契约、SSE 与语音请求；入口 `api/index.ts`，按 `types`/`http`/`stream`/`admin`/`speech` 拆文件，对外 import 路径不变）、`format.ts`（回答排版：粗体/列表/分段，不产出 HTML）、`composables/useChat.ts`（问答状态机）、`composables/useSpeech.ts`（服务端 TTS 优先、浏览器合成降级）、`composables/useDictation.ts`（录音、VAD 与状态机）、`composables/useSegmentStream.ts`（常开聆听的分段识别管线）、`composables/audioPcm.ts`（RMS/重采样/WAV 等共用原语）、`composables/useAcoustics.ts`（声学遥测的本地累加与批量上报）、`storage.ts`、`components/{SourcePanel,AdminPanel,KnowledgePanel,DiagnosticsPanel,StageDiagram,AvatarPortrait,AvatarFigure}.vue`（其中 `KnowledgePanel`/`DiagnosticsPanel`/`StageDiagram` 各有对应的 `.spec.ts` 单测）、`styles.css`。
+前端源码根 `web/src/`：`App.vue`（页面状态与布局）、`api/`（契约、SSE 与语音请求；入口 `api/index.ts`，按 `types`/`http`/`stream`/`admin`/`speech` 拆文件，对外 import 路径不变）、`format.ts`（回答排版：粗体/列表/分段，不产出 HTML）、`composables/useChat.ts`（问答状态机）、`composables/useSpeech.ts`（服务端 TTS 优先、浏览器合成降级）、`composables/useDictation.ts`（录音、VAD 与状态机）、`composables/useSegmentStream.ts`（常开聆听的分段识别管线）、`composables/audioPcm.ts`（RMS/重采样/WAV 等共用原语）、`composables/useAcoustics.ts`（声学遥测的本地累加与批量上报）、`storage.ts`、`voiceMode.ts`（语音模式的读写与旧键迁移）、`components/{SourcePanel,AdminPanel,KnowledgePanel,DiagnosticsPanel,StageDiagram,AvatarPortrait,AvatarFigure}.vue`（其中 `KnowledgePanel`/`DiagnosticsPanel`/`StageDiagram` 各有对应的 `.spec.ts` 单测）、`styles.css`。
 
 ## 2. 一次问答的时序
 
@@ -67,7 +67,7 @@ ChatRunService
 knowledge/  ──KnowledgeLoader──▶  块（title/zone/tags/正文）
                     │                    │
                     │                    ├──TextChunker：以 # 标题为硬边界，段落打包到 500 字，
-                    │                    │   超长段落按 500/80 滑窗切分；块 id = <相对路径>#<序号>
+                    │                    │   超长段落按 500/80 滑窗切分（切点落在换行/句末）；块 id = <相对路径>#<序号>
                     │                    ▼
                     │            Retriever（关键词路）
                     │              中文 bigram + IDF 加权 + 标题/展区标签/正文加权 +
@@ -81,14 +81,14 @@ knowledge/  ──KnowledgeLoader──▶  块（title/zone/tags/正文）
                               HybridRetriever：RRF 融合 + 相关性闸门
 ```
 
-- **命中判定**：关键词路最高分 ≥ `MIN_RELEVANCE_SCORE`（默认 6.3）→ 命中；否则看语义向量路（`semantic=true` 且余弦 ≥ `MIN_VECTOR_SCORE`）→ 兜底命中；两路都不达标才拒答。
+- **命中判定**：关键词路最高分 ≥ `MIN_RELEVANCE_SCORE`（默认 6.5）→ 命中；否则看语义向量路（`semantic=true` 且余弦 ≥ `MIN_VECTOR_SCORE`）→ 兜底命中；两路都不达标才拒答。
 - **语义向量不参与普通查询的排序**（2026-09-23 实测定的）：真 bge-m3 向量接上后让它参与 RRF 融合，137 条计分用例的 top1 从 1.0 掉到 0.9854（doc-08 / probe-45「运维方案能自动生成吗」被话题相邻的「项目背景与需求」顶掉）。规则因此收成：关键词路过了闸门就按关键词路排序（这条路上根本不查向量），语义向量只在**关键词没过闸门**时才检索、由它接管排序。
 - **兜底路径上语义命中是「新增候选」**（已决策：文档对齐代码）：`HybridRetriever.rrfFuse` 会把向量独有的条目直接放进融合结果（该条目的 `keywordRank` 留空），不是只对关键词候选重排。线上问答（`RagPipeline`）与诊断（`/api/admin/diagnostics`）都走带闸门的调用（`applyGate=true`），新增候选还要余弦 ≥ `MIN_VECTOR_SCORE` 才放行；而该阈值当前标定为 `0.75` = 等效关闭（见下条），所以**生产实际走不到新增候选这一步**。
 - **兜底口子当前是关着的**：标定显示域外最高余弦 0.6252（2026-09-29 复标，`near-1`「今年光伏补贴政策有什么变化？」），而补同义词后已没有「被误拦、需要兜底救回」的在域用例（0 条），区间无从成立——开口子必然先把域外问题放进来，所以 `MIN_VECTOR_SCORE=0.75`（等价于关闭兜底）。误拦靠补语料/补同义词解决。
 - **非语义向量不参与融合**：`bag` 是哈希兜底、不是相似度，融进去只会打乱关键词路排序，而 `mode` 仍如实上报 `keyword`——上报与行为不一致最难排查。此时它只做诊断上报。
 - **模式如实上报**：只有语义向量真的参与排序（兜底路径）才是 `hybrid`，否则 `keyword`（附 `degradedReason`）。语义路可用但没被用到的查询报 `keyword`，这是如实上报而不是降级。
 - **语义路可降级**：embedding 走外部服务，它不通时**不阻塞启动、也不报错给访客**——构建失败退回仅关键词并记 `degradedReason`；查询期失败只影响本次检索、计数进 `queryFailures`/`lastQueryError` 并在 `/api/health` 的 `embeddingReady=false` 上体现，下一次成功自愈。
-- **同义词**：内置 21 组在 `Synonyms`，可用 `knowledge/_meta/synonyms.tsv` 覆盖或走 `PUT /api/admin/synonyms` 在线替换；**查询期展开**，改完立即生效、无需重建索引。
+- **同义词**：内置 34 组在 `Synonyms`，可用 `knowledge/_meta/synonyms.tsv` 覆盖或走 `PUT /api/admin/synonyms` 在线替换；**查询期展开**，改完立即生效、无需重建索引。
 - **诊断出口**：`RetrievalDiagnostics` + `RetrievalVerdict` 把「为什么被拦/命中」翻成一句人话，由 `/api/admin/diagnostics` 暴露。
 - **换代原子性**：`HybridRetriever` 用 `volatile Snapshot(gen, keyword, ready)`，reload 时关键词快照与向量索引同代切换，检索中不会混代。
 
@@ -133,6 +133,7 @@ MySQL 表（`resources/schema.sql`，全部 `CREATE TABLE IF NOT EXISTS`）：
 | `composables/audioPcm.ts` | 采集与编码的共用原语（RMS、线性重采样、RIFF 打包、预览拼接）。单独成文件是为了让上面两条管线单向引用它，而不是互相引用形成环 |
 | `composables/useAcoustics.ts` | 声学遥测：把只在前端看得见的量累成增量计数，每 15 秒（及切后台/卸载）批量送 `/api/speech/metrics` |
 | `storage.ts` | 浏览器存储的安全读写封装 |
+| `voiceMode.ts` | 语音模式（点按 / 全双工）的读写与旧键迁移：新键 `znwd.voiceMode` 三级回退（新键合法 → 旧键 `znwd.listen` → 缺省点按）、写入时双写镜像旧键（回滚 `web/dist` 后旧代码读到正确值）；**加载只读不写**，缺省不落键 |
 | `format.ts` | 回答排版：`**粗体**`→加粗片段、`1.`/`·` 列表→悬挂缩进、空行分段；只产出结构交给模板渲染，模型输出里的尖括号只是文字 |
 | `components/AvatarPortrait.vue` | 虚拟形象：立绘优先（`public/avatar-guide.png`），`AvatarFigure.vue`（手写 SVG）兜底；外部只吃 `state` 属性，换 3D/Live2D 只改内部 |
 | `components/SourcePanel.vue` | 来源折叠面板（「查看来源（N）」） |
@@ -170,12 +171,12 @@ MySQL 表（`resources/schema.sql`，全部 `CREATE TABLE IF NOT EXISTS`）：
 
 | 常量 | 值 | 位置 |
 | --- | --- | --- |
-| 闸门阈值 `minKeywordScore` | 6.3（真实问句口径下域外零漏放的最优覆盖点） | `application.yml` / `HybridRetriever` |
+| 闸门阈值 `minKeywordScore` | 6.5（真实问句口径下域外零漏放的最优覆盖点；随语料重标） | `application.yml` / `HybridRetriever` |
 | 语义向量阈值 `minVectorScore` | 0.75（= 关闭兜底：域外最高余弦 0.6252 高于待救用例 0 条，区间不成立） | 同上 |
 | 管理口令默认值 `requireAdminToken` | `true`（未配 `ADMIN_TOKEN` 时 fail-closed；回环豁免必须显式关闭） | `application.yml` / `AppProperties` |
 | 检索 topK | 4 | `RagPipeline.DEFAULT_TOP_K` |
 | 拼上下文的历史条数 | 12 | `RagPipeline.MAX_HISTORY_MESSAGES` |
-| 分块上限 / 重叠 | 500 / 80 字符 | `TextChunker` |
+| 分块上限 / 重叠 | 500 / 80 字符（含标题预留与自然边界切点） | `TextChunker` |
 | 会话窗口 | 6 轮 / 10 分钟 / 最多 200 会话 | `SessionStore` |
 | 内存日志 / 反馈窗口 | 500 / 500 | `Analytics` |
 | 限流 | 30 次/分钟/IP，键上限 1000 | `CHAT_RATE_PER_MIN` / `RateLimiter` |

@@ -31,13 +31,13 @@
 - **启动就绪可判定**：`GET /api/health` 始终返回 HTTP 200，但知识快照加载完成前 `ok=false`、`ready=false`；部署探活与自动化必须解析 JSON，不能只看端口或状态码。需要落库的流程还应同时确认 `storageAvailable=true`。
 - **出网适配器有白名单**：`tools/offline-check.py` 的 O04 只允许 `llm/OpenAiCompatChatModel`、`embedding/OpenAiCompatEmbeddingProvider`、`audio/MimoSpeechModel` 三个后端文件发起网络连接；其它 Java 文件出现 HTTP/Socket 调用即失败。`AUDIO_PROVIDER=none` 默认不触发语音出网。
 - **检索回归有门禁**：CI 用 `--baseline=docs/eval/baseline-java.json` 逐例守住 top1 路径、top1/top3、闸门指标与漏答数；`MIN_VECTOR_SCORE` 默认 `0.75`，启用语义路时 `--gate-check` 另守域外最高余弦不得越线。
-- **请求体上限**：`RequestSizeLimitFilter` 拦下超过 64KB 的写请求（413 + 统一错误信封），避免超大 JSON 先进内存；无 `Content-Length` 的写请求一律按超限处理。`/api/speech/*` 放宽到 2MB（录音 base64 会超 64KB），其余写请求仍 64KB。
+- **请求体上限**：`RequestSizeLimitFilter` 拦下超过 64KB 的写请求（413 + 统一错误信封），避免超大 JSON 先进内存；无 `Content-Length` 的写请求一律按超限处理。`/api/speech/*` 放宽到「由 `AUDIO_MAX_UPLOAD_BYTES` 按 base64 膨胀 4/3 推出的上限」（缺省约 2.67MB；录音 base64 会超 64KB），其余写请求仍 64KB。
 - **限流键默认不信任 `X-Forwarded-For`**：该头客户端可写，采信它等于让调用方自己挑限流桶（每次换一个值就是一个新桶，`CHAT_RATE_PER_MIN` 失效）。默认取 `remoteAddr`；仅当显式 `TRUST_FORWARDED_FOR=true`（且反代会剥离同名头）时才取转发头首个地址。实测：默认配置下每次换伪造头仍第 31 次 429；开关打开后 35 次不同头各自成桶。
 
 ## 三、已接受的风险（不是疏忽，是权衡）
 
 1. **`/api/health` 暴露绝对路径**（`knowledgeDir`/`dataDir`/索引文件）：运营排查要用。若部署在不受控网络，建议在反代层只放行 `/api/chat*` 与 `/`，其余接口限内网。
-2. **请求体上限只做在应用层（默认 64KB，`/api/speech/*` 放宽到 2MB）**：消息正文会被截到 2000 字，超大 JSON 已在过滤器里被 413 拦掉；`/api/speech/*` 因录音 base64 会超 64KB，是过滤器里唯一的放宽例外；反代侧仍建议按同一口径再加一道限制（其余路径 64k、`/api/speech/*` 不低于 2m，两道防线不冲突）。
+2. **请求体上限只做在应用层（默认 64KB，`/api/speech/*` 放宽到由 `AUDIO_MAX_UPLOAD_BYTES` 推出的约 2.67MB）**：消息正文会被截到 2000 字，超大 JSON 已在过滤器里被 413 拦掉；`/api/speech/*` 因录音 base64 会超 64KB，是过滤器里唯一的放宽例外；反代侧仍建议按同一口径再加一道限制（其余路径 64k、`/api/speech/*` 不低于 3m，两道防线不冲突）。
 3. **日志保留提问前 20 字**：可读性与隐私的折中，可用 `LOG_MESSAGE_MODE` 调到纯 hash。
 4. **会话令牌的持有者等价于会话所有者**（2026-09-29 收紧后）：`GET/DELETE /api/sessions/{id}` 现在要求带 `X-Session-Token`（或 `?sessionToken=`）且与会话建立时下发的令牌一致，否则一律 404。残留取舍：令牌存在前端内存与 `sessionStorage`，同一台一体机上能读到该令牌的人（例如共用浏览器的下一位访客用开发者工具）仍能读到那段对话；展厅单屏、内网、无敏感内容，接受。要再收紧就换签名 cookie 或服务端 owner 绑定（见 `docs/security-testing.md` 已接受风险表）。
 5. **启动窗口仍需读 JSON**：`/api/health` 在 `ApplicationReadyEvent` 完成前就可能可达，知识快照未发布时虽回 HTTP 200，但 `ready=false`。只看状态码仍会误判启动完成；至少等 `ready=true`，依赖落库的启动流程还要确认 `storageAvailable=true`。

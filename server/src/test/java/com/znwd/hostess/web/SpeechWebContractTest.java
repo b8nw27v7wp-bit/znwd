@@ -231,6 +231,27 @@ class SpeechWebContractTest {
                 .andExpect(jsonPath("$.error").value("speech_failed"));
     }
 
+    /**
+     * 识别回空文本 ⇒ **200 + `text:""`**，不是 502。
+     *
+     * <p>这是跨端契约：前端把空文本当「这段录音里没听到话」处理（聆听态记一次 `falseTriggers`
+     * 并静默、点按态回「没有听清」），而它只在 2xx + 空串时才会走到那条路径。以前模型层对空文本
+     * 抛异常 → 这里变 502 → 前端按「上游故障」报错，于是那条路径在真实部署上永远走不到：
+     * 运营面板的「空识别误触」恒为 0，参观者还会在没人说话时看到一句「没有识别成功」。
+     */
+    @Test
+    void 识别回空文本时回200与空字符串() throws Exception {
+        when(props.audioEnabled()).thenReturn(true);
+        when(speech.recognize(any())).thenReturn(new SpeechModel.Recognition("", 1.5));
+
+        mvc.perform(post("/api/speech/recognize").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"audio\":\"" + minimalWavDataUrl() + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.text").value(""))
+                .andExpect(jsonPath("$.seconds").value(1.5))
+                .andExpect(jsonPath("$.elapsedMs").exists());
+    }
+
     @Test
     void 未启用语音时识别回503而不是拿遥测的配额顶包() throws Exception {
         mvc.perform(post("/api/speech/recognize").contentType(MediaType.APPLICATION_JSON)

@@ -28,6 +28,12 @@ export const SPEAK_CHUNK_CHARS = 120;
 const RESUME_INTERVAL_MS = 5_000;
 export const PLAYBACK_WATCHDOG_MS = 30_000;
 /**
+ * 服务端播报被判失败后，多久之内不接受「又可用」。
+ *
+ * <p>比 App 的重探周期（`SPEECH_RECHECK_MS`，60 秒）短，所以恢复不会被自己的冷却期挡住。
+ */
+export const SERVER_RETRY_COOLDOWN_MS = 30_000;
+/**
  * 46 字节的空 WAV（只有头、没有采样）。
  *
  * <p>{@code <audio>} 与浏览器合成器一样受自动播放策略约束：借第一次真实手势放一段无声的它，
@@ -58,11 +64,35 @@ export function sanitizeForSpeech(text: string): string {
     .trim();
 }
 
+/** 句末标点集（切分口径只此一份：splitForSpeech 按它切句、lastSentenceEnd 按它找最后一句） */
+const SENTENCE_ENDS = '。！？；!?;';
+
+/**
+ * 在一组分隔符**之后**切开，分隔符留在前一段的末尾（= `split(/(?<=[marks])/)` 的效果）。
+ *
+ * <p>为什么不用那个写法：**反向引用断言**（lookbehind）虽然是 ES2018 语法，但浏览器支持得很晚
+ * ——Safari/WebKit 到 16.4（2023-03）才有，而构建目标 `es2020` 不会降级它、esbuild 也降不了。
+ * 老内核上的失败方式不是「这一句不读」，而是**正则字面量解析失败 → 整个模块解析失败 → 白屏**，
+ * 正是展厅最不能出的一种故障（`tools/offline-check.py` 的 O08 会扫产物把这条钉死）。
+ */
+function splitAfter(text: string, marks: string): string[] {
+  const out: string[] = [];
+  let start = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (marks.includes(text[i])) {
+      out.push(text.slice(start, i + 1));
+      start = i + 1;
+    }
+  }
+  if (start < text.length) out.push(text.slice(start));
+  return out;
+}
+
 /** 超长单句：先按逗号顿号断，再对仍然超长的部分硬切 */
 function hardSplit(sentence: string, chunk: number): string[] {
   const pieces: string[] = [];
   let buf = '';
-  for (const part of sentence.split(/(?<=[，,、])/)) {
+  for (const part of splitAfter(sentence, '，,、')) {
     if (part.length > chunk) {
       if (buf.trim()) pieces.push(buf.trim());
       buf = '';
@@ -81,8 +111,7 @@ function hardSplit(sentence: string, chunk: number): string[] {
 
 /** 按句末标点切段并合并到不超过 chunk 字，保证每段都是一句完整的话 */
 export function splitForSpeech(text: string, chunk = SPEAK_CHUNK_CHARS): string[] {
-  const sentences = text
-    .split(/(?<=[。！？；!?;])/)
+  const sentences = splitAfter(text, SENTENCE_ENDS)
     .map((s) => s.trim())
     .filter(Boolean);
 
@@ -105,9 +134,6 @@ export function splitForSpeech(text: string, chunk = SPEAK_CHUNK_CHARS): string[
   flush();
   return out;
 }
-
-/** 句末标点集（与 splitForSpeech 的切分口径一致） */
-const SENTENCE_ENDS = '。！？；!?;';
 
 /**
  * 最后一个句末标点的下标，没有则返回 -1。
@@ -219,8 +245,31 @@ export function useSpeech(options: SpeechOptions = {}) {
     serverReady.value ? 'server' : supported ? 'browser' : 'none',
   );
   let resumeTimer: number | undefined;
-  /** 本次会话里服务端语音失败过：之后的 health 结果不再把它翻回可用 */
-  let probeFailed = false;
+  /**
+   * 上一次判定「服务端 TTS 不可用」的时刻（0 = 没失败过）。
+   *
+   * <p>失败后**不立刻接受一次「又可用」**——那多半是页面早期拿到的陈旧 health；但也不能一票否决到底，
+   * 所以它是一条**冷却期**而不是布尔闩：降级是「当场」，恢复是「过了冷却期再说」。冷却期由
+   * App 的低频重探（`SPEECH_RECHECK_MS`）配合——没有那条重探的话（health 只在挂载时取一次），
+   * 一次上游抖动就会把这台机器的播报永久换成浏览器合成，直到有人手刷页面。
+   */
+  let failedAt = 0;
+
+  /**
+   * 记「服务端 TTS 不可用」这一次状态迁移：降级当场生效、记录冷却起点、复位暖机闩。
+   *
+   * <p>**唯一的登记入口**——`setServerReady(false)`（health 说不可用）与 `runQueue` 的失败降级
+   * 都调它，避免两处各写一半（早先 runQueue 只写了 `serverReady`/`failedAt`，漏了 `serverWarmed`，
+   * 于是 V3 恢复路径里的 `warmServer()` 因闩还是 true 而空转：恢复后的首次服务端播报仍可能被
+   * 自动播放策略挡下）。**它只登记，不停播**：停播是 `setServerReady(false)` 额外做的事，
+   * 而 runQueue 正在异常路径上，停播会 `generation++` 打断它自己的浏览器回退。
+   */
+  function markServerUnavailable(): void {
+    serverReady.value = false;
+    failedAt = Date.now();
+    serverWarmed = false;
+  }
+
   /** 播报代号：stop()/新播报自增，进行中的取音频与播放循环据此自行收尾 */
   let generation = 0;
   let ttsController: AbortController | null = null;
@@ -518,8 +567,7 @@ export function useSpeech(options: SpeechOptions = {}) {
       if (mine !== generation) return;
       const reason = e instanceof Error ? e.message : 'server-speech-failed';
       requestController.abort();
-      serverReady.value = false;
-      probeFailed = true;
+      markServerUnavailable();
       lastError.value = reason;
       options.onError?.(reason);
       if (mine !== generation) return;
@@ -709,20 +757,32 @@ export function useSpeech(options: SpeechOptions = {}) {
   }
 
   /**
-   * 同步服务端语音可用性（App 在 bootstrap 后用 /api/health 的 speechReady 调它）。
+   * 同步服务端语音可用性（App 用 `/api/health` 的 `speechReady` 调它：挂载时一次，之后按
+   * `SPEECH_RECHECK_MS` 低频重探）。
    *
-   * <p>只在「从未探测过」或状态变化时改：运行中被判失败后又收到一次陈旧的 true 不该复辟——
-   * 所以一旦本次会话失败过，就由 {@link speakServer} 的降级结果说了算。
+   * <p>**降级当场生效，恢复要过冷却期**：运行中被判失败后，`SERVER_RETRY_COOLDOWN_MS` 之内的
+   * 「又可用」一律不认（那多半是一次陈旧的 health），过了冷却期的那次新探测说了算——
+   * 恢复路径正是靠这一条才存在的（见 {@link failedAt}）。
+   *
+   * <p>`ready=false` 与 `runQueue` 的失败降级共用 {@link markServerUnavailable} 登记状态
+   * （不同只在：这里额外停播）。
    */
   function setServerReady(ready: boolean): void {
     const wasReady = serverReady.value;
-    if (ready && !wasReady && probeFailed) return;
-    if (!ready && wasReady) {
-      stop();
-      serverWarmed = false;
+    if (ready) {
+      if (!wasReady) {
+        // 冷却期内的「又可用」不认（多半是陈旧的 health）；过了冷却期就复位并暖机
+        if (failedAt && Date.now() - failedAt < SERVER_RETRY_COOLDOWN_MS) return;
+        failedAt = 0;
+      }
+      serverReady.value = true;
+      if (!wasReady) warmServer();
+      return;
     }
-    serverReady.value = ready;
-    if (ready && !wasReady) warmServer();
+    // ready=false：统一走降级登记。停播是这里额外做的事（runQueue 的失败降级在异常路径上，
+    // 不能停播——那会打断它自己的浏览器回退），状态簿记则共用 markServerUnavailable。
+    if (wasReady) stop();
+    markServerUnavailable();
   }
 
   return {

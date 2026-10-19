@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { accumulate, emptyCounters, pendingDeltas, useAcoustics, ACOUSTICS_INTERVAL_MS } from './useAcoustics';
+import { accumulate, emptyCounters, pendingDeltas, useAcoustics, ACOUSTICS_INTERVAL_MS, METRIC_MAX_VALUE } from './useAcoustics';
 import type { AcousticsEvent } from './useAcoustics';
 
 /**
@@ -100,6 +100,36 @@ describe('事件 → 计数', () => {
     expect(pendingDeltas(emptyCounters())).toEqual({});
   });
 
+  /**
+   * 出口的值域夹一道：后端对越界值是**整批 400**，一个离谱样本会把这 15 秒攒的几十个键
+   * 一起带走，而且一声不响（面板上那几行永远是 0）。
+   */
+  it('出口丢掉坏值、把越界值夹到上限（不让一个样本吃掉整批）', () => {
+    const deltas = pendingDeltas({
+      utterances: 3,
+      finalLatencySumMs: 1e9, // 机器休眠几小时后醒来，performance.now() 的跳变算出来的毫秒数
+      noiseFloorSum: Number.NaN,
+      echoFloorSum: -1, // 理论上不会出现，出现了也不该让整批 400
+      segmentAudioMs: 0, // 全零的键本来就不发
+    });
+
+    expect(deltas).toEqual({ utterances: 3, finalLatencySumMs: METRIC_MAX_VALUE });
+  });
+
+  it('正常量级的样本原样发出去（夹子不能改口径）', () => {
+    expect(pendingDeltas({ finalLatencySumMs: 5_400, noiseFloorSum: 0.14 }))
+      .toEqual({ finalLatencySumMs: 5_400, noiseFloorSum: 0.14 });
+  });
+
+  /** 边界：恰好等于上限原样保留（后端收 `<= METRIC_MAX_VALUE`），越界 1 也夹回上限 */
+  it('值域夹子的边界：恰好上限保留、越界 1 也夹到上限', () => {
+    expect(pendingDeltas({ finalLatencySumMs: METRIC_MAX_VALUE }))
+      .toEqual({ finalLatencySumMs: METRIC_MAX_VALUE });
+    expect(pendingDeltas({ finalLatencySumMs: METRIC_MAX_VALUE + 1 }))
+      .toEqual({ finalLatencySumMs: METRIC_MAX_VALUE });
+  });
+
+
   it('终稿：三段延迟、音频秒数与服务端耗时各归各的键（§5 S4/S8）', () => {
     const counters = counted([
       { kind: 'final', endDelayMs: 1_000, latencyMs: 1_800, audioMs: 2_000, serverMs: 500 },
@@ -181,6 +211,19 @@ describe('遥测键与后端白名单一致', () => {
     const missing = Object.keys(emptyCounters()).filter((key) => !allowed.has(key));
     expect(missing, '这些键前端会发、后端会拒（静默丢数据）').toEqual([]);
   });
+
+  /**
+   * 键名对上了，**值域也得对上**：后端把越界值当「整批 400」的理由（内存计数器没有回退路径）
+   * 同样成立，而客户端那条夹子写的是另一份常量。两边漂移的表现是「越界的样本被整批拒掉」，
+   * 或者反过来「夹得比后端严、白丢样本」，两种都不报错。
+   */
+  it('前端的值域上限与 SpeechParser.METRIC_MAX_VALUE 是同一个数', () => {
+    const source = readFileSync(SPEECH_PARSER, 'utf8');
+    const match = /METRIC_MAX_VALUE\s*=\s*([0-9.eE+-]+)\s*;/.exec(source);
+    expect(match, 'METRIC_MAX_VALUE 的声明没找到：解析口径要跟着改').toBeTruthy();
+
+    expect(METRIC_MAX_VALUE).toBe(Number(match![1]));
+  });
 });
 
 describe('上报', () => {
@@ -248,6 +291,37 @@ describe('上报', () => {
       manualEnds: 1,
     });
     acoustics.dispose();
+  });
+
+  it('接口返回非 2xx：这批要留痕（warn）且不崩，下一批带新增量继续', async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit): Promise<Response> =>
+        new Response(JSON.stringify({ error: 'validation_error' }), { status: 400 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const acoustics = useAcoustics();
+
+    acoustics.record({ kind: 'end', mode: 'auto' });
+    await vi.advanceTimersByTimeAsync(ACOUSTICS_INTERVAL_MS);
+
+    // sendSpeechMetrics 对非 2xx 抛错、flush 接住并留痕（面板上那几行永远是 0 时要查得到原因）
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(warn, '被 400 掉不能一声不响').toHaveBeenCalled();
+    expect(String(warn.mock.calls[0][0])).toContain('声学遥测');
+
+    // 失败不补发：新的增量单独成批，继续上报
+    acoustics.record({ kind: 'end', mode: 'manual' });
+    await vi.advanceTimersByTimeAsync(ACOUSTICS_INTERVAL_MS);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(String((fetchMock.mock.calls[1] as [string, RequestInit])[1].body))).toEqual({
+      utterances: 1,
+      manualEnds: 1,
+    });
+
+    acoustics.dispose();
+    warn.mockRestore();
   });
 
   it('卸载时冲刷最后一批并停掉定时器', async () => {

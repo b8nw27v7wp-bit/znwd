@@ -5,6 +5,7 @@ import { useSpeech, lastSentenceEnd, sanitizeForSpeech } from './composables/use
 import { useDictation } from './composables/useDictation';
 import { useAcoustics } from './composables/useAcoustics';
 import { readStorage, writeStorage } from './storage';
+import { resolveVoiceMode, writeVoiceMode, type VoiceMode } from './voiceMode';
 import { formatAnswer, type Block } from './format';
 import { bindZoneBridge, dispatchZoneChange, writeZoneToUrl, type ZoneSource } from './zoneLink';
 import SourcePanel from './components/SourcePanel.vue';
@@ -16,24 +17,33 @@ import StageDiagram from './components/StageDiagram.vue';
 const IDLE_RESET_MS = 180_000;
 
 /**
- * 常开聆听的存储键。**缺省为开**（键缺失或任何非 '0' 的值都算开）——与朗读键 `znwd.speak`
- * 同一套写法，两个开关互相独立。
+ * 服务端播报降级后的重探周期。
+ *
+ * <p>比 `useSpeech` 的 `SERVER_RETRY_COOLDOWN_MS`（30 秒）长，所以一旦上游真的恢复，
+ * 下一次敲门就会被接受，不会被自己的冷却期挡住。一次 GET /api/health，代价可以忽略；
+ * 页面切到后台时浏览器会把它节流到 1 次/分钟，本来就够。
  */
-const LISTEN_KEY = 'znwd.listen';
+const SPEECH_RECHECK_MS = 60_000;
+
 /**
- * 插话打断（P3a-2）的存储键。**缺省为关**，与常开聆听相反。
+ * 插话打断（P3a-2）的存储键。**缺省为关**，且**仅全双工模式有效**。
  *
  * <p>理由在判据而不在能力：打断要判断「麦克风里这一下是人声还是自己的喇叭声」，而这个门限
  * 必须由现场的回声数据（P3a-1 的 `echo*` 那组计数）定。没拿到数据就打开判决，等于拿参观者
- * 试参数——判错一次就是把回答掐了、又没有新问题。常开聆听缺省开，是因为它的判据（VAD 常量）
- * 在 P1 已经现场跑过。
+ * 试参数——判错一次就是把回答掐了、又没有新问题。常开聆听的判据（VAD 常量）在 P1 已现场跑过，
+ * 所以当初才敢让它缺省开（缺省现在已是点按，全双工改为运营可切）；插话门限没有这份数据，故缺省关。
  */
 const BARGEIN_KEY = 'znwd.bargein';
 
 const chat = useChat();
 /** 声学遥测：底噪与 VAD 判定只在前端看得见，靠它汇进 /api/stats（运营面板据此调现场阈值） */
 const acoustics = useAcoustics();
-const listenOn = ref(readStorage('local', LISTEN_KEY) !== '0');
+/**
+ * 语音模式：缺省点按（半双工，识别调用最少），可切全双工（常开聆听）。
+ * 读写与旧键迁移都在 voiceMode.ts；**加载只读不写**（缺省不落键）。
+ */
+const voiceMode = ref<VoiceMode>(resolveVoiceMode());
+const fullDuplex = computed(() => voiceMode.value === 'full');
 const bargeInOn = ref(readStorage('local', BARGEIN_KEY) === '1');
 /**
  * 三段延迟的中间时刻（§4 P2 修订 1）。
@@ -64,15 +74,75 @@ const draft = ref('');
  * 不该因为一次误触发的环境噪声被抹掉（展厅里这两种输入会混在同一个框里）。
  */
 const partialDraft = ref<string | null>(null);
+/** 语音提示行的自动消失时长：够看完一句话，又不至于一直挂着上一轮的失败 */
+const VOICE_HINT_MS = 6_000;
+/**
+ * 输入区下方那句给参观者的**行动指引**（空串 = 不显示）。
+ *
+ * <p>技术原因（浏览器原文、错误码）照旧只进运营视图；这里只回答「我该怎么办」。
+ * 两者分工的理由见 `onError`。
+ */
+const voiceHint = ref('');
+let voiceHintTimer: number | undefined;
+
+function clearVoiceHint(): void {
+  if (voiceHintTimer !== undefined) window.clearTimeout(voiceHintTimer);
+  voiceHintTimer = undefined;
+  voiceHint.value = '';
+}
+
+/** 显示一句行动提示并起 6 秒自清；传空串等于立刻清掉（起新一句、识别成功都走它） */
+function showVoiceHint(text: string): void {
+  if (!text) {
+    clearVoiceHint();
+    return;
+  }
+  if (voiceHintTimer !== undefined) window.clearTimeout(voiceHintTimer);
+  voiceHint.value = text;
+  voiceHintTimer = window.setTimeout(() => {
+    voiceHintTimer = undefined;
+    voiceHint.value = '';
+  }, VOICE_HINT_MS);
+}
+
+/**
+ * 失败原因 → 参观者看得懂的行动指引。
+ *
+ * <p>**耦合**：这里依赖 `onError` 是语音失败的唯一漏斗。以后新增任何不走 `onError` 的失败路径
+ * （比如某个分支自己吞掉错误），提示就会漏掉一条——加分支时要一起改。
+ *
+ * <p>关键词表按浏览器/后端给的原文匹配，改动文案要同步维护（已知边界，见实施计划）。
+ */
+function voiceHintFor(reason: string): string {
+  if (reason.includes('没有听到声音')) return '没有听到声音，请再说一次';
+  if (reason.includes('录音太短') || reason.includes('没有采到声音')) return '这次没听清，请再说一次';
+  if (reason.includes('没有听清')) return '没有听清，请再说一次';
+  if (/Permission|NotAllowed|NotFound|denied|麦克风不可用/.test(reason)) {
+    return '麦克风打不开，请联系工作人员';
+  }
+  return '没有识别成功，请再说一次或改用文字输入';
+}
+
 /**
  * 语音提问：识别到文字就直接提问——展厅里没人愿意再说一遍还去点发送。
- * 识别失败不往大屏上抛（技术信息一律只进运营视图），但会被记下来。
+ * 识别失败的技术原因不往大屏上抛（技术信息一律只进运营视图），但会被记下来，
+ * **同时**在输入区下方给参观者一句行动指引（见 `showVoiceHint`）。
  *
  * <p>常开聆听多一条预览通道：`onPartial` 是分段识别的拼接结果，随说话逐段变长；
  * 它**只是预览**，终稿永远走 `onText`（整段识别）并立刻提问，所以这里不做任何提交。
  */
 const dictation = useDictation({
   onText: (text) => {
+    // 识别在途时输入框仍然可用（打字提问是合法路径），于是可能是这样撞上的：
+    // 参观者手打一句提交 → 起流 → 识别这时才回来，`submit()` 会被 streaming 挡回，
+    // 识别文本就卡在输入框里发不出去。丢掉它并给一句行动指引，**不碰 draft**——
+    // 既不留发不出去的文本，也不吞参观者手打的字（`draft` 此刻通常是空的：手打那句已经发走了）。
+    if (chat.streaming.value || chat.resetting.value) {
+      chat.logError('（语音提问）', `识别结果未自动提交：${text}`);
+      showVoiceHint('刚才那句没有发出去，请再说一次');
+      return;
+    }
+    clearVoiceHint();
     draft.value = text;
     partialDraft.value = null;
     submit();
@@ -86,7 +156,12 @@ const dictation = useDictation({
     draft.value = text;
     partialDraft.value = text;
   },
-  onError: (reason) => chat.logError('（语音提问）', reason),
+  // 五处失败（麦克风被拒 / 没听到声音 / 录音太短 / 没采到声音 / 识别回空或失败）都汇到这一处：
+  // 原因是给运营看的技术详情，提示是给参观者的行动指引，两条各走各的路（大屏上只出后者）
+  onError: (reason) => {
+    chat.logError('（语音提问）', reason);
+    showVoiceHint(voiceHintFor(reason));
+  },
   onMetrics: (event) => acoustics.record(event),
   /**
    * 判出插话（P3a-2）：让 AI 当场让口。
@@ -109,6 +184,7 @@ const showSources = ref(false);
 const scrollArea = ref<HTMLElement | null>(null);
 const composer = ref<HTMLTextAreaElement | null>(null);
 let idleTimer: number | undefined;
+let speechRecheckTimer: number | undefined;
 
 /**
  * 展区变化的唯一入口：下拉、window.znwdSetZone、znwd:zone 事件都从这里走。
@@ -144,9 +220,9 @@ const bootstrapped = ref(false);
 let gestureSeen = false;
 
 /**
- * 常开聆听自动开麦。
+ * 全双工模式自动开麦。
  *
- * <p>三道门都得过：已经完成 bootstrap、后端真的报语音可用、常开关没被运营关掉。
+ * <p>三道门都得过：已经完成 bootstrap、后端真的报语音可用、模式是全双工。
  * 少了 speechReady 这道，`AUDIO_PROVIDER=none` 的实例会在每次说话时刷一条 503
  * ——大屏上没人看得见，但运营视图会被这类噪音淹掉。
  *
@@ -154,7 +230,7 @@ let gestureSeen = false;
  * （`arm()` 内部已经挡住「已经开着又开一次」）。
  */
 function armDictation(): void {
-  if (!gestureSeen || !bootstrapped.value || !speechReady.value || !listenOn.value) return;
+  if (!gestureSeen || !bootstrapped.value || !speechReady.value || !fullDuplex.value) return;
   void dictation.arm();
 }
 
@@ -165,30 +241,47 @@ function onFirstGesture(): void {
   speech.unlock();
   armDictation();
   // 「后端明确没有语音」（AUDIO_PROVIDER=none）时也不再留着监听：它要等的是一个不会来的状态
-  if (dictation.armed.value || !listenOn.value || (bootstrapped.value && !speechReady.value)) {
+  if (dictation.armed.value || !fullDuplex.value || (bootstrapped.value && !speechReady.value)) {
     detachGestureWake();
   }
 }
 
-/** 监听只在「还没到目的」时留着：armed 成功，或已经不必再 arm（常开关着） */
+/** 监听只在「还没到目的」时留着：armed 成功，或已经不必再 arm（点按模式） */
 function detachGestureWake(): void {
   window.removeEventListener('pointerdown', onFirstGesture);
   window.removeEventListener('touchstart', onFirstGesture);
   window.removeEventListener('keydown', onFirstGesture);
 }
 
+/**
+ * 把 `/api/health` 的结论灌进播报侧：语音可用则走服务端 TTS，否则用浏览器内置合成。
+ *
+ * <p>展开成独立函数是因为它有**两个**调用点：挂载时的 bootstrap，以及降级后的低频重探。
+ */
+function applyHealth(): void {
+  const health = chat.health.value;
+  if (!health) return;
+  speechReady.value = Boolean(health.speechReady);
+  speech.setServerReady(speechReady.value);
+}
+
 onMounted(() => {
   // 服务端语音是否可用由 /api/health 说了算：可用则播报走服务端 TTS，否则当场用浏览器内置
   void chat.bootstrap().then(() => {
-    const health = chat.health.value;
     bootstrapped.value = true;
-    if (health) {
-      speechReady.value = Boolean(health.speechReady);
-      speech.setServerReady(speechReady.value);
-    }
+    applyHealth();
     // 手势可能先到（页面已经被人点过）、bootstrap 后到：这时补一次开麦
     armDictation();
   });
+  // 播报降级后**低频重探**：health 平时只在挂载时取一次，而服务端播报一旦失败就把 serverReady
+  // 关掉（当场降级是对的），没有这条重探它就再也不会打开——上游抖动一次，这台机器的音色就永久变成
+  // 浏览器合成，直到有人手刷页面。只在「已经降级」时才去敲门，恢复与否由 useSpeech 的冷却期说了算。
+  speechRecheckTimer = window.setInterval(() => {
+    if (!bootstrapped.value || speech.serverReady.value) return;
+    void chat.refreshHealth().then((fresh) => {
+      if (fresh) applyHealth();
+    });
+  }, SPEECH_RECHECK_MS);
   composer.value?.focus();
   for (const type of ['pointerdown', 'keydown', 'wheel', 'touchstart']) {
     window.addEventListener(type, bumpActivity, { passive: true });
@@ -202,6 +295,8 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (idleTimer) window.clearTimeout(idleTimer);
+  if (speechRecheckTimer !== undefined) window.clearInterval(speechRecheckTimer);
+  clearVoiceHint();
   unbindZoneBridge();
   chat.cancel();
   speech.stop();
@@ -244,19 +339,33 @@ watch(
 );
 
 /**
- * 常开聆听开关：同步给 composable，并且**开的那一刻就试着开麦**
- * （运营在 ?admin=1 里拨回来时不该还要再点一次屏幕）。
+ * 语音模式：同步给 composable，并且**切到全双工的那一刻就试着开麦**
+ * （运营在 ?admin=1 里拨回来时不该还要再点一次屏幕）。切出全双工则 `setAlwaysOn(false)`
+ * 放掉当前句与麦克风（丢掉半截句子是可接受的）。
  *
  * <p>刻意**不在这里写存储**：页面每次加载都往 localStorage 里塞一个键，是替还没做过决定的
- * 参观者做决定。存储只在运营真的拨了开关那一下写（见 toggleListen）。
+ * 参观者做决定。存储只在运营真的拨了开关那一下写（见 toggleVoiceMode）。
  */
 watch(
-  listenOn,
-  (on) => {
-    dictation.setAlwaysOn(on);
-    if (on) armDictation();
+  voiceMode,
+  (mode) => {
+    dictation.setAlwaysOn(mode === 'full');
+    if (mode === 'full') armDictation();
   },
   { immediate: true },
+);
+
+/**
+ * 切到全双工时若有点按的录音/识别在途，`arm()` 会被 recording/pending 挡回；
+ * 等这一句走完再补一次 arm——否则那次切换会一直聋到刷新页面
+ * （点按模式下首个手势已经把手势监听摘掉，没有别的重试路径）。
+ * 点按模式下本 watcher 空转：armDictation 的第四道门会拦住。
+ */
+watch(
+  () => dictation.recording.value || dictation.pending.value || dictation.busy.value,
+  (busyNow, wasBusy) => {
+    if (wasBusy && !busyNow) armDictation();
+  },
 );
 
 /** arm 成功就把手势监听摘掉；被拒时留着，下个手势再试（权限弹窗要求用户激活） */
@@ -360,7 +469,8 @@ const placeholder = computed(() =>
 
 /**
  * 等第一个字时是"思考"（侧头），出字后是"说话"（动口型），语音播报中也算说话；
- * 麦克风开着且没人说话时是"聆听"（常开聆听的常态），其余空闲。
+ * 麦克风开着且没人说话时是"聆听"（全双工的常态；点按录音中同样在听，形象不该停 idle），
+ * 其余空闲。
  */
 const avatarState = computed<'idle' | 'speaking' | 'thinking' | 'listening'>(() => {
   if (chat.streaming.value) {
@@ -368,7 +478,7 @@ const avatarState = computed<'idle' | 'speaking' | 'thinking' | 'listening'>(() 
     return last && last.content.length === 0 ? 'thinking' : 'speaking';
   }
   if (speech.speaking.value) return 'speaking';
-  return dictation.listening.value ? 'listening' : 'idle';
+  return dictation.listening.value || dictation.recording.value ? 'listening' : 'idle';
 });
 
 /**
@@ -400,12 +510,12 @@ function submit(): void {
  * 识别前再按一下立即结束。开始前先停掉播报——展厅里喇叭和麦克风在同一台机器上，
  * 讲解声会被录进去变成提问的一部分。
  *
- * <p>常开聆听下麦克风本来就开着，所以按钮只剩一个作用：**立即结束当前这句话**（不等停顿）。
+ * <p>全双工模式下麦克风本来就开着，所以按钮只剩一个作用：**立即结束当前这句话**（不等停顿）。
  * 没人说话时点它什么都不做——真正的开关在运营视图里（`?admin=1` 的本机设置），
  * 大屏前的人不该有办法把讲解员的耳朵关掉。
  */
 function toggleDictation(): void {
-  if (listenOn.value && dictation.armed.value) {
+  if (fullDuplex.value && dictation.armed.value) {
     if (dictation.recording.value) void dictation.stop();
     return;
   }
@@ -415,6 +525,7 @@ function toggleDictation(): void {
     void dictation.stop();
   } else {
     speech.stop();
+    clearVoiceHint(); // 重新起一句：上一条的失败提示已经过期了
     void dictation.start();
   }
 }
@@ -427,7 +538,7 @@ function toggleDictation(): void {
  */
 const micSuppressed = computed(() => chat.streaming.value || speech.speaking.value);
 
-/** 正在录一句时按是否已检出人声区分文案；常开聆听空闲时是「聆听中」 */
+/** 正在录一句时按是否已检出人声区分文案；全双工空闲时是「聆听中」 */
 const micLabel = computed(() => {
   if (dictation.listening.value) {
     if (!micSuppressed.value) return '聆听中，直接说话即可';
@@ -439,7 +550,7 @@ const micLabel = computed(() => {
 
 const micTitle = computed(() => {
   if (dictation.listening.value) {
-    if (!micSuppressed.value) return '常开聆听中：直接说话就会提问';
+    if (!micSuppressed.value) return '全双工模式：直接说话就会提问';
     return bargeInOn.value
       ? '回答期间麦克风仍然在听：直接开口就会打断它（门限高于平时，避免被自己的喇叭声打断）'
       : '回答播放期间麦克风被抑制，避免自己的喇叭声被当成提问；播放结束自动恢复';
@@ -449,15 +560,32 @@ const micTitle = computed(() => {
 });
 
 /**
- * 运营视图里的常开聆听开关：落存储，并由上面的 watcher 同步给 composable。
+ * 欢迎态那颗大入口的文案。读的是与 `micLabel` 同一批状态，只是说法不同：
+ * 站在大屏前的人还没点过任何东西，需要的是「按这里会发生什么」，不是按钮名。
+ *
+ * <p>「正在识别…」这一态按钮已经 disabled（见模板），文案仍要说出来——
+ * 参观者刚说完一句话，界面不该在这几秒里显得没反应。
+ */
+const entryLabel = computed(() => {
+  if (dictation.busy.value || dictation.pending.value) return '正在识别…';
+  if (!dictation.recording.value) return '开始实时对话';
+  if (dictation.speechDetected.value) return '说完了？点这里结束并识别';
+  return `聆听中，请说话（说完停顿 1 秒自动结束） ${(dictation.elapsedMs.value / 1000).toFixed(1)}s`;
+});
+
+/**
+ * 运营视图里的语音模式开关（点按 ↔ 全双工）：落存储（新键 + 镜像旧键），
+ * 切全双工那一刻的开麦由 `voiceMode` watcher 负责（它在这次赋值之后立刻 flush）。
  *
  * <p>`gestureSeen` 在这里补一次：拨开关本身就是一次真实手势，接下来不需要再点屏幕才能开麦。
+ *
+ * <p>**这里不再额外调 `armDictation()`**：本函数同步跑完时 watcher 还没 flush，
+ * `dictation.alwaysOn` 仍是 false，`arm()` 必因 `!alwaysOn` 早退——真正开麦的一直是 watcher 里那次。
  */
-function toggleListen(): void {
-  listenOn.value = !listenOn.value;
-  writeStorage('local', LISTEN_KEY, listenOn.value ? '1' : '0');
+function toggleVoiceMode(): void {
+  voiceMode.value = voiceMode.value === 'full' ? 'tap' : 'full';
+  writeVoiceMode(voiceMode.value);
   gestureSeen = true;
-  armDictation();
 }
 
 /**
@@ -661,6 +789,23 @@ function assistantSourceLabel(mode?: string, provider?: string): string {
               {{ question }}
             </button>
           </div>
+
+          <!-- 欢迎态的对话入口：mic 那颗小按钮埋在输入框里，第一次来的人看不见它。
+               全双工下**不出现**：那时候 toggleDictation 对空闲的点击是空操作（摆出来就是死按钮），
+               而全双工访客本来也不需要点——说话就行。
+               显隐派生自消息条数、不另存 ref：闲置复位清空消息后入口重现是期望行为，
+               另存一份状态反而会与欢迎态 watcher 失同步。
+               点击与 mic 是**同一个 toggleDictation**，不另写分支：两处共享全部状态，天然无竞态。 -->
+          <button
+            v-if="dictation.supported && !fullDuplex && !chat.messages.value.length"
+            type="button"
+            class="voice-entry"
+            :class="{ on: dictation.recording.value, warn: voiceHint !== '' }"
+            :disabled="dictation.busy.value || dictation.pending.value || chat.streaming.value"
+            @click="toggleDictation()"
+          >
+            {{ entryLabel }}
+          </button>
         </main>
 
         <footer class="compose">
@@ -677,13 +822,16 @@ function assistantSourceLabel(mode?: string, provider?: string): string {
             <button v-if="chat.streaming.value" class="send ghost" @click="chat.cancel()">停</button>
             <button v-else class="send" aria-label="发送" :disabled="chat.resetting.value || !draft.trim()" @click="submit()">↑</button>
             <!-- 语音提问：点一下进入聆听，说完停顿（VAD_SILENCE_MS，当前 1 秒）自动识别；识别前再点一下立即结束。
-                 常开聆听下麦克风本来就开着，这颗按钮变成「立即结束这一句」（没人说话时点它无动作）。
+                 全双工模式下麦克风本来就开着，这颗按钮变成「立即结束这一句」（没人说话时点它无动作）。
                  不支持的机器上整颗按钮不出现。 -->
             <button
               v-if="dictation.supported"
               type="button"
               class="mic"
-              :class="{ on: dictation.recording.value || dictation.listening.value }"
+              :class="{
+                on: dictation.recording.value || dictation.listening.value,
+                warn: voiceHint !== '',
+              }"
               :disabled="dictation.busy.value || dictation.pending.value || chat.streaming.value"
               :aria-pressed="dictation.recording.value || dictation.listening.value"
               :aria-label="micLabel"
@@ -711,6 +859,12 @@ function assistantSourceLabel(mode?: string, provider?: string): string {
               </svg>
             </button>
           </div>
+          <!-- 语音失败的**行动指引**：技术原因（浏览器原文、错误码）只进运营视图，这里只回答
+               「我该怎么办」。刻意放在输入区下方而不是 .main/消息列表里——放那儿既像一句 AI 回话，
+               也会破掉「技术信息不上大屏」的既有口径（App.spec 有一条用例守着它）。 -->
+          <p v-if="voiceHint" class="voice-hint" role="status" aria-live="polite">
+            {{ voiceHint }}
+          </p>
         </footer>
       </div>
     </section>
@@ -740,38 +894,46 @@ function assistantSourceLabel(mode?: string, provider?: string): string {
           </button>
           <span v-else class="muted">本机与后端都没有可用的语音</span>
         </div>
-        <!-- 常开聆听：存储键缺省 = 开（展厅的常态），关掉就退回点按模式。
+        <!-- 语音模式：缺省点按（识别调用最少），可切全双工（常开聆听）。
              开关只在这里：大屏前的人不该有办法把讲解员的耳朵关掉。 -->
         <div v-if="dictation.supported" class="row">
-          <span>常开聆听</span>
+          <span>语音模式</span>
           <button
             class="linkish"
-            :aria-pressed="listenOn"
-            @click="toggleListen()"
+            :aria-pressed="fullDuplex"
+            @click="toggleVoiceMode()"
           >
-            {{ listenOn ? '开' : '关' }}
+            {{ fullDuplex ? '全双工' : '点按' }}
           </button>
         </div>
         <p v-if="dictation.supported" class="muted">
           {{
-            listenOn
-              ? '麦克风常开：说话即提问。关掉可退回「点一下说话」。'
-              : '已关闭：需要点麦克风按钮才会开始听'
+            fullDuplex
+              ? '全双工模式：麦克风常开，说话即提问、边说边出预览、可插话打断。识别调用更频繁。'
+              : '点按模式：点麦克风说话，停顿约 1 秒自动识别提交。识别调用最少（推荐默认）。'
           }}
         </p>
-        <!-- 插话打断（P3a-2）：**缺省关**。判据（门限抬多少、持续多久）必须由现场回声数据定，
+        <!-- 插话打断（P3a-2）：**缺省关**，且仅全双工有效（点按模式置灰但不清存储值）。
+             判据（门限抬多少、持续多久）必须由现场回声数据定，
              关着的时候回声照采（P3a-1），运营统计里那组 echo* 计数就是这份数据。 -->
         <div v-if="dictation.supported" class="row">
           <span>插话打断</span>
-          <button class="linkish" :aria-pressed="bargeInOn" @click="toggleBargeIn()">
+          <button
+            class="linkish"
+            :aria-pressed="bargeInOn"
+            :disabled="!fullDuplex"
+            @click="toggleBargeIn()"
+          >
             {{ bargeInOn ? '开' : '关' }}
           </button>
         </div>
         <p v-if="dictation.supported" class="muted">
           {{
-            bargeInOn
-              ? '回答期间直接开口就会打断它，你接下来说的那句成为新问题。'
-              : '关：回答期间麦克风只采回声、不判决（运营统计里的回声行照样在涨）'
+            !fullDuplex
+              ? '插话打断仅在全双工模式有效；切到全双工后可开。'
+              : bargeInOn
+                ? '回答期间直接开口就会打断它，你接下来说的那句成为新问题。'
+                : '关：回答期间麦克风只采回声、不判决（运营统计里的回声行照样在涨）'
           }}
         </p>
         <!-- 开关藏在 ?admin=1 抽屉里，大屏上看不出状态；被浏览器拦下时在这行标出来 -->

@@ -130,15 +130,20 @@ cd web && npm ci && npm run build                    # → web/dist
 | `AUDIO_STYLE` | 展厅讲解员口吻 | 音色风格指令（走 user 消息，不会被念出来） |
 | `AUDIO_TTS_MODEL` / `AUDIO_ASR_MODEL` | `mimo-v2.5-tts` / `mimo-v2.5-asr` | 语音模型 |
 | `AUDIO_ASR_LANGUAGE` | `zh` | `auto` / `zh` / `en` |
+| `AUDIO_TIMEOUT_MS` | `15000` | **一次合成（含全部重试）的总预算**，不是单次等待上限。要短于前端的合成等待上限（20 秒）：这条同步调用不会因为浏览器 abort 而中断上游请求，服务端比客户端还晚收场就只是替一个没人要的响应花线程与上游配额 |
+| `AUDIO_ASR_TIMEOUT_MS` | `30000` | **一次识别（含全部重试）的总预算**。比合成宽：整段录音 ≤20 秒音频 / 约 850KB，慢链路要留余量。（重试次数与退避见 `.env.example` 的 `AUDIO_MAX_RETRIES` / `AUDIO_RETRY_BASE_MS`：它们也算在这两个预算里） |
 | `AUDIO_MAX_CHARS` | `300` | 单次合成文本上限（前端按句切片，正常远小于它） |
-| `AUDIO_MAX_UPLOAD_BYTES` | `2097152` | 识别上传上限（解码后的 WAV 字节）。反代侧上限不得低于它，否则录音会被 413 拦在门外 |
+| `AUDIO_MAX_RETRIES` | `2` | 一次调用允许的重试次数。只重试「还没拿到可用响应」的失败（408/429/5xx、网络类异常）；参数/鉴权类 4xx 重试只是白等。重试算在上面两个超时预算里 |
+| `AUDIO_RETRY_BASE_MS` | `1000` | 重试退避基数（1x/2x/4x…）。与两个预算一起决定最坏耗时：**退避睡不进预算就不再重试** |
+| `AUDIO_MAX_UPLOAD_BYTES` | `2097152` | 识别上传上限（解码后的 WAV 字节）＝**真正生效的那道闸门**。请求体上限由它按 base64 膨胀推出（×4/3 + 1KB ≈ 2.67MB，见下面「请求体上限」），调大它闸门跟着放宽。反代侧上限不得低于推出后的请求体大小，否则录音会被 413 拦在门外 |
 | `AUDIO_TTS_CACHE_SIZE` | `64` | 合成结果缓存条数（展厅重复问题命中即省一次外部调用） |
-| `AUDIO_SYNTH_RATE_PER_MIN` | `60` | 每 IP 每分钟合成上限（识别则与问答共用 `CHAT_RATE_PER_MIN`） |
+| `AUDIO_TTS_CACHE_MAX_BYTES` | `524288` | 缓存**单条**的字节上限：超了照常返回、只是不入缓存。按条数封顶挡不住「64 条 × 数 MB」把堆吃满（长文合成一次能出几 MB） |
+| `AUDIO_SYNTH_RATE_PER_MIN` | `60` | 每 IP 每分钟合成上限（识别另有独立的 `AUDIO_ASR_RATE_PER_MIN`，默认 120，见 api.md） |
 
 两条只有到部署现场才会暴露的硬约束：
 
 - **麦克风需要安全上下文**：浏览器只在 HTTPS 或 `localhost`／`127.0.0.1` 下给 `getUserMedia`。一体机上直接用 `http://内网IP` 打开时「语音提问」按钮不会出现（自动播报不受影响）。要么在本机以 `http://127.0.0.1:端口` 打开，要么给内网访问配一张证书。
-- **请求体上限**：语音接口单次上传最大约 853KB（20 秒录音 → 640KB WAV → base64）。Nginx 默认 `client_max_body_size 1m` 勉强够，建议显式设 `2m`；应用内还有一道 2MB 硬上限（`RequestSizeLimitFilter`），配得再大也会被它先拦。
+- **请求体上限**：语音接口单次上传最大约 853KB（20 秒录音 → 640KB WAV → base64）。Nginx 默认 `client_max_body_size 1m` 勉强够，建议显式设 **`3m`**；应用内那道闸门（`RequestSizeLimitFilter`）跟着 `AUDIO_MAX_UPLOAD_BYTES` 走——解码后 2MB 的 WAV 编码成请求体约 2.67MB（base64 膨胀 4/3 + JSON 壳），所以反代也要放到 3m 才不会先被它拦。改大录音上限时两处一起改。
 
 **跨机语音（HTTPS）两种做法**，均为纯配置、无需改 Java 代码：
 
@@ -180,7 +185,7 @@ SERVER_SSL_KEY_STORE_PASSWORD=<store 口令>
 | `KNOWLEDGE_DIR` | `./knowledge` | 知识正文目录（相对仓库根或绝对路径） |
 | `INDEX_DIR` | `./server/indexes` | 向量索引目录（可删，会自动重建） |
 | `DATA_DIR` | `./server/data` | JSONL 日志目录 |
-| `MIN_RELEVANCE_SCORE` | `6.3` | 相关性闸门阈值（标定得出，改语料后必须重标） |
+| `MIN_RELEVANCE_SCORE` | `6.5` | 相关性闸门阈值（标定得出，改语料后必须重标） |
 | `MIN_VECTOR_SCORE` | `0.75` | 语义向量兜底阈值。当前值等价于关闭兜底：域外最高余弦 0.6252 高于待救在域用例（0 条），区间不成立；改动后须用 `calibrate --gate-check` 复核 |
 | `ANSWER_CACHE_SIZE` | `200` | 答案缓存条数 |
 | `UNCOVERED_LOG_SIZE` | `50` | 未覆盖问题留存条数（0 = 关闭） |
@@ -326,7 +331,7 @@ python tools/offline-check.py --runtime    # 追加：语义路状态与检索�
 
 | 类别 | 结论 | 依据 |
 | --- | --- | --- |
-| 前端产物 | 无任何联网引用（字体走系统栈、形象图本地、无 CDN/埋点） | O01–O03 扫 `web/dist` |
+| 前端产物 | 无任何联网引用（字体走系统栈、形象图本地、无 CDN/埋点）；也没有老内核不支持的语法 | O01–O03、O08 扫 `web/dist` |
 | 后端出网入口 | 只有 `llm/OpenAiCompatChatModel`、`embedding/OpenAiCompatEmbeddingProvider`、`audio/MimoSpeechModel` | O04 扫源码（白名单之外出现 HTTP/Socket 调用即失败） |
 | 依赖 | 无云 SDK / 遥测库 | O05 扫 `pom.xml`、`package.json` |
 | 知识/检索/闸门/落库 | 全在本地 | MySQL 本机；向量索引是本地 JSON 文件（`server/indexes/vectors.<provider>.json`） |

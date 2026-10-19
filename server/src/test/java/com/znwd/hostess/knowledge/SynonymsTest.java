@@ -35,13 +35,35 @@ class SynonymsTest {
     @DisplayName("内置表：默认来源是 builtin，且扩展词与旧实现一致")
     void defaults() {
         assertEquals("builtin", Synonyms.source());
-        assertEquals(21, Synonyms.size());   // 2026-09-29 清掉已删展区（风场/展品/参观）遗留词后为 21
+        assertEquals(34, Synonyms.size());   // 2026-09-29 清遗留词后 21；2026-10-19 补 13 组行业/口语问法后 34
 
         Synonyms.Expansion expansion = Synonyms.expandQueryParts("光伏清洁");
         // 「光伏」「清洁」两组都会展开，原词不重复计入扩展词
         assertTrue(expansion.extras().contains("太阳能"), "应展开出「太阳能」");
         assertTrue(expansion.extras().contains("清洗"), "应展开出「清洗」");
         assertFalse(expansion.extras().contains("光伏"), "原查询里已有的词不该当扩展词");
+    }
+
+    /**
+     * 2026-10-19 加组的理由都来自 04_光伏运维行业知识 展区上线后的实测失手，这里各钉一个用例，
+     * 免得以后有人把看似冗余的单字词（板子/灰/洗/标准）当噪声「清理」掉——它们正是救回口语问法的那几个。
+     */
+    @Test
+    @DisplayName("新加的词组：口语问法与「标准」族都能展开出文档里真正用的词")
+    void industryAndColloquialGroups() {
+        // 「板子上有灰要怎么办」原话只剩「怎么/么办」命中，5.05 分被闸门拦空
+        Synonyms.Expansion colloquial = Synonyms.expandQueryParts("板子上有灰要怎么办");
+        assertTrue(colloquial.extras().contains("组件"), "「板子」应展开出「组件」");
+        assertTrue(colloquial.extras().contains("积灰"), "「灰」应展开出「积灰」");
+
+        // 「清洗机器人有国家标准吗」的答案块里写的是「标准/规范」，查询里只有「国家标准」
+        Synonyms.Expansion standard = Synonyms.expandQueryParts("清洗机器人有国家标准吗");
+        assertTrue(standard.extras().contains("规范"), "「标准」应展开出「规范」");
+        assertTrue(standard.extras().contains("规程"), "「标准」应展开出「规程」");
+
+        // 「组件清洗有哪几种方式」的答案块标题是「组件清洗的方式分类」
+        assertTrue(Synonyms.expandQueryParts("组件清洗有哪几种方式").extras().contains("分类"),
+                "「方式」应展开出「分类」");
     }
 
     @Test
@@ -57,7 +79,7 @@ class SynonymsTest {
 
         Synonyms.resetDefaults();
         assertEquals("builtin", Synonyms.source());
-        assertEquals(21, Synonyms.size());
+        assertEquals(34, Synonyms.size());
     }
 
     @Test
@@ -65,7 +87,7 @@ class SynonymsTest {
     void emptyTableRejected() {
         assertThrows(IllegalArgumentException.class, () -> Synonyms.replace(Map.of(), "test"));
         assertThrows(IllegalArgumentException.class, () -> Synonyms.replace(null, "test"));
-        assertEquals(21, Synonyms.size(), "被拒后表必须保持原样");
+        assertEquals(34, Synonyms.size(), "被拒后表必须保持原样");
     }
 
     @Test
@@ -96,7 +118,7 @@ class SynonymsTest {
         Path file = dir.resolve("out.tsv");
         Files.writeString(file, Synonyms.toTsv(), StandardCharsets.UTF_8);
         Synonyms.resetDefaults();
-        assertEquals(21, Synonyms.size());
+        assertEquals(34, Synonyms.size());
 
         assertEquals(2, Synonyms.loadFromFile(file));
         assertEquals(table, Synonyms.asMap());
